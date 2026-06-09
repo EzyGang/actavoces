@@ -29,5 +29,11 @@ export default defineConfig({
       // 3. tell Vite to ignore watching `src-tauri`
       ignored: ['**/src-tauri/**']
     }
+  },
+  resolve: {
+    alias: {
+      react: 'preact/compat',
+      'react-dom': 'preact/compat'
+    }
   }
 });

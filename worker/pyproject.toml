@@ -1,9 +1,22 @@
 [project]
 name = "actavoces-worker"
 version = "0.1.0"
-requires-python = ">=3.10"
+requires-python = ">=3.14"
 dependencies = [
   "pydantic>=2.10",
+  "pydantic-ai-slim>=1.106.0",
+]
+
+[dependency-groups]
+dev = [
+  "pytest>=8.0",
+  "basedpyright>=1.39.2",
+  "ruff>=0.15.11",
+  "taskipy>=1.14.1",
+  "pytest-asyncio>=0.24.0",
+  "pytest-cov>=6.0.0",
+  "pytest-mock>=3.14.0",
+  "pytest-socket>=0.7.0",
 ]
 
 [project.optional-dependencies]
@@ -15,3 +28,90 @@ ml = [
 
 [tool.uv]
 package = false
+
+
+[tool.taskipy.tasks]
+format-and-lint = "task ruff && task pyright-lint"
+
+ruff = "ruff format ./app/ ./tests/ && ruff check ./app/ ./tests/ --fix --unsafe-fixes"
+tests = "pytest tests/ -v"
+ruff-lint = "ruff check ./app ./tests"
+pyright-lint = "basedpyright app/"
+
+[tool.ruff]
+line-length = 120
+extend-exclude = ["site-packages", "*.pyi"]
+target-version = 'py314'
+
+[tool.ruff.lint]
+fixable = ["ALL"]
+unfixable = []
+select = [
+    "E",  # pycodestyle errors
+    "W",  # pycodestyle warnings
+    "F",  # pyflakes
+    "I",  # isort
+    "C",  # flake8-comprehensions
+    "B",  # flake8-bugbear
+    "UP",  # pyupgrade
+]
+ignore = [
+    "B008",  # do not perform function calls in argument defaults
+    "C901",  # too complex
+]
+
+[tool.ruff.format]
+quote-style = 'single'
+indent-style = 'space'
+line-ending = 'auto'
+skip-magic-trailing-comma = false
+exclude = ['*.pyi']
+
+[tool.ruff.lint.mccabe]
+max-complexity = 6
+
+[tool.ruff.lint.isort]
+split-on-trailing-comma = false
+lines-after-imports = 2
+known-first-party = ["app"]
+
+[tool.ruff.lint.pyupgrade]
+# Preserve types, even if a file imports `from __future__ import annotations`.
+keep-runtime-typing = true
+
+[tool.pyright]
+include = ["app"]
+pythonVersion = "3.14"
+reportAny = false
+reportMissingTypeStubs = false
+typeCheckingMode = "strict"
+exclude = ['.venv/**']
+
+[tool.pytest.ini_options]
+minversion = "6.0"
+addopts = [
+    '--strict-markers',
+    '--strict-config',
+    '--allow-unix-socket',
+    '--allow-hosts=127.0.0.1,127.0.1.1,::1',
+    '--tb=short',
+    '--cov=app/',
+    '--cov-branch',
+    '--cov-report=term-missing:skip-covered',
+    '--cov-report=html',
+    '--cov-fail-under=35',
+]
+asyncio_mode = "auto"
+pythonpath = ["."]
+python_files = "test*.py"
+# Directories that are not visited by pytest collector:
+norecursedirs = "*.egg .eggs dist build docs .tox .git __pycache__ config docker etc"
+testpaths = [
+    "tests",
+]
+
+[tool.coverage.run]
+# Coverage configuration:
+# https://coverage.readthedocs.io/en/latest/config.html
+omit = []
+concurrency = ['thread']

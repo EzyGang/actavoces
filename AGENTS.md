@@ -17,6 +17,11 @@ Project-wide Reference Guide
 - Tauri v2 (Rust backend, desktop shell)
 - src-tauri/ contains Rust code, Cargo.toml, tauri.conf.json
 
+### Worker (AI)
+- uv
+- python 3.14
+- pydantic and pydantic-ai
+
 ## Developer Commands
 
 ```bash
@@ -357,8 +362,83 @@ You should aim to write simple, readable, and maintainable code. Over-abstractin
 
 </very_important_block>
 
-## Testing
+## PYTHON GUIDELINES
 
+Before starting any implementation, read the folder structure to understand the architecture. We follow DDD/Clean Architecture principles.
+
+Project uses `uv` as a package manager, also there is `taskipy` with predefined shortcuts to run lints/type checks, it is defined in `pyproject.toml`
+
+<important_rules>
+- DONT create ANY comments unless ABSOLUTELY necessary
+- Don't add documentation strings/explanations, unless this is critical and confusing or asked directly by a user.
+- When creating pydantic models from EXISTING data (dicts, JSON, ORM objects) with matching field names, ALWAYS use `.model_validate()`, `.model_validate_json()`, or `.model_validate(obj, from_attributes=True)`. This applies to single objects, nested models, and lists.
+- Prefer using a `kwargs` syntax over args, meaning that `func(a=1, b=2, c=3)` is PREFERRED over `func(1, 2, 3)`.
+- The max length of a function should not exceed 30 lines (only in some rare cases), if its more than that - split
+- The length of a single file should not be more that 200 lines, if its more than that - split, except for files defining database models.
+- MUST FOLLOW `DRY` (DO NO REPEAT YOURSELF) principle, NO code repetition should exist in everything you do for ANY reason, unless ther is really no way around it.
+- DON'T USE `__all__` in files and DON'T RE-EXPORT ANYTHING in `__init__.py` use direct imports of what is needed.
+- For generic parameters use new Python 3.14 syntax via `def foo[**P, T]` where P is a new param spec syntax and T is a typevar. The same can be applied to classes.
+- You are not allowed to silence a type checker, if you have no idea how to fix, better just highlight it to the user than silence it. THOUGH IF THEY WERE HERE BEFORE - DON'T TOUCH THEM
+- Everything has to be type annotated (function arguments/return types)
+- `list`, `dict`, etc, anything that is generic should be properly annotated, i.e. `list[str]`, `dict[str, Any]`
+- Use only new style formatted strings, i.e. `f'{tpl} string'`, NO `.format()` or `%s` replacements.
+- No `object` in annotations, use `Any` or more specific types
+- NO LOCAL IMPORTS, unless absolutely necessary (like avoiding circular imports)
+- NO `dict` returns from functions, or `list[dict]` returns, if the complex object has to be returned it has to be a BaseModel DTO.
+</important_rules>
+
+## Build/Lint/Test Commands
+
+Package manager: `uv` (use `uv run` to execute commands in the virtual environment)
+
+```bash
+# Format and lint (run before committing)
+uv run task format-and-lint
+
+# Individual lint commands
+uv run task ruff              # Format and fix lint issues
+uv run task ruff-lint         # Check only (no fixes)
+uv run task pyright-lint      # Type check with basedpyright
+
+# Tests
+uv run task tests                          # Run all tests
+uv run pytest tests/test_main.py -v        # Run single test file
+uv run pytest tests/test_main.py::test_sync_runs -v  # Run single test
+uv run pytest tests/ -k "asyncio" -v       # Run tests matching pattern
+```
+
+## Code Style Rules
+
+### Imports
+
+- NO local imports (except for avoiding circular imports)
+- Use absolute imports from `app.` prefix
+- Import order enforced by ruff/isort: stdlib → third-party → first-party (`app`)
+
+### Type Annotations
+
+- ALL function arguments and return types MUST be type annotated
+- Use `list[str]`, `dict[str, Any]` (not `list`, `dict` without parameters)
+- Use `Any` instead of `object` for generic types
+- Union types: use `str | None` (not `Optional[str]`)
+- NEVER silence the type checker with `# type: ignore` unless it was already there
+
+### Functions and Classes
+
+- NO `__all__` in files
+- NO re-exports in `__init__.py` - use direct imports
+- NO significant logic in route handlers - move to use_cases/helpers/services
+- NO `dict` or `list[dict]` returns - use BaseModel DTOs for complex objects
+
+## Formatting (ruff)
+
+- Line length: 120 characters
+- Quotes: single quotes
+- Indent: spaces
+- Target: Python 3.14
+
+## Testing
+Use `mocker: MockerFixture` to mock inside the tests.
 Tests should live in a `src/tests` folder.
 
 Use vitest when implementing these.

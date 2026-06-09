@@ -1,11 +1,11 @@
 import { clsx } from 'clsx';
-import type { ComponentChildren, JSX } from 'preact';
+import type { ComponentChildren, JSX, MouseEventHandler } from 'preact';
 
 interface ButtonProps {
   children: ComponentChildren;
   disabled?: boolean;
   variant?: 'primary' | 'secondary' | 'ghost';
-  onClick?: JSX.MouseEventHandler<HTMLButtonElement>;
+  onClick?: MouseEventHandler<HTMLButtonElement>;
   type?: 'button' | 'submit';
   class?: string;
 }

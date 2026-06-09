@@ -11,11 +11,14 @@ export type PipelineStageStatus = 'pending' | 'running' | 'complete' | 'failed' 
 
 export type ArtifactKind =
   | 'audio'
+  | 'microphoneAudio'
+  | 'systemAudio'
   | 'rawTranscript'
   | 'segments'
   | 'diarization'
   | 'diarizedTranscript'
   | 'summary'
+  | 'metadata'
   | 'jobLog';
 
 export interface PipelineStage {
@@ -23,6 +26,7 @@ export interface PipelineStage {
   label: string;
   status: PipelineStageStatus;
   progress: number;
+  message: string;
 }
 
 export interface Artifact {
@@ -32,6 +36,38 @@ export interface Artifact {
   ready: boolean;
 }
 
+export interface CaptureError {
+  source: 'microphone' | 'system';
+  message: string;
+}
+
+export interface PipelineJob {
+  id: string;
+  recordingId: string;
+  stage: PipelineStageId;
+  status: PipelineStageStatus;
+  progress: number;
+  message: string;
+}
+
+export interface ModelInventoryItem {
+  name: string;
+  installed: boolean;
+  setupRequired: boolean;
+  dependency: string;
+}
+
+export interface CaptureDeviceInfo {
+  name: string;
+  label: string;
+  default: boolean;
+}
+
+export interface CaptureDevices {
+  microphones: CaptureDeviceInfo[];
+  systemSources: CaptureDeviceInfo[];
+}
+
 export interface Recording {
   id: string;
   title: string;
@@ -39,20 +75,68 @@ export interface Recording {
   endedAt: string | null;
   durationSeconds: number | null;
   status: RecordingStatus;
+  artifactDirectory: string;
+  captureErrors: CaptureError[];
   stages: PipelineStage[];
   artifacts: Artifact[];
 }
 
 export interface AppSettings {
   outputDirectory: string;
+  databasePath: string;
   hotkey: string;
+  overlayPosition: 'topLeft' | 'topRight' | 'bottomLeft' | 'bottomRight';
+  launchAtLogin: boolean;
+  microphoneDevice: string;
+  systemAudioSource: string;
+  sampleRate: number;
   whisperModel: string;
+  transcriptionLanguage: string;
+  computeType: string;
+  modelStorageDirectory: string;
   diarizationBackend: 'nemoWhisper' | 'pyannote';
+  speakerCountMode: 'automatic' | 'exact' | 'range';
+  exactSpeakers: number | null;
+  minSpeakers: number | null;
+  maxSpeakers: number | null;
   summaryProviderConfigured: boolean;
+  providerApiKeyConfigured: boolean;
+  summaryEnabled: boolean;
+  providerBaseUrl: string;
+  providerModel: string;
+  titlePrompt: string;
+  summaryPrompt: string;
+}
+
+export type AppSettingsUpdate = Omit<
+  AppSettings,
+  'databasePath' | 'summaryProviderConfigured' | 'providerApiKeyConfigured'
+> & {
+  providerApiKey: string;
+};
+
+export interface DesktopRuntimeStatus {
+  overlayVisible: boolean;
+  hotkeyRegistered: boolean;
+  hotkeyError: string | null;
+  workerRunning: boolean;
+  workerHealthOk: boolean;
+  workerError: string | null;
+}
+
+export interface WorkerStatus {
+  running: boolean;
+  healthOk: boolean;
+  lastError: string | null;
+  mode: 'cliJsonl';
 }
 
 export interface AppSnapshot {
   activeRecording: Recording | null;
   recordings: Recording[];
+  jobs: PipelineJob[];
+  models: ModelInventoryItem[];
+  captureDevices: CaptureDevices;
+  desktop: DesktopRuntimeStatus;
   settings: AppSettings;
 }

@@ -1,0 +1,49 @@
+import type { AppSettingsUpdate } from '../types/desktop';
+
+export const validateSettingsDraft = (
+  settings: AppSettingsUpdate,
+  providerApiKeyConfigured = false
+): string[] => {
+  const errors: string[] = [];
+
+  if (settings.outputDirectory.trim().length === 0) {
+    errors.push('Output directory is required.');
+  }
+
+  if (settings.hotkey.trim().length === 0) {
+    errors.push('Global hotkey is required.');
+  }
+
+  if (settings.sampleRate <= 0) {
+    errors.push('Sample rate must be greater than zero.');
+  }
+
+  if (settings.summaryEnabled) {
+    if (settings.providerBaseUrl.trim().length === 0) {
+      errors.push('Provider base URL is required when summaries are enabled.');
+    }
+
+    if (settings.providerModel.trim().length === 0) {
+      errors.push('Provider model is required when summaries are enabled.');
+    }
+
+    if (!providerApiKeyConfigured && settings.providerApiKey.trim().length === 0) {
+      errors.push('Provider API key is required when summaries are enabled.');
+    }
+  }
+
+  if (settings.speakerCountMode === 'exact' && (settings.exactSpeakers ?? 0) <= 0) {
+    errors.push('Exact speaker count must be greater than zero.');
+  }
+
+  if (settings.speakerCountMode === 'range') {
+    const minSpeakers = settings.minSpeakers ?? 0;
+    const maxSpeakers = settings.maxSpeakers ?? 0;
+
+    if (minSpeakers <= 0 || maxSpeakers < minSpeakers) {
+      errors.push('Speaker range must include a valid minimum and maximum.');
+    }
+  }
+
+  return errors;
+};
