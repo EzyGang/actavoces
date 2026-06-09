@@ -1,0 +1,217 @@
+@theme {
+  /* Font families */
+  --font-sans: "Inter", system-ui, -apple-system, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, monospace;
+
+  /* Semantic background colors */
+  --color-bg-page: var(--bg-page);
+  --color-bg-card: var(--bg-card);
+  --color-bg-input: var(--bg-input);
+  --color-bg-hover: var(--bg-hover);
+  --color-bg-active: var(--bg-active);
+
+  /* Semantic text colors */
+  --color-text-primary: var(--text-primary);
+  --color-text-secondary: var(--text-secondary);
+  --color-text-muted: var(--text-muted);
+
+  /* Semantic border colors */
+  --color-border-base: var(--border-base);
+  --color-border-focus: var(--border-focus);
+
+  /* Accent colors */
+  --color-accent: var(--accent);
+  --color-accent-light: var(--accent-light);
+  --color-accent-dark: var(--accent-dark);
+  --color-accent-secondary: var(--accent-secondary);
+
+  /* Status colors */
+  --color-error: var(--error);
+  --color-error-bg: var(--error-bg);
+  --color-error-border: var(--error-border);
+  --color-success: var(--success);
+  --color-success-bg: var(--success-bg);
+  --color-success-border: var(--success-border);
+  --color-warning: var(--warning);
+  --color-warning-bg: var(--warning-bg);
+  --color-warning-border: var(--warning-border);
+
+  /* Shadows - minimal */
+  --shadow-card: var(--shadow-card);
+  --shadow-modal: var(--shadow-modal);
+  --shadow-sm: 0 1px 2px 0 oklch(0% 0 0 / 0.05);
+
+  /* Transitions */
+  --transition-fast: 150ms ease;
+  --transition-base: 200ms ease;
+  --transition-slow: 300ms ease;
+}
+
+/* ============================================
+   DARK THEME (default) — Prime Intellect style
+   ============================================ */
+
+:root {
+  /* Page backgrounds — near-black, charcoal layers */
+  --bg-page: oklch(0% 0 0);
+  --bg-card: oklch(14% 0 0);
+  --bg-input: oklch(20% 0 0);
+  --bg-hover: oklch(22% 0 0);
+  --bg-active: oklch(23% 0 0);
+
+  /* Text colors — high-contrast white scale */
+  --text-primary: oklch(100% 0 0);
+  --text-secondary: oklch(100% 0 0 / 0.8);
+  --text-muted: oklch(65% 0 0);
+
+  /* Borders — subtle dark lines */
+  --border-base: oklch(26% 0 0);
+  --border-focus: oklch(65% 0.2 30);
+
+  /* Accent — lava / volcano palette */
+  --accent: oklch(65% 0.22 30);
+  --accent-light: oklch(75% 0.15 40);
+  --accent-dark: oklch(45% 0.15 25);
+  --accent-secondary: oklch(72% 0.17 55);
+
+  /* Status colors */
+  --error: oklch(55% 0.2 25);
+  --error-bg: oklch(55% 0.2 25 / 0.15);
+  --error-border: oklch(55% 0.2 25 / 0.3);
+  --success: oklch(65% 0.16 155);
+  --success-bg: oklch(65% 0.16 155 / 0.15);
+  --success-border: oklch(65% 0.16 155 / 0.3);
+  --warning: oklch(75% 0.15 85);
+  --warning-bg: oklch(75% 0.15 85 / 0.15);
+  --warning-border: oklch(75% 0.15 85 / 0.3);
+
+  /* Shadows — minimal/flat */
+  --shadow-card: 0 1px 3px 0 oklch(0% 0 0 / 0.05);
+  --shadow-modal: 0 4px 6px -1px oklch(0% 0 0 / 0.08);
+
+  /* Base typography */
+  font-family: "Inter", system-ui, -apple-system, sans-serif;
+  line-height: 1.5;
+  font-weight: 400;
+  color: var(--text-primary);
+  background-color: var(--bg-page);
+}
+
+/* ============================================
+   DARK THEME OVERRIDE (explicit)
+   ============================================ */
+
+html[data-theme="dark"] {
+  --bg-page: oklch(0% 0 0);
+  --bg-card: oklch(14% 0 0);
+  --bg-input: oklch(20% 0 0);
+  --bg-hover: oklch(22% 0 0);
+  --bg-active: oklch(23% 0 0);
+
+  --text-primary: oklch(100% 0 0);
+  --text-secondary: oklch(100% 0 0 / 0.8);
+  --text-muted: oklch(65% 0 0);
+
+  --border-base: oklch(26% 0 0);
+  --border-focus: oklch(65% 0.2 30);
+
+  --accent: oklch(65% 0.22 30);
+  --accent-light: oklch(75% 0.15 40);
+  --accent-dark: oklch(45% 0.15 25);
+  --accent-secondary: oklch(72% 0.17 55);
+
+  --error: oklch(55% 0.2 25);
+  --error-bg: oklch(55% 0.2 25 / 0.15);
+  --error-border: oklch(55% 0.2 25 / 0.3);
+  --success: oklch(65% 0.16 155);
+  --success-bg: oklch(65% 0.16 155 / 0.15);
+  --success-border: oklch(65% 0.16 155 / 0.3);
+  --warning: oklch(75% 0.15 85);
+  --warning-bg: oklch(75% 0.15 85 / 0.15);
+  --warning-border: oklch(75% 0.15 85 / 0.3);
+
+  --shadow-card: 0 1px 3px 0 oklch(0% 0 0 / 0.2);
+  --shadow-modal: 0 4px 6px -1px oklch(0% 0 0 / 0.3);
+}
+
+/* ============================================
+   LIGHT THEME OVERRIDE
+   ============================================ */
+
+html[data-theme="light"] {
+  --bg-page: oklch(98% 0 0);
+  --bg-card: oklch(100% 0 0);
+  --bg-input: oklch(100% 0 0);
+  --bg-hover: oklch(96% 0.01 285);
+  --bg-active: oklch(90% 0.01 285);
+
+  --text-primary: oklch(20% 0.01 285);
+  --text-secondary: oklch(50% 0.01 285);
+  --text-muted: oklch(70% 0.01 285);
+
+  --border-base: oklch(90% 0.01 285);
+  --border-focus: oklch(50% 0.18 30);
+
+  --accent: oklch(50% 0.2 30);
+  --accent-light: oklch(65% 0.15 40);
+  --accent-dark: oklch(35% 0.12 25);
+  --accent-secondary: oklch(58% 0.14 55);
+
+  --error: oklch(55% 0.2 25);
+  --error-bg: oklch(97% 0.01 25);
+  --error-border: oklch(90% 0.05 25);
+  --success: oklch(55% 0.2 145);
+  --success-bg: oklch(97% 0.01 145);
+  --success-border: oklch(90% 0.05 145);
+  --warning: oklch(65% 0.15 85);
+  --warning-bg: oklch(98% 0.01 85);
+  --warning-border: oklch(90% 0.05 85);
+
+  --shadow-card: 0 1px 3px 0 oklch(0% 0 0 / 0.05);
+  --shadow-modal: 0 4px 6px -1px oklch(0% 0 0 / 0.08);
+}
+
+
+/* ============================================
+   GLOBAL RESET
+   ============================================ */
+
+@layer base {
+  * {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+  }
+
+  html {
+    scroll-behavior: smooth;
+  }
+
+  body {
+    margin: 0;
+    min-height: 100vh;
+    width: 100%;
+    overflow-x: hidden;
+    position: relative;
+  }
+
+  #app {
+    width: 100%;
+    min-height: 100vh;
+    margin: 0;
+    padding: 0;
+  }
+}
+
+/* ============================================
+   INTERACTIVE ELEMENTS
+   ============================================ */
+
+button,
+a,
+[role="button"],
+input[type="checkbox"],
+input[type="radio"],
+input[type="file"] {
+  cursor: pointer;
+}

@@ -1,0 +1,275 @@
+{
+  "$schema": "https://biomejs.dev/schemas/2.4.11/schema.json",
+  "vcs": { "enabled": true, "clientKind": "git", "useIgnoreFile": true },
+  "files": {
+    "ignoreUnknown": true,
+    "includes": ["**"]
+  },
+  "formatter": {
+    "enabled": true,
+    "useEditorconfig": false,
+    "formatWithErrors": false,
+    "indentStyle": "space",
+    "indentWidth": 2,
+    "lineEnding": "lf",
+    "lineWidth": 100,
+    "attributePosition": "auto",
+    "bracketSpacing": true,
+    "expand": "auto"
+  },
+  "linter": {
+    "includes": ["**", "!!**/test/**"],
+    "enabled": true,
+    "rules": {
+      "recommended": true,
+      "style": {
+        "noUnusedTemplateLiteral": {
+          "level": "error",
+          "fix": "safe"
+        },
+        "useBlockStatements": "off",
+        "useSelfClosingElements": {
+          "level": "error",
+          "fix": "safe"
+        },
+        "noUselessElse": {
+          "level": "error",
+          "fix": "safe"
+        }
+      },
+      "correctness": {
+        "noUnusedImports": {
+          "level": "error",
+          "fix": "safe"
+        },
+        "noSwitchDeclarations": {
+          "level": "error",
+          "fix": "safe"
+        },
+        "useExhaustiveDependencies": "off"
+      },
+      "complexity": {
+        "noUselessSwitchCase": {
+          "level": "error",
+          "fix": "safe"
+        },
+        "noImportantStyles": "off",
+        "noBannedTypes": {
+          "level": "error",
+          "fix": "safe"
+        }
+      },
+      "a11y": {
+        "useKeyWithClickEvents": {
+          "level": "off"
+        },
+        "useSemanticElements": "off"
+      },
+      "performance": {
+        "noDelete": {
+          "level": "error",
+          "fix": "safe"
+        }
+      },
+      "suspicious": {
+        "noArrayIndexKey": "off",
+        "noGlobalIsNan": {
+          "level": "error",
+          "fix": "safe"
+        }
+      }
+    }
+  },
+  "javascript": {
+    "globals": ["expect", "describe", "it", "beforeEach", "test", "beforeAll"],
+    "formatter": {
+      "jsxQuoteStyle": "single",
+      "quoteProperties": "asNeeded",
+      "trailingCommas": "none",
+      "semicolons": "always",
+      "arrowParentheses": "always",
+      "bracketSameLine": false,
+      "quoteStyle": "single",
+      "attributePosition": "auto",
+      "bracketSpacing": true
+    }
+  },
+  "html": {
+    "formatter": {
+      "selfCloseVoidElements": "always"
+    }
+  },
+  "overrides": [
+    {
+      "javascript": {
+        "globals": [
+          "onscrollend",
+          "onpointerleave",
+          "oncontextrestored",
+          "onemptied",
+          "ongamepaddisconnected",
+          "onkeypress",
+          "onloadeddata",
+          "onmouseup",
+          "onvolumechange",
+          "onpaste",
+          "onstorage",
+          "onkeyup",
+          "onabort",
+          "oncut",
+          "ontransitionrun",
+          "onafterprint",
+          "onblur",
+          "ondurationchange",
+          "ontransitionstart",
+          "oncanplaythrough",
+          "onanimationend",
+          "onmouseleave",
+          "ondragleave",
+          "onplay",
+          "onunhandledrejection",
+          "onbeforeprint",
+          "oncommand",
+          "onpointercancel",
+          "onsubmit",
+          "ondragstart",
+          "onmessage",
+          "location",
+          "onoffline",
+          "onappinstalled",
+          "onwheel",
+          "onended",
+          "onkeydown",
+          "onclick",
+          "onfocus",
+          "onscroll",
+          "ongamepadconnected",
+          "oncanplay",
+          "onpointerdown",
+          "ondeviceorientationabsolute",
+          "onauxclick",
+          "ondevicemotion",
+          "onratechange",
+          "ontransitionend",
+          "onscrollsnapchanging",
+          "onchange",
+          "onselect",
+          "onbeforeinstallprompt",
+          "onbeforetoggle",
+          "onmouseout",
+          "ontimeupdate",
+          "ondragover",
+          "oncuechange",
+          "ontransitioncancel",
+          "onprogress",
+          "onbeforeinput",
+          "onpointerenter",
+          "onmouseenter",
+          "oninvalid",
+          "onpointerout",
+          "onpagereveal",
+          "onpause",
+          "onanimationstart",
+          "onwaiting",
+          "onscrollsnapchange",
+          "ondeviceorientation",
+          "onclose",
+          "onbeforeunload",
+          "oncancel",
+          "onseeked",
+          "onpointerover",
+          "ongotpointercapture",
+          "onloadedmetadata",
+          "onpageshow",
+          "onstalled",
+          "oncontextmenu",
+          "onreset",
+          "ondrag",
+          "onbeforematch",
+          "onload",
+          "onlostpointercapture",
+          "onsuspend",
+          "onselectionchange",
+          "onpagehide",
+          "onrejectionhandled",
+          "onunload",
+          "onanimationcancel",
+          "onmousedown",
+          "onpointerup",
+          "onmouseover",
+          "onformdata",
+          "oncontentvisibilityautostatechange",
+          "onresize",
+          "onsearch",
+          "ontoggle",
+          "onpageswap",
+          "onbeforexrselect",
+          "onlanguagechange",
+          "ondragenter",
+          "onerror",
+          "onpointermove",
+          "onmousemove",
+          "ondrop",
+          "onhashchange",
+          "onsecuritypolicyviolation",
+          "onslotchange",
+          "oncopy",
+          "onanimationiteration",
+          "ondblclick",
+          "ondragend",
+          "onpointerrawupdate",
+          "onpopstate",
+          "onplaying",
+          "oncontextlost",
+          "onloadstart",
+          "onseeking",
+          "oninput",
+          "onmessageerror",
+          "onselectstart",
+          "onmousewheel",
+          "ononline"
+        ]
+      },
+      "linter": {
+        "rules": {
+          "a11y": {
+            "useAltText": "error",
+            "useAnchorContent": "error",
+            "useAriaPropsForRole": "error",
+            "useValidAriaProps": "error",
+            "useValidAriaRole": "error"
+          },
+          "correctness": {
+            "noUnusedVariables": "warn",
+            "useExhaustiveDependencies": "warn",
+            "useHookAtTopLevel": "error"
+          },
+          "style": { "noNonNullAssertion": "warn", "useConst": "error" },
+          "suspicious": {
+            "noConsole": {
+              "level": "warn",
+              "options": {
+                "allow": ["warn", "error", "group", "groupEnd", "log"]
+              }
+            },
+            "noDebugger": "warn",
+            "noExplicitAny": "error"
+          }
+        }
+      }
+    }
+  ],
+  "css": {
+    "parser": {
+      "tailwindDirectives": true
+    }
+  },
+  "assist": {
+    "enabled": true,
+    "actions": {
+      "source": {
+        "organizeImports": "on"
+      }
+    }
+  }
+}

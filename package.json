@@ -1,0 +1,50 @@
+{
+  "name": "actavoces",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "pnpm tauri build",
+    "build:web": "tsc && vite build",
+    "preview": "vite preview",
+    "tauri": "tauri",
+    "lint": "biome check --error-on-warnings ./src ./public",
+    "lint:ts": "pnpm lint && pnpm type-check",
+    "lint:rust": "cd src-tauri && cargo fmt --check && cargo clippy --all-targets --all-features -- -Dwarnings && cargo check",
+    "lint:all": "pnpm lint:ts && pnpm lint:rust",
+    "format": "biome check --error-on-warnings --write --unsafe ./src ./public",
+    "format:all": "pnpm fix && cd src-tauri && cargo fmt --all && cargo clippy --fix --allow-dirty",
+    "type-check": "tsc -b",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "validate": "pnpm lint && pnpm type-check",
+    "fix": "pnpm format && pnpm type-check",
+    "ci-run": "biome ci --error-on-warnings ./src ./public",
+    "ver:patch": "pnpm version patch --no-git-tag-version",
+    "ver:minor": "pnpm version minor --no-git-tag-version",
+    "ver:major": "pnpm version major --no-git-tag-version"
+  },
+  "dependencies": {
+    "@base-ui/react": "^1.5.0",
+    "@preact/signals": "^2.9.1",
+    "@tailwindcss/vite": "^4.3.0",
+    "@tauri-apps/api": "^2",
+    "@tauri-apps/plugin-opener": "^2",
+    "clsx": "^2.1.1",
+    "preact": "^10.25.1",
+    "react": "npm:@preact/compat",
+    "tailwindcss": "^4.3.0",
+    "wouter-preact": "^3.10.0"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "^2.4.16",
+    "@preact/preset-vite": "^2.9.3",
+    "@tauri-apps/cli": "^2",
+    "@testing-library/preact": "^3.2.4",
+    "jsdom": "^29.1.1",
+    "typescript": "~5.6.2",
+    "vite": "^6.0.3",
+    "vitest": "^4.1.8"
+  }
+}
