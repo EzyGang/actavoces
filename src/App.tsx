@@ -1,51 +1,6 @@
-import { invoke } from '@tauri-apps/api/core';
-import { useState } from 'preact/hooks';
-import preactLogo from './assets/preact.svg';
 import './App.css';
+import { AppContainer } from './components/app/containers/App.container';
 
-function App() {
-  const [greetMsg, setGreetMsg] = useState('');
-  const [name, setName] = useState('');
-
-  async function greet() {
-    // Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
-    setGreetMsg(await invoke('greet', { name }));
-  }
-
-  return (
-    <main class='container'>
-      <h1>Welcome to Tauri + Preact</h1>
-
-      <div class='row'>
-        <a href='https://vite.dev' target='_blank' rel='noopener'>
-          <img src='/vite.svg' class='logo vite' alt='Vite logo' />
-        </a>
-        <a href='https://tauri.app' target='_blank' rel='noopener'>
-          <img src='/tauri.svg' class='logo tauri' alt='Tauri logo' />
-        </a>
-        <a href='https://preactjs.com' target='_blank' rel='noopener'>
-          <img src={preactLogo} class='logo preact' alt='Preact logo' />
-        </a>
-      </div>
-      <p>Click on the Tauri, Vite, and Preact logos to learn more.</p>
-
-      <form
-        class='row'
-        onSubmit={(e) => {
-          e.preventDefault();
-          greet();
-        }}
-      >
-        <input
-          id='greet-input'
-          onInput={(e) => setName(e.currentTarget.value)}
-          placeholder='Enter a name...'
-        />
-        <button type='submit'>Greet</button>
-      </form>
-      <p>{greetMsg}</p>
-    </main>
-  );
-}
+const App = () => <AppContainer />;
 
 export default App;

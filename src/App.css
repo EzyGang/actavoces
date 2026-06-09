@@ -1,3 +1,5 @@
+@import "tailwindcss";
+
 @theme {
   /* Font families */
   --font-sans: "Inter", system-ui, -apple-system, sans-serif;
@@ -171,7 +173,6 @@ html[data-theme="light"] {
   --shadow-modal: 0 4px 6px -1px oklch(0% 0 0 / 0.08);
 }
 
-
 /* ============================================
    GLOBAL RESET
    ============================================ */
@@ -195,7 +196,7 @@ html[data-theme="light"] {
     position: relative;
   }
 
-  #app {
+  #root {
     width: 100%;
     min-height: 100vh;
     margin: 0;
