@@ -1,9 +1,26 @@
 {
   "name": "actavoces",
-  "private": true,
-  "version": "0.1.0",
+  "version": "0.1.1",
+  "description": "Local-first meeting recorder and transcript workspace.",
   "license": "AGPL-3.0-or-later",
+  "author": "galtozzy <galtozzy+git@gmail.com>",
   "type": "module",
+  "homepage": "https://github.com/Galtozzy/actavoces",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/EzyGang/actavoces.git"
+  },
+  "bugs": {
+    "url": "https://github.com/EzyGang/actavoces/issues"
+  },
+  "keywords": [
+    "meetings",
+    "recording",
+    "transcription",
+    "tauri",
+    "local-first"
+  ],
+  "packageManager": "pnpm@10.30.1",
   "scripts": {
     "dev": "vite",
     "build": "pnpm tauri build",
@@ -42,7 +59,7 @@
     "@tauri-apps/plugin-dialog": "^2.7.1",
     "@tauri-apps/plugin-opener": "^2",
     "@tauri-apps/plugin-process": "^2.3.1",
-    "@tauri-apps/plugin-updater": "^2.10.1",
+    "@tauri-apps/plugin-updater": "~2",
     "clsx": "^2.1.1",
     "preact": "^10.25.1",
     "react": "npm:@preact/compat",

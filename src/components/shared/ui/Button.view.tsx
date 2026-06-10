@@ -27,7 +27,7 @@ export const Button = ({
 }: ButtonProps): JSX.Element => (
   <button
     class={clsx(
-      'inline-flex h-11 items-center justify-center gap-2 px-4 font-semibold text-xs uppercase tracking-[0.05em] transition duration-fast disabled:cursor-not-allowed disabled:opacity-40',
+      'inline-flex h-11 items-center justify-center gap-2 px-4 font-semibold text-xs uppercase tracking-wider transition duration-fast disabled:cursor-not-allowed disabled:opacity-40',
       VARIANT_CLASS[variant],
       classProp
     )}

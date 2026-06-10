@@ -40,7 +40,7 @@ jobs:
       - name: Setup pnpm
         uses: pnpm/action-setup@v6
         with:
-          version: 9
+          version: 10.30.1
 
       - name: Setup Node
         uses: actions/setup-node@v6
@@ -50,6 +50,13 @@ jobs:
 
       - name: Setup uv
         uses: astral-sh/setup-uv@v8.2.0
+        with:
+          enable-cache: true
+
+      - name: Cache Rust dependencies
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri -> target
 
       - name: Install frontend dependencies
         run: pnpm install --frozen-lockfile
@@ -57,5 +64,8 @@ jobs:
       - name: Install worker dependencies
         run: pnpm sync:py
 
-      - name: Run full test suite
-        run: pnpm run ci
+      - name: Lint and type-check
+        run: pnpm lint:all
+
+      - name: Run tests
+        run: pnpm test:all

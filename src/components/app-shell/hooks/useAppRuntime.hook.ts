@@ -1,0 +1,247 @@
+import { type Signal, useComputed, useSignal } from '@preact/signals';
+import { listen } from '@tauri-apps/api/event';
+import { useEffect } from 'preact/hooks';
+import {
+  bootstrapWorkerRuntime,
+  getAppSnapshot,
+  setupDiarizationRuntime,
+  skipDiarizationSetup,
+  writeDiagnosticLog
+} from '../../../services/desktop/app.service';
+import { appSnapshotSignal } from '../../../stores/app.store';
+import type { AppSettingsUpdate, AppSnapshot, WorkerSetupProgress } from '../../../types/desktop';
+import {
+  diagnosticsMessage,
+  errorMessage,
+  initialSetupProgress,
+  isTauriRuntime
+} from './appRuntime.helpers';
+
+interface UseAppRuntimeInput {
+  loading: Signal<boolean>;
+  settingsDraft: Signal<AppSettingsUpdate>;
+  setError: (message: string | null) => void;
+  setSnapshot: (snapshot: AppSnapshot) => void;
+}
+
+export const useAppRuntime = ({
+  loading,
+  settingsDraft,
+  setError,
+  setSnapshot
+}: UseAppRuntimeInput) => {
+  const setupProgress = useSignal<WorkerSetupProgress>(initialSetupProgress);
+  const setupRunning = useSignal(false);
+  const bootstrapRequested = useSignal(false);
+  const workerSetupReady = useComputed(
+    () => appSnapshotSignal.value.desktop.workerSetupStatus === 'ready'
+  );
+  const needsDiarizationSetup = useComputed(
+    () =>
+      workerSetupReady.value &&
+      appSnapshotSignal.value.settings.diarizationBackend === 'pyannote' &&
+      !appSnapshotSignal.value.settings.diarizationRuntimeReady &&
+      !appSnapshotSignal.value.settings.diarizationSetupSkipped
+  );
+  const setupReady = useComputed(() => workerSetupReady.value && !needsDiarizationSetup.value);
+
+  const loadSnapshot = async () => {
+    loading.value = true;
+    setError(null);
+
+    try {
+      setSnapshot(await getAppSnapshot());
+    } catch (error) {
+      setError(errorMessage(error, 'Desktop backend unavailable'));
+    } finally {
+      loading.value = false;
+    }
+  };
+
+  const runBootstrap = async () => {
+    setupRunning.value = true;
+    setError(null);
+    setupProgress.value = {
+      ...setupProgress.value,
+      status: 'installing',
+      step: 'Preparing local worker runtime',
+      error: null
+    };
+
+    try {
+      setSnapshot(await bootstrapWorkerRuntime());
+      setupProgress.value = {
+        status: 'ready',
+        step: 'Worker runtime ready',
+        error: null
+      };
+    } catch (error) {
+      const message = errorMessage(error, 'Unable to prepare worker runtime');
+
+      setError(message);
+      setupProgress.value = {
+        status: 'failed',
+        step: 'Worker setup failed',
+        error: message
+      };
+    } finally {
+      setupRunning.value = false;
+    }
+  };
+
+  const setupDiarization = async () => {
+    setupRunning.value = true;
+    setError(null);
+    setupProgress.value = {
+      status: 'installing',
+      step: 'Preparing speaker diarization',
+      error: null
+    };
+
+    try {
+      setSnapshot(await setupDiarizationRuntime(settingsDraft.value.huggingFaceToken));
+      setupProgress.value = {
+        status: 'ready',
+        step: 'Speaker diarization runtime ready',
+        error: null
+      };
+    } catch (error) {
+      const message = errorMessage(error, 'Unable to prepare speaker diarization');
+
+      setError(message);
+      setupProgress.value = {
+        status: 'failed',
+        step: 'Speaker diarization setup failed',
+        error: message
+      };
+    } finally {
+      setupRunning.value = false;
+    }
+  };
+
+  const skipDiarization = async () => {
+    setupRunning.value = true;
+    setError(null);
+
+    try {
+      setSnapshot(await skipDiarizationSetup());
+    } catch (error) {
+      setError(errorMessage(error, 'Unable to skip speaker diarization setup'));
+    } finally {
+      setupRunning.value = false;
+    }
+  };
+
+  useRuntimeEffects({
+    bootstrapRequested,
+    loading,
+    setupProgress,
+    setError,
+    setSnapshot,
+    loadSnapshot,
+    runBootstrap
+  });
+
+  return {
+    setupProgress,
+    setupRunning,
+    setupReady,
+    needsDiarizationSetup,
+    actions: {
+      retrySetup: runBootstrap,
+      setupDiarization,
+      skipDiarizationSetup: skipDiarization
+    }
+  };
+};
+
+const useRuntimeEffects = ({
+  bootstrapRequested,
+  loading,
+  setupProgress,
+  setError,
+  setSnapshot,
+  loadSnapshot,
+  runBootstrap
+}: {
+  bootstrapRequested: Signal<boolean>;
+  loading: Signal<boolean>;
+  setupProgress: Signal<WorkerSetupProgress>;
+  setError: (message: string | null) => void;
+  setSnapshot: (snapshot: AppSnapshot) => void;
+  loadSnapshot: () => Promise<void>;
+  runBootstrap: () => Promise<void>;
+}) => {
+  useEffect(() => {
+    if (!isTauriRuntime()) {
+      return;
+    }
+
+    const snapshotListener = listen<AppSnapshot>('app-snapshot-updated', (event) => {
+      setSnapshot(event.payload);
+      loading.value = false;
+    });
+    const errorListener = listen<string>('app-error', (event) => {
+      setError(event.payload);
+    });
+    const setupListener = listen<WorkerSetupProgress>('worker-setup-progress', (event) => {
+      setupProgress.value = event.payload;
+    });
+
+    return () => {
+      void snapshotListener.then((unlisten) => unlisten());
+      void errorListener.then((unlisten) => unlisten());
+      void setupListener.then((unlisten) => unlisten());
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!isTauriRuntime()) {
+      return;
+    }
+
+    const handleWindowError = (event: ErrorEvent) => {
+      void writeDiagnosticLog({
+        event: 'frontend.error',
+        message: diagnosticsMessage(event.error ?? event.message)
+      });
+    };
+    const handleUnhandledRejection = (event: PromiseRejectionEvent) => {
+      void writeDiagnosticLog({
+        event: 'frontend.unhandledRejection',
+        message: diagnosticsMessage(event.reason)
+      });
+    };
+
+    window.addEventListener('error', handleWindowError);
+    window.addEventListener('unhandledrejection', handleUnhandledRejection);
+
+    return () => {
+      window.removeEventListener('error', handleWindowError);
+      window.removeEventListener('unhandledrejection', handleUnhandledRejection);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!isTauriRuntime()) {
+      void loadSnapshot();
+
+      return;
+    }
+
+    loading.value = true;
+  }, []);
+
+  useEffect(() => {
+    if (
+      !isTauriRuntime() ||
+      bootstrapRequested.value ||
+      appSnapshotSignal.value.settings.databasePath.trim().length === 0
+    ) {
+      return;
+    }
+
+    bootstrapRequested.value = true;
+    void runBootstrap();
+  }, [appSnapshotSignal.value.settings.databasePath]);
+};

@@ -163,6 +163,11 @@ export interface WorkerStatus {
   mode: 'cliJsonl';
 }
 
+export interface DiagnosticLogInput {
+  event: string;
+  message: string;
+}
+
 export interface AppSnapshot {
   activeRecording: Recording | null;
   recordings: Recording[];

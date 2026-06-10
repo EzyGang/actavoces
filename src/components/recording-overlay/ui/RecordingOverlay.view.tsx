@@ -15,7 +15,7 @@ export const RecordingOverlayView = ({ overlay }: RecordingOverlayViewProps): JS
           label={overlay.status.stopping.value ? 'Stopping' : 'Recording'}
           status={overlay.status.stopping.value ? 'pending' : 'recording'}
         />
-        <span class='truncate font-mono text-text-muted text-[11px] uppercase tracking-[0.05em]'>
+        <span class='truncate font-mono text-text-muted text-[11px] uppercase tracking-wider'>
           ActaVoces
         </span>
       </div>

@@ -1,7 +1,7 @@
 import { open } from '@tauri-apps/plugin-dialog';
 import { act, renderHook, waitFor } from '@testing-library/preact';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { useApp } from '../components/app/hooks/useApp.hook';
+import { useApp } from '../components/app-shell/hooks/useApp.hook';
 import {
   getAppSnapshot,
   openLocalPath,
@@ -47,7 +47,8 @@ vi.mock('../services/desktop/app.service', () => ({
   startRecording: vi.fn(),
   stopRecording: vi.fn(),
   toggleRecordingFromShortcut: vi.fn(),
-  updateAppSettings: vi.fn()
+  updateAppSettings: vi.fn(),
+  writeDiagnosticLog: vi.fn()
 }));
 
 const baseSettings: AppSettings = {
@@ -536,7 +537,6 @@ describe('useApp hook', () => {
   });
 
   it('renames speakers from recording rows', async () => {
-    const prompt = vi.spyOn(window, 'prompt').mockReturnValue('Alice');
     const recording = {
       ...makeRecording('recording-1'),
       speakerLabels: [{ name: 'Speaker 1' }]
@@ -562,12 +562,18 @@ describe('useApp hook', () => {
       );
     });
     await act(async () => {
-      result.current.data.recordingRows.value[0].onRenameSpeaker('Speaker 1');
+      const speaker = result.current.data.recordingRows.value[0].speakerRows[0];
+
+      speaker.onStartRename();
+      speaker.onRenameInput({
+        currentTarget: { value: 'Alice' }
+      } as Parameters<typeof speaker.onRenameInput>[0]);
+      speaker.onRenameSubmit({
+        preventDefault: vi.fn()
+      } as unknown as Parameters<typeof speaker.onRenameSubmit>[0]);
     });
 
     expect(renameSpeakerLabel).toHaveBeenCalledWith('recording-1', 'Speaker 1', 'Alice');
     expect(result.current.data.snapshot.value.recordings[0].speakerLabels[0].name).toBe('Alice');
-
-    prompt.mockRestore();
   });
 });

@@ -1,8 +1,12 @@
 [project]
 name = "actavoces-worker"
 version = "0.1.0"
+description = "Local processing worker for ActaVoces transcription, diarization, and summaries."
 requires-python = ">=3.14"
 license = "AGPL-3.0-or-later"
+authors = [
+  { name = "galtozzy", email = "galtozzy+git@gmail.com" },
+]
 dependencies = [
   "orjson>=3.11.9",
   "pydantic>=2.10",

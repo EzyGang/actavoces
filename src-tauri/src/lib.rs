@@ -1,6 +1,7 @@
 mod app;
 mod artifacts;
 mod capture;
+mod diagnostics;
 mod domain;
 mod settings;
 mod storage;
@@ -42,6 +43,12 @@ pub fn run() {
         .plugin(tauri_plugin_process::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .setup(|app| {
+            if let Ok(app_data_directory) = app.path().app_data_dir() {
+                let log_directory = app_data_directory.join("logs");
+                let _ = diagnostics::initialize(&log_directory);
+                diagnostics::info("app.start", env!("CARGO_PKG_VERSION"));
+            }
+
             create_recording_overlay(app)?;
             let handle = app.handle().clone();
 
@@ -49,6 +56,7 @@ pub fn run() {
                 match initialize_app_state(handle.clone()).await {
                     Ok(()) => {}
                     Err(error) => {
+                        diagnostics::error("app.initialize.error", &error);
                         let _ = handle.emit("app-error", error);
                     }
                 }
@@ -57,27 +65,28 @@ pub fn run() {
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
-            app::commands::get_app_snapshot,
-            app::commands::update_app_settings,
-            app::commands::clear_summary_provider_api_key,
-            app::commands::clear_hugging_face_token,
-            app::commands::setup_diarization_runtime,
-            app::commands::skip_diarization_setup,
-            app::commands::start_recording,
-            app::commands::stop_recording,
-            app::commands::delete_recording,
-            app::commands::open_local_path,
-            app::commands::retry_recording_jobs,
-            app::commands::rename_speaker_label,
-            app::commands::toggle_recording_from_shortcut,
-            app::commands::resume_pending_jobs,
-            app::commands::bootstrap_worker_runtime,
-            app::commands::get_worker_status,
-            app::commands::start_worker,
-            app::commands::stop_worker,
-            app::commands::check_worker_health,
-            app::commands::refresh_model_inventory,
-            app::commands::install_transcription_model
+            app::commands::snapshot::get_app_snapshot,
+            app::commands::settings::update_app_settings,
+            app::commands::settings::clear_summary_provider_api_key,
+            app::commands::settings::clear_hugging_face_token,
+            app::commands::settings::setup_diarization_runtime,
+            app::commands::settings::skip_diarization_setup,
+            app::commands::recordings::start_recording,
+            app::commands::recordings::stop_recording,
+            app::commands::recordings::delete_recording,
+            app::commands::recordings::open_local_path,
+            app::commands::recordings::retry_recording_jobs,
+            app::commands::recordings::rename_speaker_label,
+            app::commands::recordings::toggle_recording_from_shortcut,
+            app::commands::pipeline::resume_pending_jobs,
+            app::commands::worker::bootstrap_worker_runtime,
+            app::commands::worker::get_worker_status,
+            app::commands::worker::start_worker,
+            app::commands::worker::stop_worker,
+            app::commands::worker::check_worker_health,
+            app::commands::models::refresh_model_inventory,
+            app::commands::models::install_transcription_model,
+            app::commands::snapshot::write_diagnostic_log
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
@@ -121,6 +130,7 @@ async fn initialize_app_state(handle: tauri::AppHandle) -> Result<(), String> {
     )?;
     emit_snapshot_update(&handle, &snapshot);
     spawn_pipeline_processing(handle);
+    diagnostics::info("app.initialize.ready", "Application state initialized");
 
     Ok(())
 }

@@ -1,7 +1,7 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "actavoces",
-  "version": "0.1.0",
+  "productName": "ActaVoces",
+  "version": "../package.json",
   "identifier": "com.ezygang.actavoces",
   "build": {
     "beforeDevCommand": "pnpm dev",
@@ -12,7 +12,7 @@
   "app": {
     "windows": [
       {
-        "title": "actavoces",
+        "title": "ActaVoces",
         "width": 1200,
         "height": 780,
         "minWidth": 960,
@@ -20,11 +20,12 @@
       }
     ],
     "security": {
-      "csp": null
+      "csp": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' asset: http://asset.localhost data: blob:; font-src 'self' data:; connect-src 'self' ipc: http://ipc.localhost https:; media-src 'self' asset: http://asset.localhost blob:; worker-src 'self' blob:; object-src 'none'; base-uri 'self'; frame-ancestors 'none'"
     }
   },
   "bundle": {
     "active": true,
+    "createUpdaterArtifacts": true,
     "targets": "all",
     "resources": {
       "../worker/app": "worker/app",
@@ -40,5 +41,13 @@
       "icons/icon.icns",
       "icons/icon.ico"
     ]
+  },
+  "plugins": {
+    "updater": {
+      "pubkey": "ACTAVOCES_UPDATER_PUBLIC_KEY_IS_SET_BY_RELEASE_WORKFLOW",
+      "endpoints": [
+        "https://github.com/EzyGang/actavoces/releases/latest/download/latest.json"
+      ]
+    }
   }
 }

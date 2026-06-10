@@ -1,5 +1,10 @@
 import { invoke } from '@tauri-apps/api/core';
-import type { AppSettingsUpdate, AppSnapshot, WorkerStatus } from '../../types/desktop';
+import type {
+  AppSettingsUpdate,
+  AppSnapshot,
+  DiagnosticLogInput,
+  WorkerStatus
+} from '../../types/desktop';
 
 export const getAppSnapshot = () => invoke<AppSnapshot>('get_app_snapshot');
 
@@ -61,3 +66,6 @@ export const startWorker = () => invoke<WorkerStatus>('start_worker');
 export const stopWorker = () => invoke<WorkerStatus>('stop_worker');
 
 export const checkWorkerHealth = () => invoke<WorkerStatus>('check_worker_health');
+
+export const writeDiagnosticLog = (input: DiagnosticLogInput) =>
+  invoke<void>('write_diagnostic_log', { input });

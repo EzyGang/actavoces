@@ -90,6 +90,13 @@ pub struct WorkerEvent {
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+pub struct DiagnosticLogInput {
+    pub(crate) event: String,
+    pub(crate) message: String,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct ModelInventoryItem {
     pub(crate) name: String,
     pub(crate) installed: bool,

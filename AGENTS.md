@@ -47,25 +47,36 @@ Project-wide reference guide. Ingest once and treat as implicit context for futu
 ### Frontend / Desktop
 
 ```bash
-pnpm dev              # Dev server (Tauri: port 1420)
+pnpm dev              # Vite dev server
+pnpm tauri dev        # Tauri dev app (uses port 1420)
 pnpm build            # Production Tauri build
 pnpm build:web        # Vite-only production build -> dist/
 pnpm preview          # Preview production build
 
 pnpm validate         # Lint + type-check
-pnpm fix              # Format + type-check
+pnpm fix              # Format all + lint all
 pnpm lint             # Biome check
 pnpm lint:ts          # Biome check + type-check
 pnpm lint:rust        # Cargo fmt check + clippy + cargo check
-pnpm lint:all         # TypeScript and Rust lint
+pnpm lint:all         # TypeScript, Rust, and Python lint
+pnpm sync:py          # Sync locked Python worker dependencies
 pnpm format           # Biome check --write --unsafe
-pnpm format:all       # Format TypeScript and Rust
+pnpm format:rust      # Format and fix Rust where possible
+pnpm format:py        # Format Python worker
+pnpm format:all       # Format TypeScript, Rust, and Python
 pnpm type-check       # tsc -b
 
 pnpm test             # Vitest run
+pnpm test:rust        # Rust tests
+pnpm test:py          # Python worker tests
+pnpm test:all         # Frontend, Rust, and Python tests
 pnpm test:watch       # Vitest watch mode
 
+pnpm ci               # Sync Python deps, lint all, test all
 pnpm ci-run           # Biome CI check
+pnpm ver:patch        # Bump root package.json patch version without tag
+pnpm ver:minor        # Bump root package.json minor version without tag
+pnpm ver:major        # Bump root package.json major version without tag
 ```
 
 ### Python Worker
@@ -98,7 +109,7 @@ public/              Static frontend assets
 
 ```text
 src/
-  components/      feature-oriented UI
+  components/      feature-oriented UI and shared UI primitives
   pages/           thin route wrappers
   hooks/           shared generic hooks
   stores/          global signal stores
@@ -107,6 +118,72 @@ src/
   routes/          route definitions
   types/           TypeScript type definitions
 ```
+
+Current feature layout:
+
+```text
+src/components/app-shell/
+  containers/
+    App.container.tsx
+  hooks/
+    useApp.hook.ts
+    useAppNavigation.hook.ts
+    useAppRuntime.hook.ts
+    appRuntime.helpers.ts
+  ui/
+    App.view.tsx                              app shell and route selection
+    AppSidebar.view.tsx                       desktop sidebar
+
+src/components/dashboard/
+  ui/
+    DashboardRoute.view.tsx                   dashboard route
+
+src/components/jobs/
+  ui/
+    JobsRoute.view.tsx                        job monitor route
+
+src/components/recordings/
+  hooks/
+    useRecordings.hook.ts
+    recording.helpers.ts
+  ui/
+    RecordingsSection.view.tsx                recordings route
+
+src/components/settings/
+  hooks/
+    useSettings.hook.ts
+    settings.helpers.ts
+    settingsFields.ts
+    settingsSelectFields.ts
+  ui/
+    SettingsRoute.view.tsx                    settings route shell
+    SettingsGeneralCapturePanel.view.tsx      settings panel
+    SettingsTranscriptionSpeakersPanel.view.tsx
+    SettingsSummaryProviderPanel.view.tsx
+    SettingsPromptsPanel.view.tsx
+
+src/components/setup/
+  ui/
+    SetupRoute.view.tsx                       first-run/setup route
+
+src/components/recording-overlay/
+  containers/
+    RecordingOverlay.container.tsx
+  hooks/
+    useRecordingOverlay.hook.ts
+  ui/
+    RecordingOverlay.view.tsx                 floating capture overlay
+
+src/components/updates/
+  hooks/
+    useUpdates.hook.ts
+
+src/components/worker-runtime/
+  hooks/
+    useWorkerRuntime.hook.ts
+```
+
+Shared UI primitives live in `src/components/shared/ui/`.
 
 As features grow, group related files into semantic subfolders:
 
@@ -143,6 +220,7 @@ Rules:
 - Containers only pass hook output into views.
 - Group container-to-view props into `{ data, status, actions }`.
 - Keep page components in `src/pages` thin: route handling plus one container.
+- Keep `app-shell` composition-focused. Put route-specific state, field builders, row builders, and actions in the owning feature folder.
 - If a container would pass more than 6-8 props, introduce context.
 - Views consuming context should receive zero props.
 
@@ -298,21 +376,42 @@ Parent containers control spacing.
 src-tauri/src/
   lib.rs              Tauri builder, plugin setup, command registration
   main.rs             binary entrypoint
-  app/                Tauri commands and app orchestration
+  app/                Tauri command registration and app orchestration
   domain/             shared DTOs and state types
   storage/            SQLite repository and persistence
   worker/             worker bootstrap/runtime command execution
   capture/            native audio capture and mixing
   settings/           settings defaults, validation, keyring secrets
   artifacts/          artifact/stage/path helpers
+  diagnostics.rs      local diagnostic log writer
   utils/              shared conversion and filesystem helpers
   tests.rs            Rust unit tests
+```
+
+Current app command layout:
+
+```text
+src-tauri/src/app/
+  mod.rs
+  commands.rs             command module hub and init-facing re-exports
+  commands/
+    models.rs             model inventory and install commands
+    overlay.rs            recording overlay window positioning
+    pipeline.rs           pipeline resume and stage processing
+    recordings.rs         recording lifecycle and recording commands
+    settings.rs           settings, autostart, hotkey, diarization setup
+    snapshot.rs           snapshot and diagnostics commands
+    speaker_labels.rs     speaker label artifact rewriting
+    worker.rs             worker bootstrap, health, and status commands
 ```
 
 ### Rust Rules
 
 - Keep `lib.rs` focused on initialization, plugins, managed state, and command registration.
-- Put domain logic in modules under `src-tauri/src/<domain>/`.
+- Keep `src-tauri/tauri.conf.json` `version` pointed at `../package.json`; the root package version is the release source of truth.
+- Keep `src-tauri/src/app/commands.rs` as a small hub. Put command handlers in focused modules under `src-tauri/src/app/commands/`.
+- Put non-command domain logic in modules under `src-tauri/src/<domain>/`.
+- Keep `tauri::generate_handler!` pointed at the module that defines each `#[tauri::command]`; Tauri command macro helpers are not available through re-exports.
 - Tauri command handlers marked with `#[tauri::command]` should be `pub`.
 - Internal cross-module helpers should be `pub(crate)`.
 - Prefer async setup for expensive startup work. Manage state immediately, spawn initialization, then emit readiness/snapshot events.
@@ -373,4 +472,3 @@ Before Python implementation, inspect the worker folder structure. The worker fo
 - Tests should live under the worker test structure.
 - Run `uv run task tests` after worker changes.
 - Run `uv run task ruff-lint` and `uv run task pyright-lint` after typed Python changes.
-

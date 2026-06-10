@@ -1,0 +1,28 @@
+version: 2
+updates:
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      frontend:
+        patterns:
+          - "*"
+
+  - package-ecosystem: cargo
+    directory: /src-tauri
+    schedule:
+      interval: weekly
+    groups:
+      rust:
+        patterns:
+          - "*"
+
+  - package-ecosystem: pip
+    directory: /worker
+    schedule:
+      interval: weekly
+    groups:
+      worker:
+        patterns:
+          - "*"

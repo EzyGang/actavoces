@@ -1,0 +1,75 @@
+use tauri::{Manager, PhysicalPosition, WebviewUrl};
+
+use crate::domain::types::OverlayPosition;
+
+pub fn create_recording_overlay(app: &tauri::App) -> tauri::Result<()> {
+    tauri::WebviewWindowBuilder::new(
+        app,
+        "recording-overlay",
+        WebviewUrl::App("index.html".into()),
+    )
+    .title("ActaVoces recording")
+    .inner_size(260.0, 84.0)
+    .position(24.0, 24.0)
+    .decorations(false)
+    .resizable(false)
+    .always_on_top(true)
+    .skip_taskbar(true)
+    .visible(false)
+    .build()?;
+
+    Ok(())
+}
+
+pub fn sync_recording_overlay(
+    app: &tauri::AppHandle,
+    visible: bool,
+    position: OverlayPosition,
+) -> Result<(), String> {
+    let Some(overlay) = app.get_webview_window("recording-overlay") else {
+        return Ok(());
+    };
+
+    if visible {
+        position_recording_overlay(&overlay, position)?;
+        overlay.show().map_err(|error| error.to_string())?;
+        return Ok(());
+    }
+
+    overlay.hide().map_err(|error| error.to_string())
+}
+
+fn position_recording_overlay(
+    overlay: &tauri::WebviewWindow,
+    position: OverlayPosition,
+) -> Result<(), String> {
+    let margin = 24;
+    let size = overlay.outer_size().map_err(|error| error.to_string())?;
+    let monitor = overlay
+        .current_monitor()
+        .map_err(|error| error.to_string())?
+        .or_else(|| overlay.primary_monitor().ok().flatten());
+    let Some(monitor) = monitor else {
+        overlay
+            .set_position(PhysicalPosition::new(margin, margin))
+            .map_err(|error| error.to_string())?;
+
+        return Ok(());
+    };
+    let monitor_origin = monitor.position();
+    let monitor_size = monitor.size();
+    let left = monitor_origin.x + margin;
+    let right = monitor_origin.x + monitor_size.width as i32 - size.width as i32 - margin;
+    let top = monitor_origin.y + margin;
+    let bottom = monitor_origin.y + monitor_size.height as i32 - size.height as i32 - margin;
+    let next_position = match position {
+        OverlayPosition::TopLeft => PhysicalPosition::new(left, top),
+        OverlayPosition::TopRight => PhysicalPosition::new(right, top),
+        OverlayPosition::BottomLeft => PhysicalPosition::new(left, bottom),
+        OverlayPosition::BottomRight => PhysicalPosition::new(right, bottom),
+    };
+
+    overlay
+        .set_position(next_position)
+        .map_err(|error| error.to_string())
+}

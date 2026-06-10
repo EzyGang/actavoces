@@ -28,7 +28,7 @@ const STATUS_LABEL: Partial<Record<BadgeStatus, string>> = {
 export const StatusBadge = ({ label, status }: StatusBadgeProps): JSX.Element => (
   <span
     class={clsx(
-      'inline-flex h-7 items-center border px-2.5 font-mono text-[11px] uppercase tracking-[0.05em]',
+      'inline-flex h-7 items-center border px-2.5 font-mono text-[11px] uppercase tracking-wider',
       STATUS_CLASS[status]
     )}
   >
