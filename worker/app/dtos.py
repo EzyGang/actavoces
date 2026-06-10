@@ -25,7 +25,21 @@ class FasterWhisperModel(Protocol):
 
 
 class FasterWhisperModelFactory(Protocol):
-    def __call__(self, model_name: str, **kwargs: Any) -> FasterWhisperModel: ...
+    def __call__(
+        self,
+        model_size_or_path: str,
+        device: str = 'auto',
+        device_index: int | list[int] = 0,
+        compute_type: str = 'default',
+        cpu_threads: int = 0,
+        num_workers: int = 1,
+        download_root: str | None = None,
+        local_files_only: bool = False,
+        files: Any = None,
+        revision: str | None = None,
+        use_auth_token: str | bool | None = None,
+        **model_kwargs: Any,
+    ) -> Any: ...
 
 
 class Segment(AppBaseModel):
@@ -74,39 +88,75 @@ class SummaryCompleteResult(AppBaseModel):
 
 
 class TranscribePayload(AppBaseModel):
-    audio_path: Path = Field(alias='audioPath')
-    output_directory: Path = Field(alias='outputDirectory')
+    audio_path: Path
+    output_directory: Path
     segments: list[Segment] | None = None
     model: str = 'medium.en'
     language: str | None = None
-    compute_type: str = Field(default='auto', alias='computeType')
-    model_storage_directory: Path | None = Field(default=None, alias='modelStorageDirectory')
+    compute_type: str = 'auto'
+    model_storage_directory: Path | None = None
 
 
 class DiarizePayload(AppBaseModel):
-    output_directory: Path = Field(alias='outputDirectory')
+    output_directory: Path
     segments: list[Segment] = Field(default_factory=list)
     turns: list[SpeakerTurn] = Field(default_factory=list)
-    speaker_count_mode: str = Field(default='automatic', alias='speakerCountMode')
-    exact_speakers: Any = Field(default=None, alias='exactSpeakers')
+    speaker_count_mode: str = 'automatic'
+    exact_speakers: Any = None
     backend: str = 'nemoWhisper'
 
 
 class ModelsPayload(AppBaseModel):
     model: str = 'medium.en'
-    compute_type: str = Field(default='auto', alias='computeType')
-    model_storage_directory: Path | None = Field(default=None, alias='modelStorageDirectory')
+    compute_type: str = 'auto'
+    model_storage_directory: Path | None = None
 
 
 class SummarizePayload(AppBaseModel):
-    output_directory: Path = Field(alias='outputDirectory')
+    output_directory: Path
     summary: str | None = None
     title: str | None = None
-    provider_base_url: str = Field(default='', alias='providerBaseUrl')
-    api_key: str = Field(default='', alias='apiKey')
+    provider_base_url: str = ''
+    api_key: str = ''
     model: str = ''
     transcript: str | None = None
-    diarized_transcript_path: Path | None = Field(default=None, alias='diarizedTranscriptPath')
-    transcript_path: Path | None = Field(default=None, alias='transcriptPath')
-    summary_prompt: str = Field(default='', alias='summaryPrompt')
-    title_prompt: str = Field(default='', alias='titlePrompt')
+    diarized_transcript_path: Path | None = None
+    transcript_path: Path | None = None
+    summary_prompt: str = ''
+    title_prompt: str = ''
+
+
+class ModelStatus(AppBaseModel):
+    name: str
+    installed: bool
+    setup_required: bool
+    dependency: str
+
+
+class ModelsStatusPayload(AppBaseModel):
+    models: list[ModelStatus]
+
+
+class ModelInstallPayload(AppBaseModel):
+    model: str
+    model_storage_directory: str
+
+
+class TranscribeCompletePayload(AppBaseModel):
+    segments_path: str
+    transcript_path: str
+
+
+class DiarizeCompletePayload(AppBaseModel):
+    diarization_path: str
+    transcript_path: str
+
+
+class SummarySetupPayload(AppBaseModel):
+    missing: list[str]
+    provider: str
+
+
+class SummaryCompletePayload(AppBaseModel):
+    summary_path: str
+    title: str

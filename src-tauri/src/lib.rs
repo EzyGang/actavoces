@@ -12,6 +12,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use rusqlite::{params, Connection, OptionalExtension};
 use serde::{Deserialize, Serialize};
 use tauri::{Emitter, Manager, PhysicalPosition, WebviewUrl};
+use tauri_plugin_autostart::{MacosLauncher, ManagerExt as AutostartManagerExt};
 use tauri_plugin_global_shortcut::{GlobalShortcutExt, ShortcutState};
 
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
@@ -315,6 +316,7 @@ fn update_app_settings(
     state: tauri::State<'_, ActavocesState>,
 ) -> Result<AppSnapshot, String> {
     let provider_api_key_configured = update_summary_provider_api_key(&input)?;
+    let launch_at_login = input.launch_at_login;
 
     {
         let mut repository = state.repository.lock().map_err(lock_error)?;
@@ -325,6 +327,7 @@ fn update_app_settings(
     }
 
     refresh_global_hotkey(&app, &state)?;
+    sync_launch_at_login(&app, launch_at_login)?;
 
     let repository = state.repository.lock().map_err(lock_error)?;
     let snapshot = repository.snapshot().map_err(|error| error.to_string())?;
@@ -1242,6 +1245,27 @@ fn refresh_global_hotkey(
         .map_err(|error| error.to_string())
 }
 
+fn sync_launch_at_login(app: &tauri::AppHandle, enabled: bool) -> Result<(), String> {
+    let autostart = app.autolaunch();
+    let current = autostart
+        .is_enabled()
+        .map_err(|error| format!("Unable to read launch-at-login status: {error}"))?;
+
+    if current == enabled {
+        return Ok(());
+    }
+
+    if enabled {
+        return autostart
+            .enable()
+            .map_err(|error| format!("Unable to enable launch at login: {error}"));
+    }
+
+    autostart
+        .disable()
+        .map_err(|error| format!("Unable to disable launch at login: {error}"))
+}
+
 fn register_global_hotkey(app: &tauri::AppHandle, hotkey: &str) -> DesktopRuntimeStatus {
     let _ = app.global_shortcut().unregister_all();
 
@@ -1313,6 +1337,10 @@ fn toggle_recording_lifecycle(
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        .plugin(tauri_plugin_autostart::init(
+            MacosLauncher::LaunchAgent,
+            None,
+        ))
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
@@ -1325,13 +1353,16 @@ pub fn run() {
                 Ok(repository) => repository,
                 Err(error) => return Err(Box::new(error)),
             };
-            let hotkey = match repository.settings() {
-                Ok(settings) => settings.hotkey,
+            let settings = match repository.settings() {
+                Ok(settings) => settings,
                 Err(error) => return Err(Box::new(error)),
             };
             match repository.ensure_current_storage_directories() {
                 Ok(()) => {}
                 Err(error) => return Err(Box::new(error)),
+            }
+            if let Err(error) = sync_launch_at_login(app.handle(), settings.launch_at_login) {
+                return Err(Box::new(std::io::Error::other(error)));
             }
             create_recording_overlay(app)?;
 
@@ -1341,7 +1372,7 @@ pub fn run() {
                 worker_runtime: Mutex::new(WorkerRuntimeState::default()),
             });
             let state = app.state::<ActavocesState>();
-            let status = register_global_hotkey(app.handle(), &hotkey);
+            let status = register_global_hotkey(app.handle(), &settings.hotkey);
 
             match state.repository.lock() {
                 Ok(mut repository) => {
@@ -4010,6 +4041,7 @@ fn lock_error<T>(error: std::sync::PoisonError<T>) -> String {
 mod tests {
     use std::env;
     use std::fs;
+    use std::path::Path;
 
     use crate::{
         artifact_directory, capture_artifacts_with_readiness, default_records_root,
@@ -4029,7 +4061,7 @@ mod tests {
     fn default_records_root_uses_home_actavoces_records() {
         let root = default_records_root();
 
-        assert!(root.ends_with("actavoces/records"));
+        assert!(Path::new(&root).ends_with(Path::new("actavoces").join("records")));
     }
 
     #[test]
@@ -4037,8 +4069,11 @@ mod tests {
         let path = artifact_directory("/tmp/records", 1_717_938_012, "Untitled meeting");
 
         assert_eq!(
-            path.display().to_string(),
-            "/tmp/records/2024/06/2024-06-09-130012-untitled-meeting"
+            path,
+            Path::new("/tmp/records")
+                .join("2024")
+                .join("06")
+                .join("2024-06-09-130012-untitled-meeting")
         );
     }
 

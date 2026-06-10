@@ -1,7 +1,19 @@
 from collections.abc import Awaitable, Callable
 
 from app.diarization import diarization_dependency, single_speaker_turns
-from app.dtos import DiarizePayload, ModelsPayload, Segment, SpeakerTurn, SummarizePayload, TranscribePayload
+from app.dtos import (
+    DiarizeCompletePayload,
+    DiarizePayload,
+    ModelsPayload,
+    ModelsStatusPayload,
+    ModelStatus,
+    Segment,
+    SpeakerTurn,
+    SummarizePayload,
+    SummaryCompletePayload,
+    TranscribeCompletePayload,
+    TranscribePayload,
+)
 from app.events import command_event
 from app.formatting import render_diarized_transcript, render_raw_transcript, render_summary
 from app.json_utils import write_json, write_text
@@ -38,16 +50,16 @@ async def handle_models_status(command: WorkerCommand) -> list[WorkerEvent]:
     payload = ModelsPayload.model_validate(command.payload)
     dependency_ready = faster_whisper_available()
     models = [
-        {
-            'name': model,
-            'installed': model_installed(model_name=model, storage_path=payload.model_storage_directory),
-            'setupRequired': not dependency_ready,
-            'dependency': 'faster-whisper',
-        }
+        ModelStatus(
+            name=model,
+            installed=model_installed(model_name=model, storage_path=payload.model_storage_directory),
+            setup_required=not dependency_ready,
+            dependency='faster-whisper',
+        )
         for model in INITIAL_MODELS
     ]
 
-    return [command_event(command=command, name='models.status', payload={'models': models})]
+    return [command_event(command=command, name='models.status', payload=ModelsStatusPayload(models=models))]
 
 
 async def handle_models_install(command: WorkerCommand) -> list[WorkerEvent]:
@@ -96,10 +108,10 @@ async def handle_transcribe(command: WorkerCommand) -> list[WorkerEvent]:
         command_event(
             command=command,
             name='transcribe.complete',
-            payload={
-                'segmentsPath': str(payload.output_directory / 'raw-segments.json'),
-                'transcriptPath': str(payload.output_directory / 'raw-transcript.md'),
-            },
+            payload=TranscribeCompletePayload(
+                segments_path=str(payload.output_directory / 'raw-segments.json'),
+                transcript_path=str(payload.output_directory / 'raw-transcript.md'),
+            ),
         ),
     ]
 
@@ -134,10 +146,10 @@ async def handle_diarize(command: WorkerCommand) -> list[WorkerEvent]:
         command_event(
             command=command,
             name='diarize.complete',
-            payload={
-                'diarizationPath': str(payload.output_directory / 'diarization.json'),
-                'transcriptPath': str(payload.output_directory / 'diarized-transcript.md'),
-            },
+            payload=DiarizeCompletePayload(
+                diarization_path=str(payload.output_directory / 'diarization.json'),
+                transcript_path=str(payload.output_directory / 'diarized-transcript.md'),
+            ),
         ),
     ]
 
@@ -173,7 +185,10 @@ async def handle_summarize(command: WorkerCommand) -> list[WorkerEvent]:
         command_event(
             command=command,
             name='summarize.complete',
-            payload={'summaryPath': str(payload.output_directory / 'summary.md'), 'title': title},
+            payload=SummaryCompletePayload(
+                summary_path=str(payload.output_directory / 'summary.md'),
+                title=title,
+            ),
         )
     ]
 

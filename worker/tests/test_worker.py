@@ -6,7 +6,7 @@ from pydantic_ai import Agent
 from pydantic_ai.models.test import TestModel
 from pytest_mock import MockerFixture
 
-from app.dtos import SummaryOutput
+from app.dtos import SummarizePayload, SummaryOutput
 from app.formatting import render_diarized_transcript, render_raw_transcript
 from app.handlers import handle
 from app.models import install_faster_whisper_model, model_installed, run_faster_whisper
@@ -27,8 +27,8 @@ async def test_transcribe_run_writes_supplied_segments(tmp_path: Path) -> None:
         id='2',
         name='transcribe.run',
         payload={
-            'audioPath': str(audio_path),
-            'outputDirectory': str(tmp_path),
+            'audio_path': str(audio_path),
+            'output_directory': str(tmp_path),
             'segments': [{'start': 0, 'end': 3, 'text': ' Hello '}],
         },
     )
@@ -45,7 +45,7 @@ async def test_transcribe_run_reports_missing_audio() -> None:
         WorkerCommand(
             id='3',
             name='transcribe.run',
-            payload={'audioPath': '/missing.wav', 'outputDirectory': '/tmp'},
+            payload={'audio_path': '/missing.wav', 'output_directory': '/tmp'},
         )
     )
 
@@ -59,18 +59,15 @@ async def test_transcribe_run_reports_setup_when_faster_whisper_is_missing(
     audio_path = tmp_path / 'recording.wav'
     audio_path.write_bytes(b'RIFFdata')
 
-    def missing_model_class() -> Any:
-        raise ImportError
-
-    mocker.patch('app.models.load_faster_whisper_model_class', side_effect=missing_model_class)
+    mocker.patch('app.models.faster_whisper_model_factory', None)
 
     events = await handle(
         WorkerCommand(
             id='4',
             name='transcribe.run',
             payload={
-                'audioPath': str(audio_path),
-                'outputDirectory': str(tmp_path),
+                'audio_path': str(audio_path),
+                'output_directory': str(tmp_path),
             },
         )
     )
@@ -112,10 +109,7 @@ def test_model_installed_detects_expected_storage_names(tmp_path: Path) -> None:
 
 
 async def test_models_install_reports_setup_when_faster_whisper_is_missing(mocker: MockerFixture) -> None:
-    def missing_model_class() -> Any:
-        raise ImportError
-
-    mocker.patch('app.models.load_faster_whisper_model_class', side_effect=missing_model_class)
+    mocker.patch('app.models.faster_whisper_model_factory', None)
 
     events = await handle(WorkerCommand(id='5', name='models.install', payload={'model': 'small.en'}))
 
@@ -161,9 +155,9 @@ async def test_diarize_run_completes_exact_single_speaker(tmp_path: Path) -> Non
             id='single-speaker',
             name='diarize.run',
             payload={
-                'outputDirectory': str(tmp_path),
-                'speakerCountMode': 'exact',
-                'exactSpeakers': 1,
+                'output_directory': str(tmp_path),
+                'speaker_count_mode': 'exact',
+                'exact_speakers': 1,
                 'segments': [
                     {'start': 1, 'end': 3, 'text': 'Hello'},
                     {'start': 3, 'end': 8, 'text': 'there'},
@@ -183,7 +177,7 @@ async def test_diarize_run_reports_backend_specific_setup(tmp_path: Path) -> Non
             id='pyannote-setup',
             name='diarize.run',
             payload={
-                'outputDirectory': str(tmp_path),
+                'output_directory': str(tmp_path),
                 'backend': 'pyannote',
                 'segments': [{'start': 0, 'end': 2, 'text': 'Hello'}],
             },
@@ -206,14 +200,14 @@ async def test_summarize_reports_setup_when_provider_details_are_missing(tmp_pat
             id='6',
             name='summarize.run',
             payload={
-                'outputDirectory': str(tmp_path),
+                'output_directory': str(tmp_path),
                 'transcript': 'We shipped.',
             },
         )
     )
 
     assert events[0].event == 'summarize.needs_setup'
-    assert 'providerBaseUrl' in events[0].payload['missing']
+    assert SummarizePayload.model_fields['provider_base_url'].alias in events[0].payload['missing']
 
 
 async def test_openai_compatible_summary_uses_pydantic_ai_structured_output() -> None:
@@ -249,12 +243,12 @@ async def test_summarize_writes_provider_summary(mocker: MockerFixture, tmp_path
         id='7',
         name='summarize.run',
         payload={
-            'outputDirectory': str(tmp_path),
-            'providerBaseUrl': 'https://provider.test/v1',
-            'apiKey': 'secret',
+            'output_directory': str(tmp_path),
+            'provider_base_url': 'https://provider.test/v1',
+            'api_key': 'secret',
             'model': 'meeting-model',
             'transcript': 'We shipped.',
-            'summaryPrompt': 'Summarize decisions.',
+            'summary_prompt': 'Summarize decisions.',
         },
     )
 

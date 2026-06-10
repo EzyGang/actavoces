@@ -1,4 +1,3 @@
-from importlib import import_module
 from pathlib import Path
 from typing import Any
 
@@ -6,10 +5,21 @@ from app.dtos import (
     FailedResult,
     FasterWhisperModelFactory,
     ModelInstallCompleteResult,
+    ModelInstallPayload,
     NeedsSetupResult,
     Segment,
     TranscriptionCompleteResult,
 )
+
+
+try:
+    from faster_whisper import WhisperModel
+
+    faster_whisper_model_factory: FasterWhisperModelFactory | None = WhisperModel
+    is_faster_whisper_available = True
+except ImportError:
+    faster_whisper_model_factory = None
+    is_faster_whisper_available = False
 
 
 INITIAL_MODELS = ['small.en', 'medium.en', 'large-v3', 'distil-large-v3']
@@ -26,9 +36,9 @@ def run_faster_whisper(
     model_storage_directory: Path | None,
     model_factory: FasterWhisperModelFactory | None = None,
 ) -> TranscriptionResult:
-    try:
-        model_class = model_factory or load_faster_whisper_model_class()
-    except ImportError:
+    model_class = model_factory or faster_whisper_model_factory
+
+    if model_class is None:
         return NeedsSetupResult(payload={'dependency': 'faster-whisper', 'model': model_name})
 
     try:
@@ -53,9 +63,9 @@ def install_faster_whisper_model(
     model_storage_directory: Path | None,
     model_factory: FasterWhisperModelFactory | None = None,
 ) -> ModelInstallResult:
-    try:
-        model_class = model_factory or load_faster_whisper_model_class()
-    except ImportError:
+    model_class = model_factory or faster_whisper_model_factory
+
+    if model_class is None:
         return NeedsSetupResult(payload={'dependency': 'faster-whisper', 'model': model_name})
 
     try:
@@ -65,24 +75,17 @@ def install_faster_whisper_model(
         model_class(model_name, **model_kwargs(compute_type=compute_type, storage_path=model_storage_directory))
 
         return ModelInstallCompleteResult(
-            payload={'model': model_name, 'modelStorageDirectory': str(model_storage_directory or '')},
+            payload=ModelInstallPayload(
+                model=model_name,
+                model_storage_directory=str(model_storage_directory or ''),
+            ).model_dump(by_alias=True),
         )
     except Exception as error:
         return FailedResult(payload={'error': str(error), 'model': model_name})
 
 
-def load_faster_whisper_model_class() -> FasterWhisperModelFactory:
-    module: Any = import_module('faster_whisper')
-
-    return module.WhisperModel
-
-
 def faster_whisper_available() -> bool:
-    try:
-        load_faster_whisper_model_class()
-        return True
-    except ImportError:
-        return False
+    return is_faster_whisper_available
 
 
 def model_installed(model_name: str, storage_path: Path | None) -> bool:

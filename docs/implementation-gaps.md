@@ -38,11 +38,35 @@ Addressed:
   recording jobs can be retried, and pipeline stage messages are visible in the
   dashboard/jobs UI.
 
-Remaining:
+Remaining implementation work:
 
-- Some behavior is still contract-level or partially implemented, especially
-  diarization backend depth, OS-specific loopback capture, packaging, release
-  checks, and manual OS-level QA.
+- Real multi-speaker diarization backend execution is still missing. The worker
+  currently supports the `diarize.run` contract, fixture turns, and exact
+  one-speaker fallback, but not NeMo/Whisper or pyannote execution.
+- Release packaging still needs a bundled or bootstrapped worker runtime. The
+  desktop app currently launches the worker with `uv run python -m app.main`
+  from a nearby `worker` directory.
+- CI workflow automation is not present yet for the TypeScript, Rust, and
+  Python suites.
+- Future schema version upgrade tests are still needed once schema version 2+
+  exists.
+
+Remaining QA / validation work:
+
+- Manual recording QA has been reported for macOS and Windows; keep those paths
+  in release smoke tests rather than treating them as missing capture code.
+- Manual release checks are still needed for Windows, macOS, and Linux
+  packages, permissions, install/update behavior, and app startup.
+- Linux PulseAudio/PipeWire monitor-device behavior still needs OS-level
+  validation and clearer user-facing setup guidance if Linux is a release
+  target.
+- Global hotkey and always-on-top overlay behavior should be validated per OS
+  as part of release QA.
+- Real end-to-end ML validation is still needed with installed models,
+  optional acceleration, and real provider endpoints.
+
+Accepted limitation:
+
 - The worker remains a CLI JSONL runner rather than a local API server. This is
   an accepted implementation direction for now, but cancellation/shared model
   lifecycle remains weaker than an API server.
@@ -83,15 +107,15 @@ Required work status:
 - Partial: Microphone capture uses the default/configured input device.
 - Partial: System audio capture uses CPAL output-device loopback where the
   backend supports it and monitor/loopback input devices elsewhere.
-- Partial: Windows WASAPI loopback is wired through CPAL output-device capture,
-  but still needs manual Windows QA.
-- Remaining: macOS ScreenCaptureKit or documented virtual-audio setup is not
-  implemented; current macOS native behavior depends on CPAL CoreAudio loopback
-  support and OS version behavior.
-- Remaining: Linux PulseAudio/PipeWire behavior still needs manual QA and
-  clearer user-facing setup guidance beyond monitor-device discovery.
-- Remaining: Manual OS-level QA for hotkey and overlay behavior is still
-  required.
+- QA: Windows WASAPI loopback is wired through CPAL output-device capture and
+  should stay covered by release QA.
+- QA: macOS system capture currently depends on CPAL CoreAudio loopback support
+  and OS version behavior. ScreenCaptureKit or virtual-audio setup remains a
+  fallback/product decision, not a required code gap for the current CPAL path.
+- QA: Linux PulseAudio/PipeWire behavior discovers monitor devices but still
+  needs OS-level validation.
+- Implementation: Linux setup guidance may need a clearer user-facing flow if
+  Linux is a supported release target.
 
 Acceptance criteria status:
 
@@ -103,8 +127,9 @@ Acceptance criteria status:
 - Addressed: Tests cover lifecycle transitions, artifact readiness, non-empty
   test WAV output, partial source readiness, and system-source monitor/default
   name helpers.
-- Remaining: Platform-specific real-system-audio capture must be manually
-  verified and expanded per OS.
+- QA: Platform-specific real-system-audio capture should be covered in release
+  QA. Add OS-specific implementation only when that QA identifies a failing
+  supported path.
 
 ### 2. Output Directory and File Layout
 
@@ -137,7 +162,8 @@ Required work status:
 - Addressed: Microphone and system-audio source settings now use enumerated
   dropdown selectors instead of free-form text fields, while preserving saved
   values that are not currently connected.
-- Remaining: No file-picker UI exists; paths are still edited as text fields.
+- Addressed: Output and model storage paths use native folder pickers through
+  the Tauri dialog plugin.
 
 Acceptance criteria status:
 
@@ -190,7 +216,7 @@ Acceptance criteria status:
 - Addressed: Tests cover repository restore, model inventory persistence,
   deletion, retry reset behavior, migration startup behavior indirectly,
   snapshot reconstruction, and artifact path persistence.
-- Remaining: Broader migration version upgrade tests are still needed once
+- Implementation: Broader migration version upgrade tests are still needed once
   schema version 2+ exists.
 
 ### 4. Worker Design
@@ -218,10 +244,10 @@ Required work status:
   jobs.
 - Addressed: Pipeline stages are resumable and consume representative worker
   events.
-- Partial: CLI-per-command design has weaker cancellation and shared model
-  lifecycle than the API-server recommendation.
-- Remaining: No long-running worker daemon, auth token, socket binding,
-  streaming transport, or cancellation API exists.
+- Accepted limitation: CLI-per-command design has weaker cancellation and
+  shared model lifecycle than the API-server recommendation.
+- Accepted limitation: No long-running worker daemon, auth token, socket
+  binding, streaming transport, or cancellation API exists.
 
 Acceptance criteria status:
 
@@ -244,8 +270,7 @@ model setup flow.
 
 Required work status:
 
-- Addressed: Worker optional `ml` dependency group includes
-  `faster-whisper`.
+- Addressed: Worker dependencies include `faster-whisper`.
 - Addressed: `transcribe.run` is implemented.
 - Addressed: `transcribe.run` accepts fixture segments for deterministic tests.
 - Addressed: `transcribe.run` can call `faster-whisper` when installed.
@@ -259,17 +284,16 @@ Required work status:
 - Addressed: Model inventory is persisted in SQLite and shown in Settings.
 - Addressed: CPU/GPU compute type is configurable and passed to worker/model
   setup.
-- Partial: Progress reporting currently emits coarse progress, not detailed
-  per-segment transcription progress.
-- Partial: Real transcription depends on installing optional ML dependencies
-  and models; base dev/test environment uses setup-required paths and mocks.
-- Remaining: Full GPU acceleration QA is not complete.
+- Implementation: Progress reporting currently emits coarse progress, not
+  detailed per-segment transcription progress.
+- QA: Real transcription depends on installed worker dependencies and models;
+  base dev/test coverage uses setup-required paths and mocks.
+- QA: Full GPU acceleration QA is not complete.
 
 Acceptance criteria status:
 
-- Partial: A real WAV can produce transcript artifacts when `faster-whisper`
-  and the selected model are installed; this is implemented but not manually
-  verified here with a real ML install.
+- QA: A real WAV can produce transcript artifacts when `faster-whisper` and
+  the selected model are installed; this should stay covered by ML QA.
 - Addressed: Progress/setup/complete events are emitted and parsed.
 - Addressed: Model missing/setup-required states are visible in Settings and
   pipeline UI.
@@ -300,19 +324,16 @@ Required work status:
 - Addressed: Diarization backend setting exists with `nemoWhisper` and
   `pyannote` options.
 - Addressed: Speaker turns can be represented in `diarization.json`.
-- Partial: The first supported backend is represented as
+- Implementation: The first supported backend is represented as
   NeMo/Whisper-oriented setup, but actual NeMo diarization execution is not
   implemented.
-- Partial: Pyannote remains an option in settings but is not implemented as a
-  real worker backend.
-- Partial: The UI now exposes setup-blocked stage messages and retry, but this
-  does not make real diarization execution available.
-- Partial: Exact one-speaker diarization is handled without a real diarization
-  model, but multi-speaker detection still requires a backend.
-- Remaining: Real NeMo/Whisper diarization integration is still required.
-- Remaining: Real pyannote integration is still required if pyannote remains a
-  supported first-pass option.
-- Remaining: Speaker label editing/renaming is not implemented.
+- Implementation: Pyannote remains an option in settings but is not implemented
+  as a real worker backend.
+- Addressed: The UI exposes setup-blocked stage messages and retry.
+- Addressed: Exact one-speaker diarization is handled without a real
+  diarization model.
+- Implementation: Multi-speaker detection still requires a real backend.
+- Implementation: Speaker label editing/renaming is not implemented.
 
 Acceptance criteria status:
 
@@ -327,7 +348,7 @@ Acceptance criteria status:
   after configuration changes.
 - Addressed: Tests cover exact single-speaker diarization and backend-specific
   setup-required dependency reporting.
-- Remaining: Real diarization backend execution is not complete.
+- Implementation: Real diarization backend execution is not complete.
 
 ### 7. Summary, Titles, and Providers
 
@@ -354,10 +375,9 @@ Required work status:
   without blocking transcript/diarization availability.
 - Addressed: Summary failures are persisted as job failures and do not remove
   transcript artifacts.
-- Partial: Multiple providers are not implemented; the app supports one
-  OpenAI-compatible summary provider.
-- Remaining: Manual verification against real provider endpoints is still
-  needed.
+- Product decision: Multiple providers are not implemented; the app supports
+  one OpenAI-compatible summary provider.
+- QA: Manual verification against real provider endpoints is still needed.
 
 Acceptance criteria status:
 
@@ -399,7 +419,8 @@ Required settings areas status:
 - Partial: Cleanup is per-recording, not a full storage cleanup policy UI.
 - Addressed: Output and model storage paths use native folder pickers through
   the Tauri dialog plugin.
-- Partial: Launch-at-login is persisted but not wired to an OS launch agent.
+- Addressed: Launch-at-login is persisted and synchronized with the OS through
+  the Tauri autostart plugin.
 
 Acceptance criteria status:
 
@@ -413,7 +434,8 @@ Acceptance criteria status:
   value preservation.
 - Addressed: Tests cover settings validation, provider form state, and hook
   payload/error behavior.
-- Remaining: OS launch-at-login integration is not complete.
+- Addressed: OS launch-at-login integration is implemented through the Tauri
+  autostart plugin.
 
 ### 9. Navigation and App Shell
 
@@ -466,19 +488,19 @@ Required work status:
   start a second recording from stale state.
 - Addressed: Hotkey registration conflicts/errors are captured in persisted
   runtime status and surfaced in UI.
-- Partial: Manual QA is still required to prove OS-level hotkey behavior while
-  another app is focused.
-- Partial: Manual QA is still required to prove always-on-top overlay behavior
-  across macOS, Windows, and Linux.
+- QA: OS-level hotkey behavior while another app is focused should stay covered
+  by release QA.
+- QA: Always-on-top overlay behavior across macOS, Windows, and Linux should
+  stay covered by release QA.
 
 Acceptance criteria status:
 
-- Partial: Hotkey toggles recording outside focus in implementation, but
-  manual OS-level QA remains.
+- QA: Hotkey toggles recording outside focus in implementation; OS-level
+  behavior should be validated per release target.
 - Addressed: Overlay is visible while recording is active.
 - Addressed: Overlay hides when recording stops/fails through lifecycle sync.
 - Addressed: Tests cover shortcut command/lifecycle state.
-- Remaining: Manual QA must cover OS-level hotkey and overlay behavior.
+- QA: Manual release QA should cover OS-level hotkey and overlay behavior.
 
 ### 11. Test Coverage
 
@@ -497,8 +519,8 @@ Frontend tests status:
 - Addressed: Settings validation and provider form state tests exist.
 - Addressed: Formatting helper tests exist for duration and timestamp
   formatting.
-- Partial: There is not yet a full rendered UI interaction suite for every
-  settings control and recording cleanup confirmation.
+- Implementation: There is not yet a full rendered UI interaction suite for
+  every settings control and recording cleanup confirmation.
 
 Rust tests status:
 
@@ -511,8 +533,8 @@ Rust tests status:
 - Addressed: Storage directory creation and recording deletion.
 - Addressed: Recording job retry reset behavior, excluding capture-stage jobs.
 - Addressed: Capture device enumeration helper behavior.
-- Partial: Cross-platform native capture behavior is not integration-tested
-  across OSes.
+- QA: Cross-platform native capture behavior is covered by manual OS QA rather
+  than automated integration tests.
 
 Python tests status:
 
@@ -525,7 +547,8 @@ Python tests status:
   type checking passes with typed protocol payloads.
 - Addressed: Worker tests that mock behavior use `mocker: MockerFixture` rather
   than `monkeypatch`.
-- Partial: Real ML dependency integration tests are not present.
+- QA: Real ML dependency integration tests are not present; current coverage
+  uses fixtures and mocks.
 
 Acceptance criteria status:
 
@@ -534,8 +557,8 @@ Acceptance criteria status:
 - Addressed: Python worker tests run through `uv run pytest`.
 - Addressed: Worker formatting/linting and basedpyright checks run through
   `uv run task format-and-lint`.
-- Remaining: CI workflow is not present yet, so CI does not currently run the
-  TypeScript, Rust, and Python suites automatically.
+- Implementation: CI workflow is not present yet, so CI does not currently run
+  the TypeScript, Rust, and Python suites automatically.
 
 ## Implementation Plan
 
@@ -580,11 +603,13 @@ Status: partially addressed.
 - Addressed: Add global hotkey and native overlay window.
 - Addressed: Persist capture progress and failures.
 - Addressed: Add Rust lifecycle tests.
-- Partial: Windows WASAPI loopback and macOS CoreAudio loopback are wired
-  through CPAL but not manually QAed.
-- Partial: Linux PulseAudio/PipeWire behavior discovers monitor devices but
-  still needs OS-level validation and setup guidance.
-- Remaining: Manual OS QA checklist execution.
+- QA: Windows WASAPI loopback and macOS CoreAudio loopback are wired through
+  CPAL and should stay covered by release QA.
+- QA: Linux PulseAudio/PipeWire behavior discovers monitor devices but still
+  needs OS-level validation.
+- Implementation: Linux setup guidance may need a clearer user-facing flow if
+  Linux is a supported release target.
+- QA: Manual OS QA checklist execution.
 
 ### Phase 4: Worker Contract
 
@@ -601,22 +626,23 @@ Status: mostly addressed as CLI JSONL.
 - Addressed: Add stage message propagation and recording-level retry for failed
   or setup-blocked downstream jobs.
 - Addressed: Add integration-style Rust tests around mocked worker events.
-- Remaining: Cancellation and shared model lifecycle are limited by CLI design.
+- Accepted limitation: Cancellation and shared model lifecycle are limited by
+  CLI design.
 
 ### Phase 5: ML Pipeline
 
 Status: partially addressed.
 
 - Addressed: Implement `faster-whisper` transcription adapter.
-- Partial: Real diarization backend integration is not implemented.
+- Implementation: Real diarization backend integration is not implemented.
 - Addressed: Implement speaker configuration and diarization command contract.
 - Addressed: Implement exact one-speaker diarization fallback and
   backend-specific diarization setup reporting.
 - Addressed: Implement OpenAI-compatible summary/title generation.
 - Addressed: Write final Markdown artifacts from structured data/contracts.
 - Addressed: Add fixture-based Python tests.
-- Remaining: Real NeMo/Whisper or pyannote diarization execution.
-- Remaining: Real end-to-end ML QA with installed optional dependencies.
+- Implementation: Real NeMo/Whisper or pyannote diarization execution.
+- QA: Real end-to-end ML QA with installed ML dependencies and models.
 
 ### Phase 6: Packaging
 
@@ -626,31 +652,34 @@ Status: mostly remaining.
   are managed with `uv sync`/`uv.lock`.
 - Partial: Model storage and download behavior is defined at app/worker
   contract level.
-- Remaining: Bundle or bootstrap the worker runtime for release builds.
-- Remaining: Validate app permissions for mic/system audio on each OS.
-- Remaining: Add release build checks for Windows, macOS, and Linux.
-- Remaining: Add CI workflow to run TypeScript, Rust, and Python test suites.
+- Implementation: Bundle or bootstrap the worker runtime for release builds.
+- QA: Validate app permissions for mic/system audio on each OS.
+- QA: Add and run release build checks for Windows, macOS, and Linux.
+- Implementation: Add CI workflow to run TypeScript, Rust, and Python test
+  suites.
 
 ## Open Questions
 
 - First capture implementation target:
   - Current answer: implemented CPAL input capture on the current development
     path first.
-  - Remaining: Windows WASAPI loopback, macOS system capture strategy, and
-    Linux PulseAudio/PipeWire behavior still need product decisions and
-    implementation.
+  - QA: Windows WASAPI loopback and macOS system capture are implemented
+    through the current CPAL path and should stay covered by release QA.
+  - QA: Linux PulseAudio/PipeWire behavior still needs OS-level validation.
+  - Implementation: Add Linux setup guidance or platform-specific capture work
+    only if Linux QA shows the current monitor-device path is insufficient.
 - Separate `mic.wav` and `system.wav` plus mixed `recording.wav`:
   - Answered: no for the user-facing layout. The app now stores only canonical
     `recording.wav`; source readiness remains in `metadata.json`.
 - Worker API server or CLI job runner:
   - Answered for now: CLI JSONL job runner.
-  - Remaining: revisit if cancellation/shared model lifecycle becomes a hard
-    requirement.
+  - Accepted limitation: revisit only if cancellation/shared model lifecycle
+    becomes a hard requirement.
 - Pyannote in first diarization pass:
   - Current state: UI exposes `pyannote`, but first real backend execution is
     not implemented.
-  - Remaining: decide whether to keep pyannote as first-pass supported backend
-    or mark it future-only.
+  - Product decision: decide whether to keep pyannote as first-pass supported
+    backend or mark it future-only.
 - Cloud summaries in Rust or Python worker:
   - Answered: Python worker handles OpenAI-compatible summary/title generation.
 - Provider API keys in OS keychain from first settings implementation:

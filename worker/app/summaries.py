@@ -4,7 +4,14 @@ from pydantic_ai import Agent
 from pydantic_ai.models.openai import OpenAIChatModel, OpenAIModelName
 from pydantic_ai.providers.openai import OpenAIProvider
 
-from app.dtos import FailedResult, NeedsSetupResult, SummarizePayload, SummaryCompleteResult, SummaryOutput
+from app.dtos import (
+    FailedResult,
+    NeedsSetupResult,
+    SummarizePayload,
+    SummaryCompleteResult,
+    SummaryOutput,
+    SummarySetupPayload,
+)
 
 
 type SummaryResult = NeedsSetupResult | FailedResult | SummaryCompleteResult
@@ -43,7 +50,12 @@ async def run_openai_compatible_summary(
     )
 
     if missing:
-        return NeedsSetupResult(payload={'missing': missing, 'provider': provider_base_url or 'OpenAI-compatible'})
+        return NeedsSetupResult(
+            payload=SummarySetupPayload(
+                missing=missing_input_aliases(missing=missing),
+                provider=provider_base_url or 'OpenAI-compatible',
+            ).model_dump(by_alias=True),
+        )
 
     try:
         summary_agent = agent or build_summary_agent(
@@ -84,16 +96,26 @@ def missing_summary_inputs(
     missing: list[str] = []
 
     for name, value in [
-        ('providerBaseUrl', provider_base_url),
-        ('apiKey', api_key),
+        ('provider_base_url', provider_base_url),
+        ('api_key', api_key),
         ('model', model),
         ('transcript', transcript),
-        ('summaryPrompt', summary_prompt),
+        ('summary_prompt', summary_prompt),
     ]:
         if not value.strip():
             missing.append(name)
 
     return missing
+
+
+def missing_input_aliases(missing: list[str]) -> list[str]:
+    aliases: list[str] = []
+
+    for field_name in missing:
+        field = SummarizePayload.model_fields[field_name]
+        aliases.append(field.alias or field_name)
+
+    return aliases
 
 
 def summary_response_prompt(summary_prompt: str, title_prompt: str) -> str:
