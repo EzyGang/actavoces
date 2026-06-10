@@ -17,7 +17,12 @@ const STATUS_CLASS: Record<BadgeStatus, string> = {
   pending: 'border-border-base bg-bg-input text-text-muted',
   processing: 'border-warning-border bg-warning-bg text-warning',
   recording: 'border-error-border bg-error-bg text-error',
-  running: 'border-accent bg-bg-input text-accent-light'
+  running: 'border-accent bg-bg-input text-accent-light',
+  skipped: 'border-warning-border bg-warning-bg text-warning'
+};
+
+const STATUS_LABEL: Partial<Record<BadgeStatus, string>> = {
+  needsSetup: 'Needs setup'
 };
 
 export const StatusBadge = ({ label, status }: StatusBadgeProps): JSX.Element => (
@@ -27,6 +32,6 @@ export const StatusBadge = ({ label, status }: StatusBadgeProps): JSX.Element =>
       STATUS_CLASS[status]
     )}
   >
-    {label}
+    {STATUS_LABEL[status] ?? label}
   </span>
 );

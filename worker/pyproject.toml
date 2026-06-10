@@ -9,6 +9,11 @@ dependencies = [
   "faster-whisper>=1.1.0",
 ]
 
+[project.optional-dependencies]
+diarization = [
+  "pyannote.audio>=4.0.4",
+]
+
 [dependency-groups]
 dev = [
   "pytest>=8.0",

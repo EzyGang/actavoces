@@ -121,49 +121,81 @@ export const AppView = ({ app }: AppViewProps): JSX.Element =>
                     </article>
                   </section>
 
+                  {app.data.snapshot.value.settings.diarizationSetupSkipped ||
+                  !app.data.snapshot.value.settings.diarizationRuntimeReady ? (
+                    <section class='border border-warning-border bg-warning-bg p-4 text-warning text-sm'>
+                      Speaker diarization is not fully set up. Recordings will still transcribe, but
+                      speaker labels need pyannote setup from Settings.
+                    </section>
+                  ) : null}
+
                   <section class='grid gap-4'>
                     <article class='flex min-w-0 flex-col gap-5 border border-border-base bg-bg-card p-5'>
                       <div class='flex items-center justify-between gap-4'>
                         <div class='flex flex-col gap-1'>
                           <h1 class='font-semibold text-2xl'>Current pipeline</h1>
                           <p class='text-sm text-text-muted'>
-                            Audio capture persists immediately; worker stages wait for local setup.
+                            Processing starts automatically after capture stops.
                           </p>
                         </div>
-                        <Button
-                          disabled={app.status.loading.value}
-                          onClick={app.actions.resumeJobs}
-                          variant='secondary'
-                        >
-                          Resume jobs
-                        </Button>
+                        {app.data.latestRecordingPipelineStatus.value ? (
+                          <StatusBadge
+                            label={app.data.latestRecordingPipelineStatus.value.label}
+                            status={app.data.latestRecordingPipelineStatus.value.status}
+                          />
+                        ) : null}
                       </div>
 
                       {app.data.latestRecording.value ? (
-                        <div class='grid gap-3 md:grid-cols-5'>
-                          {app.data.latestRecording.value.stages.map((stage) => (
-                            <article
-                              class='flex min-h-36 flex-col justify-between gap-4 border border-border-base bg-bg-input p-4'
-                              key={stage.id}
-                            >
-                              <div class='flex flex-col gap-3'>
-                                <StatusBadge label={stage.status} status={stage.status} />
-                                <h2 class='font-semibold text-sm'>{stage.label}</h2>
-                                <p class='text-text-muted text-xs'>{stage.message}</p>
-                              </div>
-                              <div class='flex flex-col gap-2 pt-1'>
-                                <div class='h-1.5 bg-bg-page'>
-                                  <div
-                                    class='h-full bg-text-primary transition-all duration-slow'
-                                    style={{ width: `${stage.progress}%` }}
-                                  />
+                        <div class='flex flex-col gap-5'>
+                          <div class='flex flex-col gap-2'>
+                            <div class='h-2 bg-bg-page'>
+                              <div
+                                class='h-full bg-text-primary transition-all duration-slow'
+                                style={{ width: `${app.data.latestRecordingProgress.value}%` }}
+                              />
+                            </div>
+                            <div class='flex items-center justify-between gap-3 font-mono text-text-muted text-xs'>
+                              <span>{app.data.latestRecordingPipelineStatus.value?.message}</span>
+                              <span>{app.data.latestRecordingProgress.value}%</span>
+                            </div>
+                          </div>
+                          <div class='grid gap-3 md:grid-cols-5'>
+                            {app.data.latestRecording.value.stages.map((stage, index) => (
+                              <article
+                                class='flex min-h-36 flex-col justify-between gap-4 border border-border-base bg-bg-input p-4'
+                                key={stage.id}
+                              >
+                                <div class='flex flex-col gap-3'>
+                                  <div class='flex items-center justify-between gap-3'>
+                                    <span class='font-mono text-text-muted text-[11px] uppercase tracking-[0.05em]'>
+                                      {index + 1}
+                                    </span>
+                                    <StatusBadge label={stage.status} status={stage.status} />
+                                  </div>
+                                  <h2 class='font-semibold text-sm'>{stage.label}</h2>
+                                  <p class='text-text-muted text-xs'>{stage.message}</p>
+                                  {stage.status === 'running' ? (
+                                    <span class='inline-flex items-center gap-2 text-accent-light text-xs'>
+                                      <span class='h-2 w-2 animate-pulse bg-accent-light' />
+                                      Processing
+                                    </span>
+                                  ) : null}
                                 </div>
-                                <span class='font-mono text-text-muted text-xs'>
-                                  {stage.progress}%
-                                </span>
-                              </div>
-                            </article>
-                          ))}
+                                <div class='flex flex-col gap-2 pt-1'>
+                                  <div class='h-1.5 bg-bg-page'>
+                                    <div
+                                      class='h-full bg-text-primary transition-all duration-slow'
+                                      style={{ width: `${stage.progress}%` }}
+                                    />
+                                  </div>
+                                  <span class='font-mono text-text-muted text-xs'>
+                                    {stage.progress}%
+                                  </span>
+                                </div>
+                              </article>
+                            ))}
+                          </div>
                         </div>
                       ) : (
                         <div class='flex min-h-40 items-center justify-center border border-border-base bg-bg-input p-5 text-text-muted'>
@@ -275,52 +307,88 @@ export const AppView = ({ app }: AppViewProps): JSX.Element =>
 
               {app.status.activeRoute.value === 'jobs' ? (
                 <section class='flex flex-col gap-4'>
-                  <div class='flex items-center justify-between gap-4'>
-                    <div class='flex flex-col gap-1'>
-                      <h1 class='font-semibold text-2xl'>Jobs</h1>
-                      <p class='text-sm text-text-muted'>
-                        Worker-backed stages are persisted and resumable after restart.
-                      </p>
-                    </div>
-                    <Button
-                      disabled={app.status.loading.value}
-                      onClick={app.actions.resumeJobs}
-                      variant='secondary'
-                    >
-                      Resume jobs
-                    </Button>
+                  <div class='flex flex-col gap-1'>
+                    <h1 class='font-semibold text-2xl'>Jobs</h1>
+                    <p class='text-sm text-text-muted'>Debug view grouped by recording.</p>
                   </div>
-                  {app.data.snapshot.value.jobs.length > 0 ? (
-                    <div class='grid gap-3 md:grid-cols-2'>
-                      {app.data.jobRows.value.map(({ job, recordingTitle, canRetry, onRetry }) => (
-                        <article
-                          class='flex flex-col gap-3 border border-border-base bg-bg-card p-4'
-                          key={job.id}
-                        >
-                          <div class='flex items-center justify-between gap-3'>
-                            <h2 class='font-semibold text-sm'>{job.stage}</h2>
-                            <StatusBadge label={job.status} status={job.status} />
-                          </div>
-                          <p class='text-text-muted text-sm'>{job.message}</p>
-                          <div class='flex flex-col gap-2'>
-                            <div class='h-1.5 bg-bg-input'>
-                              <div
-                                class='h-full bg-text-primary'
-                                style={{ width: `${job.progress}%` }}
-                              />
-                            </div>
-                            <span class='font-mono text-text-muted text-xs'>{recordingTitle}</span>
-                          </div>
-                          <Button
-                            class='h-9 px-3'
-                            disabled={app.status.loading.value || !canRetry || !onRetry}
-                            onClick={onRetry}
-                            variant='ghost'
+                  {app.data.groupedJobRows.value.length > 0 ? (
+                    <div class='grid gap-4'>
+                      {app.data.groupedJobRows.value.map(
+                        ({ recording, progress, pipelineStatus, canRetry, jobs, onRetry }) => (
+                          <article
+                            class='flex flex-col gap-4 border border-border-base bg-bg-card p-4'
+                            key={recording.id}
                           >
-                            Retry failed jobs
-                          </Button>
-                        </article>
-                      ))}
+                            <div class='grid gap-4 lg:grid-cols-[minmax(0,1fr)_160px]'>
+                              <div class='flex min-w-0 flex-col gap-2'>
+                                <div class='flex items-center gap-3'>
+                                  <h2 class='truncate font-semibold text-base'>
+                                    {recording.title}
+                                  </h2>
+                                  <StatusBadge
+                                    label={pipelineStatus.label}
+                                    status={pipelineStatus.status}
+                                  />
+                                </div>
+                                <span class='font-mono text-text-muted text-xs'>
+                                  {app.data.formatTimestamp(recording.startedAt)}
+                                </span>
+                                <div class='flex flex-col gap-2'>
+                                  <div class='h-1.5 bg-bg-input'>
+                                    <div
+                                      class='h-full bg-text-primary'
+                                      style={{ width: `${progress}%` }}
+                                    />
+                                  </div>
+                                  <span class='font-mono text-text-muted text-xs'>
+                                    {progress}% - {pipelineStatus.message}
+                                  </span>
+                                  {pipelineStatus.status === 'running' ? (
+                                    <span class='inline-flex items-center gap-2 text-accent-light text-xs'>
+                                      <span class='h-2 w-2 animate-pulse bg-accent-light' />
+                                      Processing
+                                    </span>
+                                  ) : null}
+                                </div>
+                              </div>
+                              <Button
+                                class='h-9 px-3 lg:justify-self-end'
+                                disabled={app.status.loading.value || !canRetry}
+                                onClick={onRetry}
+                                variant='ghost'
+                              >
+                                Retry failed jobs
+                              </Button>
+                            </div>
+                            <div class='grid gap-2 md:grid-cols-2 xl:grid-cols-3'>
+                              {jobs.map((job) => (
+                                <article
+                                  class='flex flex-col gap-2 border border-border-base bg-bg-input p-3'
+                                  key={job.id}
+                                >
+                                  <div class='flex items-center justify-between gap-3'>
+                                    <span class='font-semibold text-sm'>{job.stage}</span>
+                                    <StatusBadge label={job.status} status={job.status} />
+                                  </div>
+                                  <p class='line-clamp-2 text-text-muted text-xs'>{job.message}</p>
+                                  {job.status === 'running' ? (
+                                    <span class='inline-flex items-center gap-2 text-accent-light text-xs'>
+                                      <span class='h-2 w-2 animate-pulse bg-accent-light' />
+                                      Running
+                                    </span>
+                                  ) : null}
+                                  <div class='h-1 bg-bg-page'>
+                                    <div
+                                      class='h-full bg-text-primary'
+                                      style={{ width: `${job.progress}%` }}
+                                    />
+                                  </div>
+                                </article>
+                              ))}
+                            </div>
+                          </article>
+                        )
+                      )}
                     </div>
                   ) : (
                     <div class='flex min-h-40 items-center justify-center border border-border-base bg-bg-card p-5 text-text-muted'>
@@ -452,20 +520,90 @@ export const AppView = ({ app }: AppViewProps): JSX.Element =>
                                 </option>
                               ))}
                             </select>
+                            {field.hint ? (
+                              <span
+                                class={
+                                  field.hint.tone === 'warning'
+                                    ? 'flex flex-col gap-1 border border-warning-border bg-warning-bg p-3 text-warning text-xs'
+                                    : 'flex flex-col gap-1 border border-border-base bg-bg-input p-3 text-text-muted text-xs'
+                                }
+                              >
+                                {field.hint.title ? (
+                                  <span class='font-semibold'>{field.hint.title}</span>
+                                ) : null}
+                                <span>{field.hint.text}</span>
+                                {field.hint.links ? (
+                                  <span class='flex flex-wrap gap-2'>
+                                    {field.hint.links.map((link) => (
+                                      <a
+                                        class='text-text-primary underline'
+                                        href={link.href}
+                                        key={link.href}
+                                        rel='noreferrer'
+                                        target='_blank'
+                                      >
+                                        {link.label}
+                                      </a>
+                                    ))}
+                                  </span>
+                                ) : null}
+                              </span>
+                            ) : null}
                           </label>
                         ))}
-                        {app.settings.numberFields.slice(1).map((field) => (
-                          <label class='flex flex-col gap-2 text-sm' key={field.key}>
-                            <span class='text-text-muted'>{field.label}</span>
-                            <input
-                              class='h-11 border border-border-base bg-bg-input px-3 font-mono text-xs outline-none focus:border-border-focus'
-                              min='0'
-                              onInput={field.onInput}
-                              type='number'
-                              value={field.value}
-                            />
-                          </label>
-                        ))}
+                      </div>
+                      <details class='border border-border-base bg-bg-input p-3'>
+                        <summary class='cursor-pointer text-text-secondary text-sm'>
+                          Advanced speaker options
+                        </summary>
+                        <div class='grid gap-3 pt-3 md:grid-cols-3'>
+                          {app.settings.numberFields.slice(1).map((field) => (
+                            <label class='flex flex-col gap-2 text-sm' key={field.key}>
+                              <span class='text-text-muted'>{field.label}</span>
+                              <input
+                                class='h-11 border border-border-base bg-bg-card px-3 font-mono text-xs outline-none focus:border-border-focus'
+                                min='0'
+                                onInput={field.onInput}
+                                type='number'
+                                value={field.value}
+                              />
+                            </label>
+                          ))}
+                        </div>
+                      </details>
+                      <div class='flex flex-col gap-3 border border-border-base bg-bg-input p-3 text-sm'>
+                        <label class='flex flex-col gap-2'>
+                          <span class='text-text-muted'>
+                            {app.settings.huggingFaceTokenField.label}
+                          </span>
+                          <input
+                            class='h-11 border border-border-base bg-bg-card px-3 font-mono text-xs outline-none focus:border-border-focus'
+                            onInput={app.settings.huggingFaceTokenField.onInput}
+                            type='password'
+                            value={app.settings.huggingFaceTokenField.value}
+                          />
+                        </label>
+                        <div class='flex items-center justify-between gap-3'>
+                          <div class='flex flex-col gap-1'>
+                            <span class='text-text-muted'>Hugging Face token status</span>
+                            <span>
+                              {app.data.snapshot.value.settings.huggingFaceTokenConfigured
+                                ? 'Saved in keychain'
+                                : 'Missing'}
+                            </span>
+                          </div>
+                          <Button
+                            class='h-9 px-3'
+                            disabled={
+                              app.status.savingSettings.value ||
+                              !app.data.snapshot.value.settings.huggingFaceTokenConfigured
+                            }
+                            onClick={app.actions.clearHuggingFaceToken}
+                            variant='ghost'
+                          >
+                            Clear token
+                          </Button>
+                        </div>
                       </div>
                       <div class='flex flex-col gap-3 border border-border-base bg-bg-input p-3 text-sm'>
                         <div class='flex items-center justify-between gap-3'>
@@ -605,38 +743,59 @@ export const AppView = ({ app }: AppViewProps): JSX.Element =>
 
           <aside class='hidden min-h-0 flex-col gap-5 overflow-y-auto border-border-base border-l bg-bg-card p-5 xl:flex'>
             <section class='flex flex-col gap-4'>
-              <h2 class='font-semibold text-xl'>Recent artifacts</h2>
-              {app.data.latestRecording.value ? (
+              <h2 class='font-semibold text-xl'>Recent records</h2>
+              {app.data.recentRecordingRows.value.length > 0 ? (
                 <div class='flex flex-col gap-3'>
-                  {app.data.latestArtifacts.value.map(({ artifact, onOpen }) => (
-                    <article
-                      class='flex flex-col gap-2 border border-border-base bg-bg-input p-3'
-                      key={artifact.kind}
-                    >
-                      <div class='flex items-center justify-between gap-3'>
-                        <span class='font-semibold text-sm'>{artifact.label}</span>
-                        <StatusBadge
-                          label={artifact.ready ? 'Ready' : 'Pending'}
-                          status={artifact.ready ? 'complete' : 'pending'}
-                        />
-                      </div>
-                      <span class='break-words font-mono text-text-muted text-xs'>
-                        {artifact.path}
-                      </span>
-                      <Button
-                        class='h-8 px-3'
-                        disabled={!artifact.ready}
-                        onClick={onOpen}
-                        variant='ghost'
+                  {app.data.recentRecordingRows.value.map(
+                    ({ recording, progress, pipelineStatus, canRetry, onOpenFolder, onRetry }) => (
+                      <article
+                        class='flex flex-col gap-3 border border-border-base bg-bg-input p-3'
+                        key={recording.id}
                       >
-                        Open
-                      </Button>
-                    </article>
-                  ))}
+                        <div class='flex items-center justify-between gap-3'>
+                          <span class='truncate font-semibold text-sm'>{recording.title}</span>
+                          <StatusBadge
+                            label={pipelineStatus.label}
+                            status={pipelineStatus.status}
+                          />
+                        </div>
+                        <div class='flex flex-col gap-2'>
+                          <div class='h-1.5 bg-bg-page'>
+                            <div class='h-full bg-text-primary' style={{ width: `${progress}%` }} />
+                          </div>
+                          <span class='font-mono text-text-muted text-xs'>
+                            {progress}% - {pipelineStatus.message}
+                          </span>
+                          {pipelineStatus.status === 'running' ? (
+                            <span class='inline-flex items-center gap-2 text-accent-light text-xs'>
+                              <span class='h-2 w-2 animate-pulse bg-accent-light' />
+                              Processing
+                            </span>
+                          ) : null}
+                        </div>
+                        <span class='font-mono text-text-muted text-xs'>
+                          {app.data.formatTimestamp(recording.startedAt)}
+                        </span>
+                        <div class='flex gap-2'>
+                          <Button class='h-8 px-3' onClick={onOpenFolder} variant='ghost'>
+                            Open
+                          </Button>
+                          <Button
+                            class='h-8 px-3'
+                            disabled={app.status.loading.value || !canRetry}
+                            onClick={onRetry}
+                            variant='ghost'
+                          >
+                            Retry
+                          </Button>
+                        </div>
+                      </article>
+                    )
+                  )}
                 </div>
               ) : (
                 <div class='border border-border-base bg-bg-input p-4 text-text-muted text-sm'>
-                  Artifacts will appear after capture stops.
+                  Records will appear after capture stops.
                 </div>
               )}
             </section>
@@ -725,9 +884,56 @@ export const AppView = ({ app }: AppViewProps): JSX.Element =>
         </div>
 
         <div class='flex flex-col gap-3'>
-          <h1 class='font-semibold text-2xl'>Preparing transcription runtime</h1>
-          <p class='text-sm text-text-secondary'>{app.data.setupProgress.value.step}</p>
+          <h1 class='font-semibold text-2xl'>
+            {app.status.needsDiarizationSetup.value
+              ? 'Set up speaker diarization'
+              : 'Preparing transcription runtime'}
+          </h1>
+          <p class='text-sm text-text-secondary'>
+            {app.status.needsDiarizationSetup.value
+              ? 'Speaker labels require local pyannote.audio, ffmpeg, accepted Hugging Face model terms, and a Hugging Face token.'
+              : app.data.setupProgress.value.step}
+          </p>
         </div>
+
+        {app.status.needsDiarizationSetup.value ? (
+          <section class='flex flex-col gap-4 border border-warning-border bg-warning-bg p-4 text-warning text-sm'>
+            <div class='flex flex-col gap-2'>
+              <span class='font-semibold'>Full functionality needs speaker diarization setup.</span>
+              <span>
+                Accept the pyannote model terms on Hugging Face, create an access token, then
+                install the local diarization runtime.
+              </span>
+              <span class='flex flex-wrap gap-3 text-xs'>
+                <a
+                  class='text-text-primary underline'
+                  href='https://huggingface.co/pyannote/speaker-diarization-community-1'
+                  rel='noreferrer'
+                  target='_blank'
+                >
+                  Model terms
+                </a>
+                <a
+                  class='text-text-primary underline'
+                  href='https://huggingface.co/settings/tokens'
+                  rel='noreferrer'
+                  target='_blank'
+                >
+                  Token settings
+                </a>
+              </span>
+            </div>
+            <label class='flex flex-col gap-2 text-sm'>
+              <span>Hugging Face token</span>
+              <input
+                class='h-11 border border-border-base bg-bg-input px-3 font-mono text-xs text-text-primary outline-none focus:border-border-focus'
+                onInput={app.settings.huggingFaceTokenField.onInput}
+                type='password'
+                value={app.settings.huggingFaceTokenField.value}
+              />
+            </label>
+          </section>
+        ) : null}
 
         <div class='h-2 border border-border-base bg-bg-input'>
           <div
@@ -742,14 +948,31 @@ export const AppView = ({ app }: AppViewProps): JSX.Element =>
         </div>
 
         {app.data.setupProgress.value.error ? (
-          <section class='border border-error-border bg-error-bg p-4 text-error text-sm'>
+          <section class='max-w-full overflow-x-auto break-all whitespace-pre-wrap border border-error-border bg-error-bg p-4 text-error text-sm'>
             {app.data.setupProgress.value.error}
           </section>
         ) : null}
 
         <div class='flex items-center justify-between gap-4 text-text-muted text-xs uppercase tracking-[0.05em]'>
           <span>{app.data.setupProgress.value.status}</span>
-          {app.data.setupProgress.value.status === 'failed' ? (
+          {app.status.needsDiarizationSetup.value ? (
+            <div class='flex gap-3'>
+              <Button
+                disabled={app.status.setupRunning.value}
+                onClick={app.actions.skipDiarizationSetup}
+                variant='ghost'
+              >
+                Skip for now
+              </Button>
+              <Button
+                disabled={app.status.setupRunning.value}
+                onClick={app.actions.setupDiarization}
+                variant='secondary'
+              >
+                Set up diarization
+              </Button>
+            </div>
+          ) : app.data.setupProgress.value.status === 'failed' ? (
             <Button
               disabled={app.status.setupRunning.value}
               onClick={app.actions.retrySetup}

@@ -9,6 +9,15 @@ export const updateAppSettings = (input: AppSettingsUpdate) =>
 export const clearSummaryProviderApiKey = () =>
   invoke<AppSnapshot>('clear_summary_provider_api_key');
 
+export const clearHuggingFaceToken = () => invoke<AppSnapshot>('clear_hugging_face_token');
+
+export const setupDiarizationRuntime = (huggingFaceToken: string) =>
+  invoke<AppSnapshot>('setup_diarization_runtime', {
+    input: { huggingFaceToken }
+  });
+
+export const skipDiarizationSetup = () => invoke<AppSnapshot>('skip_diarization_setup');
+
 export const startRecording = () => invoke<AppSnapshot>('start_recording');
 
 export const stopRecording = () => invoke<AppSnapshot>('stop_recording');

@@ -2,7 +2,8 @@ import type { AppSettingsUpdate } from '../types/desktop';
 
 export const validateSettingsDraft = (
   settings: AppSettingsUpdate,
-  providerApiKeyConfigured = false
+  providerApiKeyConfigured = false,
+  cudaAvailable = false
 ): string[] => {
   const errors: string[] = [];
 
@@ -16,6 +17,12 @@ export const validateSettingsDraft = (
 
   if (settings.sampleRate <= 0) {
     errors.push('Sample rate must be greater than zero.');
+  }
+
+  if (settings.computeType === 'cuda' && !cudaAvailable) {
+    errors.push(
+      'CUDA runtime is not ready. Install CUDA drivers, cuBLAS for CUDA 12, and cuDNN 9 for CUDA 12.'
+    );
   }
 
   if (settings.summaryEnabled) {

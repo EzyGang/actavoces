@@ -30,7 +30,8 @@
       "../worker/app": "worker/app",
       "../worker/pyproject.toml": "worker/pyproject.toml",
       "../worker/uv.lock": "worker/uv.lock",
-      "resources/runtime/uv": "runtime/uv"
+      "resources/runtime/uv": "runtime/uv",
+      "resources/runtime/ffmpeg": "runtime/ffmpeg"
     },
     "icon": [
       "icons/32x32.png",

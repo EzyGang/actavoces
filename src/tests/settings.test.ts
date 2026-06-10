@@ -10,15 +10,17 @@ const validSettings: AppSettingsUpdate = {
   microphoneDevice: 'Default microphone',
   systemAudioSource: 'Default system output',
   sampleRate: 48000,
-  whisperModel: 'medium.en',
+  whisperModel: 'small.en',
   transcriptionLanguage: 'auto',
   computeType: 'auto',
   modelStorageDirectory: '/tmp/actavoces/models',
-  diarizationBackend: 'nemoWhisper',
+  diarizationBackend: 'pyannote',
   speakerCountMode: 'automatic',
   exactSpeakers: null,
   minSpeakers: null,
   maxSpeakers: null,
+  huggingFaceToken: '',
+  diarizationSetupSkipped: true,
   summaryEnabled: false,
   providerBaseUrl: 'https://api.openai.com/v1',
   providerModel: '',
@@ -77,5 +79,27 @@ describe('settings validation', () => {
         maxSpeakers: 2
       })
     ).toContain('Speaker range must include a valid minimum and maximum.');
+  });
+
+  it('requires CUDA runtime libraries when explicit CUDA compute is selected', () => {
+    expect(
+      validateSettingsDraft({
+        ...validSettings,
+        computeType: 'cuda'
+      })
+    ).toContain(
+      'CUDA runtime is not ready. Install CUDA drivers, cuBLAS for CUDA 12, and cuDNN 9 for CUDA 12.'
+    );
+
+    expect(
+      validateSettingsDraft(
+        {
+          ...validSettings,
+          computeType: 'cuda'
+        },
+        false,
+        true
+      )
+    ).toEqual([]);
   });
 });

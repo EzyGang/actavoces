@@ -16,25 +16,33 @@ jobs:
             rust-target: x86_64-pc-windows-msvc
             uv-asset: uv-x86_64-pc-windows-msvc.zip
             uv-binary: uv.exe
+            ffmpeg-asset: ffmpeg-windows-x64.zip
+            ffmpeg-binary: ffmpeg.exe
           - name: macOS Apple Silicon
             os: macos-latest
             rust-target: aarch64-apple-darwin
             uv-asset: uv-aarch64-apple-darwin.tar.gz
             uv-binary: uv
+            ffmpeg-asset: ffmpeg-osx-arm64.zip
+            ffmpeg-binary: ffmpeg
           - name: macOS Intel
             os: macos-13
             rust-target: x86_64-apple-darwin
             uv-asset: uv-x86_64-apple-darwin.tar.gz
             uv-binary: uv
+            ffmpeg-asset: ffmpeg-osx-x64.zip
+            ffmpeg-binary: ffmpeg
           - name: Linux x64
             os: ubuntu-22.04
             rust-target: x86_64-unknown-linux-gnu
             uv-asset: uv-x86_64-unknown-linux-gnu.tar.gz
             uv-binary: uv
+            ffmpeg-asset: ffmpeg-linux-x64.zip
+            ffmpeg-binary: ffmpeg
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Install Linux dependencies
         if: runner.os == 'Linux'
@@ -51,12 +59,12 @@ jobs:
             patchelf
 
       - name: Setup pnpm
-        uses: pnpm/action-setup@v4
+        uses: pnpm/action-setup@v6
         with:
           version: 9
 
       - name: Setup Node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
           node-version: 22
           cache: pnpm
@@ -154,11 +162,68 @@ jobs:
           chmod +x "${runtime_path}/${binary_name}"
           "${runtime_path}/${binary_name}" --version
 
+      - name: Bundle latest FFmpeg runtime (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+
+          $assetName = '${{ matrix.ffmpeg-asset }}'
+          $binaryName = '${{ matrix.ffmpeg-binary }}'
+          $assetUrl = "https://github.com/Tyrrrz/FFmpegBin/releases/latest/download/$assetName"
+          $releasePath = '.release/ffmpeg'
+          $archivePath = Join-Path $releasePath $assetName
+          $extractPath = Join-Path $releasePath 'extracted'
+          $runtimePath = Join-Path 'src-tauri/resources/runtime/ffmpeg' '${{ matrix.rust-target }}'
+
+          New-Item -ItemType Directory -Force -Path $releasePath, $extractPath, $runtimePath | Out-Null
+          Invoke-WebRequest -Uri $assetUrl -OutFile $archivePath
+
+          Expand-Archive -Path $archivePath -DestinationPath $extractPath -Force
+          $binary = Get-ChildItem -Path $extractPath -Recurse -File |
+            Where-Object { $_.Name -eq $binaryName } |
+            Select-Object -First 1
+
+          if ($null -eq $binary) {
+            throw "Unable to find extracted FFmpeg binary: $binaryName"
+          }
+
+          Copy-Item -Path $binary.FullName -Destination (Join-Path $runtimePath $binaryName) -Force
+          & (Join-Path $runtimePath $binaryName) -version
+
+      - name: Bundle latest FFmpeg runtime (macOS/Linux)
+        if: runner.os != 'Windows'
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          asset_name='${{ matrix.ffmpeg-asset }}'
+          binary_name='${{ matrix.ffmpeg-binary }}'
+          asset_url="https://github.com/Tyrrrz/FFmpegBin/releases/latest/download/${asset_name}"
+          archive_path=".release/ffmpeg/${asset_name}"
+          extract_path=".release/ffmpeg/extracted"
+          runtime_path="src-tauri/resources/runtime/ffmpeg/${{ matrix.rust-target }}"
+
+          mkdir -p ".release/ffmpeg" "${extract_path}" "${runtime_path}"
+          curl -fsSL "${asset_url}" -o "${archive_path}"
+
+          unzip -q "${archive_path}" -d "${extract_path}"
+          binary_path="$(find "${extract_path}" -type f -name "${binary_name}" | head -n 1)"
+
+          if [ -z "${binary_path}" ]; then
+            echo "Unable to find extracted FFmpeg binary: ${binary_name}" >&2
+            exit 1
+          fi
+
+          cp "${binary_path}" "${runtime_path}/${binary_name}"
+          chmod +x "${runtime_path}/${binary_name}"
+          "${runtime_path}/${binary_name}" -version
+
       - name: Build Tauri bundle
         run: pnpm tauri build --target ${{ matrix.rust-target }}
 
       - name: Upload bundle artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: actavoces-${{ matrix.rust-target }}
           path: |

@@ -7,7 +7,13 @@ export type PipelineStageId =
   | 'diarization'
   | 'summary';
 
-export type PipelineStageStatus = 'pending' | 'running' | 'complete' | 'failed' | 'needsSetup';
+export type PipelineStageStatus =
+  | 'pending'
+  | 'running'
+  | 'complete'
+  | 'failed'
+  | 'needsSetup'
+  | 'skipped';
 
 export type ArtifactKind =
   | 'audio'
@@ -99,6 +105,9 @@ export interface AppSettings {
   exactSpeakers: number | null;
   minSpeakers: number | null;
   maxSpeakers: number | null;
+  huggingFaceTokenConfigured: boolean;
+  diarizationSetupSkipped: boolean;
+  diarizationRuntimeReady: boolean;
   summaryProviderConfigured: boolean;
   providerApiKeyConfigured: boolean;
   summaryEnabled: boolean;
@@ -110,9 +119,14 @@ export interface AppSettings {
 
 export type AppSettingsUpdate = Omit<
   AppSettings,
-  'databasePath' | 'summaryProviderConfigured' | 'providerApiKeyConfigured'
+  | 'databasePath'
+  | 'summaryProviderConfigured'
+  | 'providerApiKeyConfigured'
+  | 'huggingFaceTokenConfigured'
+  | 'diarizationRuntimeReady'
 > & {
   providerApiKey: string;
+  huggingFaceToken: string;
 };
 
 export interface DesktopRuntimeStatus {
@@ -125,6 +139,8 @@ export interface DesktopRuntimeStatus {
   workerSetupStatus: WorkerSetupStatus;
   workerSetupStep: string;
   workerSetupError: string | null;
+  cudaAvailable: boolean;
+  cudaError: string | null;
 }
 
 export type WorkerSetupStatus = 'missing' | 'installing' | 'ready' | 'failed';

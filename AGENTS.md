@@ -1,352 +1,190 @@
 # Agent Instructions
 
-Project-wide Reference Guide
-(ingest once; treat as implicit context for every future discussion)
+Project-wide reference guide. Ingest once and treat as implicit context for future work in this repository.
+
+## Core Principles
+
+- Read the relevant folder structure before implementing changes.
+- Prefer simple, readable, maintainable code. Code is a liability; avoid over-abstraction and unnecessary indirection.
+- Follow DRY. Do not duplicate logic unless there is no reasonable shared shape.
+- Reuse existing code and patterns. If unsure whether something exists, search first and implement only if it does not.
+- Keep edits scoped to the user request and the affected domain.
+- Do not create comments or documentation unless they clarify something genuinely non-obvious.
+- Do not create `index.ts` files or re-export barrels.
 
 ## Tech Stack
 
 ### Frontend
-- TypeScript / Preact 10 + @preact/signals (state)
-- React compat via `preact/compat` (aliased in tsconfig)
-- @base-ui/react (unstyled headless components, Preact compat via alias)
-- Vite build / Tailwind CSS v4 (`@import "tailwindcss"` in CSS)
-- Routing: wouter-preact
-- Styling helpers: clsx
 
-### Backend / Desktop
-- Tauri v2 (Rust backend, desktop shell)
-- src-tauri/ contains Rust code, Cargo.toml, tauri.conf.json
+- TypeScript
+- Preact 10
+- `@preact/signals` for state
+- React compatibility through `preact/compat`
+- `@base-ui/react` unstyled components
+- Vite
+- Tailwind CSS v4
+- `wouter-preact` routing
+- `clsx` for class composition
 
-### Worker (AI)
-- uv
-- python 3.14
-- pydantic and pydantic-ai
+### Rust Backend / Desktop
 
-## Developer Commands
+- Tauri v2
+- Rust code in `src-tauri/src`
+- Desktop config in `src-tauri/tauri.conf.json`
+- SQLite through `rusqlite`
+- Native capture through `cpal`
+
+### Python Worker
+
+- Python 3.14
+- `uv`
+- `taskipy`
+- `pydantic`
+- `pydantic-ai`
+
+## Commands
+
+### Frontend / Desktop
 
 ```bash
 pnpm dev              # Dev server (Tauri: port 1420)
 pnpm build            # Production Tauri build
-pnpm build:web        # Vite-only production build → dist/
+pnpm build:web        # Vite-only production build -> dist/
 pnpm preview          # Preview production build
 
-pnpm validate         # Lint + type-check (ci-run ready)
+pnpm validate         # Lint + type-check
 pnpm fix              # Format + type-check
 pnpm lint             # Biome check
 pnpm lint:ts          # Biome check + type-check
 pnpm lint:rust        # Cargo fmt check + clippy + cargo check
-pnpm lint:all         # Both lint:ts and lint:rust
+pnpm lint:all         # TypeScript and Rust lint
 pnpm format           # Biome check --write --unsafe
-pnpm format:all       # Format TS + format/fix Rust
+pnpm format:all       # Format TypeScript and Rust
 pnpm type-check       # tsc -b
 
 pnpm test             # Vitest run
 pnpm test:watch       # Vitest watch mode
 
-pnpm ci-run           # Biome ci check (for CI)
+pnpm ci-run           # Biome CI check
 ```
 
-## Directory Structure (src/)
+### Python Worker
 
+Run worker commands from the `worker/` directory unless the command explicitly sets another working directory.
+
+```bash
+uv run task format-and-lint
+uv run task ruff
+uv run task ruff-lint
+uv run task pyright-lint
+uv run task tests
+uv run pytest tests/test_main.py -v
+uv run pytest tests/test_main.py::test_sync_runs -v
+uv run pytest tests/ -k "asyncio" -v
 ```
-components/      feature-oriented UI (strict triplet pattern + optional context)
-pages/           thin wrappers rendering one container
-hooks/           shared generic hooks
-stores/          global singletons using @preact/signals
-services/        API endpoint helpers (pure request/response)
-utils/           cross-feature helpers
-routes/          public/protected route definitions
-types/           TypeScript type definitions
+
+## Repository Layout
+
+```text
+src/                 TypeScript/Preact frontend
+src-tauri/           Rust/Tauri backend and desktop shell
+worker/              Python AI worker
+public/              Static frontend assets
 ```
 
-### Feature Sub-Folder Conventions
+## TypeScript Frontend
 
-As features grow, flat `ui/`, `containers/`, and `hooks/` directories become unmanageable. Related files are grouped into **semantic sub-folders** under each layer:
+### Frontend Directory Structure
 
+```text
+src/
+  components/      feature-oriented UI
+  pages/           thin route wrappers
+  hooks/           shared generic hooks
+  stores/          global signal stores
+  services/        Tauri/API request helpers
+  utils/           cross-feature helpers
+  routes/          route definitions
+  types/           TypeScript type definitions
 ```
+
+As features grow, group related files into semantic subfolders:
+
+```text
 components/<feature>/
   ui/
-    list-page/               ← views used only by the list page
-    form/                    ← views used only by create/edit forms
-    table/                   ← table-specific views
-    timeline/                ← timeline / detail sub-views
+    list-page/
+    form/
+    table/
+    timeline/
   containers/
     list-page/
     form/
   hooks/
-    form/                    ← hooks whose lifetime matches a form
-    list-page/               ← hooks scoped to list behavior (pagination, filters)
-  context/                   ← optional: Preact context for heavy prop drilling
+    form/
+    list-page/
+  context/
 ```
 
-## Component Pattern (Strict Triplet)
+### Strict Triplet Pattern
 
-Every feature uses exact naming:
+Every feature should use this shape:
 
-- `hooks/useFeature.hook.ts` – data fetching, side-effects, signals
-- `ui/Feature.view.tsx` – pure presentational JSX, zero side-effects
-- `containers/Feature.container.tsx` – glue: hook → view (≤20 lines)
+- `hooks/useFeature.hook.ts`: data fetching, side effects, signals, pre-bound callbacks
+- `ui/Feature.view.tsx`: pure JSX, styles, layout
+- `containers/Feature.container.tsx`: hook-to-view glue, ideally 20 lines or less
 
-### Rules
+Rules:
 
-• Exact naming: `Foo.view.tsx`, `useFoo.hook.ts`, `Foo.container.tsx`.
-• View: zero side-effects, zero inline handlers, zero logic. Max 300 lines.
-• Hook: all side-effects (service calls, signals, React Query). Pre-bind all callbacks here.
-• Container: prop passthrough only. Group props into logical objects: `{ data, status, actions }`.
-• Page component in `src/pages` renders a single container + routing / error fallback.
-• Max 6-8 props passed from Container → View. If more, refactor to use Context.
-• Views consuming Context have ZERO props - all data comes from `useContext()` hooks.
+- Use exact naming: `Foo.view.tsx`, `useFoo.hook.ts`, `Foo.container.tsx`.
+- Views contain no side effects, no inline handlers, no business logic, and no local helper definitions.
+- Views should stay under 300 lines. Split presentational subcomponents when needed.
+- Hooks own side effects, service calls, signals, derived data, and callback binding.
+- Containers only pass hook output into views.
+- Group container-to-view props into `{ data, status, actions }`.
+- Keep page components in `src/pages` thin: route handling plus one container.
+- If a container would pass more than 6-8 props, introduce context.
+- Views consuming context should receive zero props.
 
-### Context Conventions
+### Context Pattern
 
-When Container → View prop count exceeds 6-8, introduce a Preact context:
+Use Preact context when prop drilling gets heavy.
 
-- **File naming:** `FooContext.tsx` (not `.view.tsx` or `.hook.ts`)
-- **Exports:** `FooProvider` + `useFooContext()`
-- **Hook contract:** The domain hook (e.g. `useFooForm`) should return the context value directly (grouped as `{ data, status, actions }`) so the container stays ≤20 lines:
-  ```tsx
-  export const FooContainer = ({ id }: { id: string }): JSX.Element => (
-    <FooProvider value={useFooForm(id)}>
-      <FooView />
-    </FooProvider>
-  );
-  ```
-- **Type location:** Keep `FooContextValue` interface inside `context/FooContext.tsx`
-
-Pages in `src/pages/` render a single container + routing/error handling.
-
-## Key Conventions
-
-- Strict TypeScript (no implicit any)
-- Biome for lint/format (see `.biome.json`)
-- Tailwind v4 for all styling; no CSS-in-JS
-- React compatibility via `preact/compat` alias
-- Use `createContext` from preact to avoid prop drilling with signals
-
-## Design System
-
-### Visual Design Reference — Dark-First Minimalism
-
-All theme colors are defined with **OKLCH** in `style.css`. Do not use HEX or RGBA in theme tokens.
-
-**1. Overall Aesthetic**
-- Dark-first aesthetic with pure black body background.
-- Deep charcoal surfaces for cards and panels.
-- Clean, high-contrast white typography on dark backgrounds.
-- Minimal, border-heavy — cards/panels use faint white-opacity borders.
-- Never use heavy shadows or gradients; rely on borders and background-layers for depth.
-
-**2. Typography**
-- **Sans-serif:** `Inter` is our main UI typeface (regular, medium, semibold, bold weights).
-- **Monospace:** `JetBrains Mono` is our code/mono typeface.
-- Hero headings should be large (32–72px depending on breakpoint), tight line-height (~1.05–1.1), clean geometric sans-serif.
-- Body text should be `1rem` / `16px`, line-height `1.5`, colored at `oklch(100% 0 0 / 0.8)`.
-- Use uppercase only for small labels, nav, and CTAs (letter-spacing wide `0.05em`).
-
-**3. Color Palette**
-- **Background:** `oklch(0% 0 0)` (primary), `oklch(14% 0 0)` (surface), `oklch(20% 0 0)` (card panels), `oklch(22% 0 0)` (subtle panels), `oklch(23% 0 0)` (raised).
-- **Text:** `oklch(100% 0 0)` (primary), `oklch(100% 0 0 / 0.8)` (secondary), `oklch(65% 0 0)` (muted).
-- **Borders:** `oklch(100% 0 0 / 0.1)` or `oklch(26% 0 0)`.
-- **Accents:**
-  - Green: `oklch(82% 0.2 145)` (success / availability highlight).
-  - Emerald: `oklch(78% 0.18 165)` (soft secondary accent).
-  - Red: `oklch(55% 0.2 25)` (error / warnings).
-  - Orange: `oklch(65% 0.2 45)` (tertiary highlight).
-- **Hover:** Surfaces lift slightly (`oklch(100% 0 0 / 0.12)` for hover backgrounds), borders may brighten to `oklch(100% 0 0 / 0.25)`.
-
-**4. Buttons**
-- **Primary (CTA):**
-  - Background: `oklch(100% 0 0)` (pure white) on dark.
-  - Text: `oklch(0% 0 0)` (black).
-  - Padding: `12px 16px` (roughly `px-4 py-3`).
-  - Font-size: `0.875rem` (`text-sm`), uppercase, wide letter-spacing.
-  - Border-radius: `0px` (sharp / square edges).
-  - Hover: subtle opacity reduction (`opacity: 0.9`) or slight darkening of the button only.
-- **Secondary / Ghost:**
-  - Background: `transparent`.
-  - Border: `1px solid oklch(100% 0 0 / 0.1)`.
-  - Text: `oklch(100% 0 0)`.
-  - Hover: background `oklch(100% 0 0 / 0.12)`, border brightens.
-- **Links:**
-  - White text, no underline by default.
-  - Underline and opacity change on hover.
-
-**5. Spacing**
-- Generous padding in sections (vertical gaps of `80px`–`120px` on large screens).
-- Use flexbox with `gap` for all internal spacing (never `space-y-*` / margins on children).
-- Card padding: roughly `20px` (`p-5`).
-- Nav height: compact, minimal padding, transparent until scrolled.
-
-**6. Components**
-- **Cards:** Use `bg-surface`, `border border-white/10`, no radius (or `0.25rem` absolute max). No box-shadow.
-- **Inputs:** `bg-surface`, border `oklch(100% 0 0 / 0.12)`, focus border `oklch(100% 0 0 / 0.5)`, subtle monospace feel.
-- **Nav:** Transparent background, white text links, uppercase small labels, sharp logo text.
-- **Tags / Badges:** Very small (`text-xs`), dark background, white-opacity border, uppercase.
-
-**7. Tailwind v4 Mapping (to keep in `@theme`)**
-- `bg-surface` → `oklch(14% 0 0)`
-- `bg-surface-card` → `oklch(20% 0 0)`
-- `bg-surface-raised` → `oklch(23% 0 0)`
-- `text-white` / `text-white/80` / `text-white/70`
-- `border-white/10` / `border-white/12`
-- `hover:bg-white/12` / `hover:border-white/25`
-
-### Layout Pattern (Flexbox Standard)
-
-**Always use flexbox with gap for spacing. Never use `space-y-*` or margins for sibling spacing.**
+- File naming: `FooContext.tsx`
+- Exports: `FooProvider` and `useFooContext()`
+- Keep `FooContextValue` in the context file
+- The feature hook should return the full context value:
 
 ```tsx
-// Vertical stack - CORRECT
-<div class='flex flex-col gap-4'>
-  <Item />
-  <Item />
-</div>
-
-// Horizontal row - CORRECT
-<div class='flex items-center gap-2'>
-  <Icon />
-  <Text />
-</div>
-
-// Centered header - CORRECT
-<div class='flex flex-col items-center gap-4 text-center'>
-  <Icon />
-  <Title />
-  <Subtitle />
-</div>
+export const FooContainer = ({ id }: { id: string }): JSX.Element => (
+  <FooProvider value={useFooForm(id)}>
+    <FooView />
+  </FooProvider>
+);
 ```
 
-**Parent controls spacing, not children.** Define all gaps at container level.
-
-### Theme System
-
-Three-mode theme toggle (system/light/dark) with localStorage persistence:
-
-- `themeModeSignal`: Current mode ('system' | 'light' | 'dark')
-- `effectiveThemeSignal`: Computed effective theme
-- `cycleThemeMode()`: Cycle through modes
-- `setThemeMode(mode)`: Set specific mode
-
-Uses `data-theme` attribute on `<html>` for Tailwind dark mode.
-
-## Stores Pattern
-
-Plain objects with signals - no classes, no getters/setters:
-
-```typescript
-import { signal } from "@preact/signals";
-
-interface FeatureStore {
-  data: Signal<T[]>;
-  loading: Signal<boolean>;
-}
-
-export const featureStore: FeatureStore = {
-  data: signal([]),
-  loading: signal(false),
-};
-
-// Use directly: featureStore.data.value = newData
-```
-
-## API Layer
-
-### Base URL
-
-- Dev: `VITE_API_URL` env var or `http://localhost:8000`
-- Prod: `/api/v1`
-
-### Client
-
-`utils/api/client.ts` exports `fetchApi<T>(path, options)` — the single internal fetch wrapper:
-
-- Prepends base URL
-- Injects `Authorization: Bearer <token>` from `stores/auth.store.ts`
-- Converts request body keys to `snake_case`, response keys to `camelCase`
-- Throws `ApiError { status, serverError }` on non-2xx responses (parses `{ error: string }` from body)
-- In dev, logs request/response unless `VITE_DISABLE_DEV_LOGGING` is set
-
-`utils/api/request.ts` exports typed wrappers: `get`, `post`, `put`, `patch`, `del`.
-
-### Service Files
-
-Service files live in `src/services/<domain>/`. Each exports pure async functions that call `utils/api/request.ts` methods and return typed responses matching server models.
-
-```typescript
-import { get, post } from "../../utils/api/request";
-import type { ProjectConfig } from "../../types/projects";
-
-export const listProjects = () => get<ProjectConfig[]>("/projects");
-export const createProject = (input: CreateProjectRequest) =>
-  post<ProjectConfig>("/projects", input);
-```
-
-### Error Handling
-
-Backend returns errors as `{ error: "message" }`. The `ApiError` class parses this body:
-
-```typescript
-try {
-  await listProjects();
-} catch (e) {
-  if (e instanceof ApiError) {
-    e.status; // HTTP status code
-    e.message; // error string from body
-  }
-}
-```
-
-## State Strategy
-
-| State Type            | Tool                         | Scope                          |
-| --------------------- | ---------------------------- | ------------------------------ |
-| Client-only UI state  | `@preact/signals` stores    | Theme, sidebar, auth token     |
-| Component-local state | `useSignal`                  | Ephemeral form state, toggles  |
-
-Server state may be introduced later with a caching library (e.g. @tanstack/react-query), but currently only signals and useSignal are used.
-
-## Auth Flow
-
-Magic-link authentication:
-
-1. `POST /api/v1/auth/login` with `{ email }`
-2. `GET /api/v1/auth/verify?token=...` returns `{ message, user: { id, email } }`
-3. Store the returned token in `stores/auth.store.ts`
-
-## Directory Map
-
-| Directory                          | Holds                                                 |
-| ---------------------------------- | ----------------------------------------------------- |
-| `components/<feature>/ui/`         | Presentational views (`.view.tsx`)                    |
-| `components/<feature>/hooks/`      | Data hooks (`.hook.ts`)                               |
-| `components/<feature>/containers/` | Glue containers (`.container.tsx`)                    |
-| `pages/`                           | Route-level page components                           |
-| `services/`                        | API call functions wrapping `utils/api/request.ts`    |
-| `stores/`                          | Global signal-based stores                            |
-| `hooks/`                           | Shared generic hooks                                  |
-| `utils/`                           | Cross-feature utilities (API client, case conversion) |
-| `routes/`                          | Route definitions                                     |
-| `types/`                           | TypeScript type definitions                           |
+### TypeScript Rules
 
 <very_important_block>
 
-- \*.view.tsx SHOULD ONLY CONTAIN STYLES AND LAYOUT NO LOGIC/FUNCTIONS/VARIABLES DEFINITION THERE.
-- MUST FOLLOW `DRY` (DO NO REPEAT YOURSELF) principle, NO code repetition should exist in everything you do for ANY reason, unless ther is really no way around it.
-- Do not create `index.ts` files for re-exports.
-- Use `export const foo = () = {}`, don't put the export list at the bottom of the file.
-- Don't use `function App()` use `const App = () => {}` style of definitions.
-- Use `class=""` in preact for classes. Only use `class=""` in very specific edge cases.
-- This project uses `@preact/signals` based reactivity everywhere. Meaning that global states/signals use `const signalName = signal()` and everything component scoped should use `useSignal` hooks. YOU SHOULD NOT CREATE THE STATES using `useState`!
-- REUSE INSTEAD OF REIMPLEMENTING, IF UNSURE WHETHER SOMETHING EXIST - SEARCH FOR IT AND ONLY IF IT DOESN'T IMPLEMENT.
-- In TS use `for...of` instead of `forEach`.
-  <bad_example>
+- `*.view.tsx` files should contain only styles and layout. No logic, functions, side effects, or variable definitions.
+- Use `export const foo = () => {}`. Do not put export lists at the bottom of the file.
+- Do not use `function App()`. Use `const App = () => {}` style definitions.
+- Use `class=""` in Preact JSX. Use `className=""` only for specific compatibility edge cases.
+- Use `@preact/signals` for reactivity. Global state uses `signal()`. Component-scoped state uses `useSignal()`.
+- Do not use `useState`.
+- Use strict TypeScript. Do not rely on implicit `any`.
+- Use `for...of` instead of `forEach`.
+- Reuse instead of reimplementing.
+- Do not create `index.ts` re-export files.
+
+Bad:
 
 ```ts
-objs.forEach((obj) => console.log(JSON.stringify(obj)))'
+objs.forEach((obj) => console.log(JSON.stringify(obj)));
 ```
 
-</bad_example>
-<good_example>
+Good:
 
 ```ts
 for (const obj of objs) {
@@ -354,91 +192,185 @@ for (const obj of objs) {
 }
 ```
 
-</good_example>
-
-# Code guide
-
-You should aim to write simple, readable, and maintainable code. Over-abstracting stuff and overcomplicating is not endorsed, remember the less code - the better, as code is a liability.
-
 </very_important_block>
 
-## PYTHON GUIDELINES
+### Stores
 
-Before starting any implementation, read the folder structure to understand the architecture. We follow DDD/Clean Architecture principles.
+Stores are plain objects with signals. Do not use classes, getters, or setters.
 
-Project uses `uv` as a package manager, also there is `taskipy` with predefined shortcuts to run lints/type checks, it is defined in `pyproject.toml`
+```ts
+import { signal, type Signal } from '@preact/signals';
 
-<important_rules>
-- DONT create ANY comments unless ABSOLUTELY necessary
-- Don't add documentation strings/explanations, unless this is critical and confusing or asked directly by a user.
-- When creating pydantic models from EXISTING data (dicts, JSON, ORM objects) with matching field names, ALWAYS use `.model_validate()`, `.model_validate_json()`, or `.model_validate(obj, from_attributes=True)`. This applies to single objects, nested models, and lists.
-- Prefer using a `kwargs` syntax over args, meaning that `func(a=1, b=2, c=3)` is PREFERRED over `func(1, 2, 3)`.
-- The max length of a function should not exceed 30 lines (only in some rare cases), if its more than that - split
-- The length of a single file should not be more that 200 lines, if its more than that - split, except for files defining database models.
-- MUST FOLLOW `DRY` (DO NO REPEAT YOURSELF) principle, NO code repetition should exist in everything you do for ANY reason, unless ther is really no way around it.
-- DON'T USE `__all__` in files and DON'T RE-EXPORT ANYTHING in `__init__.py` use direct imports of what is needed.
-- For generic parameters use new Python 3.14 syntax via `def foo[**P, T]` where P is a new param spec syntax and T is a typevar. The same can be applied to classes.
-- You are not allowed to silence a type checker, if you have no idea how to fix, better just highlight it to the user than silence it. THOUGH IF THEY WERE HERE BEFORE - DON'T TOUCH THEM
-- Everything has to be type annotated (function arguments/return types)
-- `list`, `dict`, etc, anything that is generic should be properly annotated, i.e. `list[str]`, `dict[str, Any]`
-- Use only new style formatted strings, i.e. `f'{tpl} string'`, NO `.format()` or `%s` replacements.
-- No `object` in annotations, use `Any` or more specific types
-- NO LOCAL IMPORTS, unless absolutely necessary (like avoiding circular imports)
-- NO `dict` returns from functions, or `list[dict]` returns, if the complex object has to be returned it has to be a BaseModel DTO.
-</important_rules>
+interface FeatureStore {
+  data: Signal<string[]>;
+  loading: Signal<boolean>;
+}
 
-## Build/Lint/Test Commands
-
-Package manager: `uv` (use `uv run` to execute commands in the virtual environment)
-
-```bash
-# Format and lint (run before committing)
-uv run task format-and-lint
-
-# Individual lint commands
-uv run task ruff              # Format and fix lint issues
-uv run task ruff-lint         # Check only (no fixes)
-uv run task pyright-lint      # Type check with basedpyright
-
-# Tests
-uv run task tests                          # Run all tests
-uv run pytest tests/test_main.py -v        # Run single test file
-uv run pytest tests/test_main.py::test_sync_runs -v  # Run single test
-uv run pytest tests/ -k "asyncio" -v       # Run tests matching pattern
+export const featureStore: FeatureStore = {
+  data: signal([]),
+  loading: signal(false)
+};
 ```
 
-## Code Style Rules
+### Services
 
-### Imports
+Service files live in `src/services/<domain>/`.
 
-- NO local imports (except for avoiding circular imports)
-- Use absolute imports from `app.` prefix
-- Import order enforced by ruff/isort: stdlib → third-party → first-party (`app`)
+- Keep service functions pure request/response wrappers.
+- Return typed data matching backend models.
+- Keep Tauri `invoke` calls in desktop service modules.
+- Keep HTTP wrappers in `utils/api/*` if HTTP APIs are introduced.
 
-### Type Annotations
+### Testing
 
-- ALL function arguments and return types MUST be type annotated
-- Use `list[str]`, `dict[str, Any]` (not `list`, `dict` without parameters)
-- Use `Any` instead of `object` for generic types
-- Union types: use `str | None` (not `Optional[str]`)
-- NEVER silence the type checker with `# type: ignore` unless it was already there
+- Use Vitest for frontend tests.
+- Tests live under `src/tests`.
+- Prefer testing hooks/helpers for logic and rendered interaction tests for UI behavior.
 
-### Functions and Classes
+## Frontend Design System
 
-- NO `__all__` in files
-- NO re-exports in `__init__.py` - use direct imports
-- NO significant logic in route handlers - move to use_cases/helpers/services
-- NO `dict` or `list[dict]` returns - use BaseModel DTOs for complex objects
+### Visual Direction
 
-## Formatting (ruff)
+- Dark-first minimalist UI.
+- Pure black body background.
+- Deep charcoal surfaces for cards and panels.
+- High-contrast white typography.
+- Border-heavy depth using faint white-opacity borders.
+- Avoid heavy shadows and gradients.
+- All theme colors are defined with OKLCH in `style.css`.
+- Do not use HEX or RGBA in theme tokens.
 
-- Line length: 120 characters
-- Quotes: single quotes
-- Indent: spaces
-- Target: Python 3.14
+### Typography
 
-## Testing
-Use `mocker: MockerFixture` to mock inside the tests.
-Tests should live in a `src/tests` folder.
+- Sans-serif: `Inter`
+- Monospace: `JetBrains Mono`
+- Body text: `1rem`, line-height `1.5`, `oklch(100% 0 0 / 0.8)`
+- Use uppercase only for small labels, nav, and CTAs.
 
-Use vitest when implementing these.
+### Color Palette
+
+- Background: `oklch(0% 0 0)`
+- Surface: `oklch(14% 0 0)`
+- Card panels: `oklch(20% 0 0)`
+- Subtle panels: `oklch(22% 0 0)`
+- Raised panels: `oklch(23% 0 0)`
+- Primary text: `oklch(100% 0 0)`
+- Secondary text: `oklch(100% 0 0 / 0.8)`
+- Muted text: `oklch(65% 0 0)`
+- Borders: `oklch(100% 0 0 / 0.1)` or `oklch(26% 0 0)`
+- Success green: `oklch(82% 0.2 145)`
+- Emerald accent: `oklch(78% 0.18 165)`
+- Error red: `oklch(55% 0.2 25)`
+- Warning orange: `oklch(65% 0.2 45)`
+
+### Components
+
+- Cards use `bg-surface`, `border border-white/10`, no shadow, and no radius beyond `0.25rem`.
+- Inputs use `bg-surface`, subtle borders, and clear focus borders.
+- Tags and badges are small, uppercase, and border-based.
+- Primary buttons are white on black with square edges.
+- Secondary buttons are transparent with subtle borders.
+
+### Layout
+
+Always use flexbox with `gap` for sibling spacing. Do not use `space-y-*` or child margins for layout spacing.
+
+```tsx
+<div class='flex flex-col gap-4'>
+  <Item />
+  <Item />
+</div>
+```
+
+Parent containers control spacing.
+
+### Theme
+
+- Theme modes: `system`, `light`, `dark`
+- Persist theme mode in localStorage.
+- Use `data-theme` on `<html>`.
+
+## Rust Backend
+
+### Rust Directory Structure
+
+```text
+src-tauri/src/
+  lib.rs              Tauri builder, plugin setup, command registration
+  main.rs             binary entrypoint
+  app/                Tauri commands and app orchestration
+  domain/             shared DTOs and state types
+  storage/            SQLite repository and persistence
+  worker/             worker bootstrap/runtime command execution
+  capture/            native audio capture and mixing
+  settings/           settings defaults, validation, keyring secrets
+  artifacts/          artifact/stage/path helpers
+  utils/              shared conversion and filesystem helpers
+  tests.rs            Rust unit tests
+```
+
+### Rust Rules
+
+- Keep `lib.rs` focused on initialization, plugins, managed state, and command registration.
+- Put domain logic in modules under `src-tauri/src/<domain>/`.
+- Tauri command handlers marked with `#[tauri::command]` should be `pub`.
+- Internal cross-module helpers should be `pub(crate)`.
+- Prefer async setup for expensive startup work. Manage state immediately, spawn initialization, then emit readiness/snapshot events.
+- Do not block `.setup()` with heavy work unless it is required before the window can exist.
+- Keep repository/database access behind the storage layer.
+- Keep worker process concerns in `worker/`.
+- Keep native audio capture concerns in `capture/`.
+- Use `cargo fmt`.
+- Run Rust checks after backend changes.
+
+### Rust Style
+
+- Put trait bounds in `where` clauses.
+- Prefer `Self` in impl blocks where applicable.
+- Use early returns for guard clauses.
+- Avoid `if let ... else`; prefer `match` when both branches matter.
+- Use full logging macro paths if logging is introduced.
+- Prefer `.to_owned()` for `&str` to `String`.
+- Keep imports grouped in this order: std, external crates, current crate.
+- Use one `use` per crate group and let `cargo fmt` handle ordering.
+
+## Python Worker
+
+Before Python implementation, inspect the worker folder structure. The worker follows a clean/domain-oriented style.
+
+### Python Rules
+
+<important_rules>
+
+- Do not create comments unless absolutely necessary.
+- Do not add docstrings unless the behavior is critical, confusing, or explicitly requested.
+- Use `uv` as the package manager.
+- Use task commands from `pyproject.toml`.
+- Use absolute imports from the `app.` prefix.
+- No local imports except when strictly necessary to avoid circular imports.
+- Import order is enforced by Ruff/isort: standard library, third-party, first-party.
+- All function arguments and return types must be annotated.
+- Use `list[str]`, `dict[str, Any]`, and other parameterized generics.
+- Use `Any` instead of `object` for generic values.
+- Use `str | None`, not `Optional[str]`.
+- Never silence the type checker unless the suppression already existed.
+- Prefer keyword arguments: `func(a=1, b=2)`.
+- Keep functions under 30 lines unless there is a strong reason.
+- Keep files under 200 lines except database model files.
+- Do not use `__all__`.
+- Do not re-export from `__init__.py`; import directly from the defining module.
+- Use Python 3.14 generic syntax, such as `def foo[**P, T](...)`.
+- Use f-strings only. Do not use `.format()` or `%` formatting.
+- When creating Pydantic models from existing dicts, JSON, or ORM objects with matching fields, use `.model_validate()`, `.model_validate_json()`, or `.model_validate(obj, from_attributes=True)`.
+- Do not return raw `dict` or `list[dict]` for complex objects. Use `BaseModel` DTOs.
+
+</important_rules>
+
+### Python Testing
+
+- Use pytest.
+- Use `mocker: MockerFixture` for mocks.
+- Tests should live under the worker test structure.
+- Run `uv run task tests` after worker changes.
+- Run `uv run task ruff-lint` and `uv run task pyright-lint` after typed Python changes.
+

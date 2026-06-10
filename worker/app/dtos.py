@@ -79,6 +79,7 @@ class TranscriptionCompleteResult(AppBaseModel):
     status: Literal['complete'] = 'complete'
     segments: list[Segment]
     language: str | None = None
+    warning: str | None = None
 
 
 class SummaryCompleteResult(AppBaseModel):
@@ -91,23 +92,31 @@ class TranscribePayload(AppBaseModel):
     audio_path: Path
     output_directory: Path
     segments: list[Segment] | None = None
-    model: str = 'medium.en'
+    model: str = 'small.en'
     language: str | None = None
     compute_type: str = 'auto'
     model_storage_directory: Path | None = None
 
 
 class DiarizePayload(AppBaseModel):
+    audio_path: Path | None = None
     output_directory: Path
     segments: list[Segment] = Field(default_factory=list)
     turns: list[SpeakerTurn] = Field(default_factory=list)
     speaker_count_mode: str = 'automatic'
     exact_speakers: Any = None
+    min_speakers: Any = None
+    max_speakers: Any = None
     backend: str = 'nemoWhisper'
+    api_key: str = ''
+
+
+class DiarizationCheckPayload(AppBaseModel):
+    api_key: str = ''
 
 
 class ModelsPayload(AppBaseModel):
-    model: str = 'medium.en'
+    model: str = 'small.en'
     compute_type: str = 'auto'
     model_storage_directory: Path | None = None
 
@@ -137,6 +146,12 @@ class ModelsStatusPayload(AppBaseModel):
     models: list[ModelStatus]
 
 
+class RuntimeCapabilitiesPayload(AppBaseModel):
+    faster_whisper_available: bool
+    cuda_available: bool
+    cuda_error: str | None = None
+
+
 class ModelInstallPayload(AppBaseModel):
     model: str
     model_storage_directory: str
@@ -145,6 +160,7 @@ class ModelInstallPayload(AppBaseModel):
 class TranscribeCompletePayload(AppBaseModel):
     segments_path: str
     transcript_path: str
+    warning: str | None = None
 
 
 class DiarizeCompletePayload(AppBaseModel):

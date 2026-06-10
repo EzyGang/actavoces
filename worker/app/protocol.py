@@ -7,8 +7,10 @@ from app.core.pydantic_base import AppBaseModel
 
 WorkerCommandName = Literal[
     'health.check',
+    'runtime.capabilities',
     'models.status',
     'models.install',
+    'diarization.check',
     'transcribe.run',
     'diarize.run',
     'summarize.run',

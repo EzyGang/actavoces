@@ -6,14 +6,16 @@ import { useEffect } from 'preact/hooks';
 import {
   bootstrapWorkerRuntime,
   checkWorkerHealth,
+  clearHuggingFaceToken,
   clearSummaryProviderApiKey,
   deleteRecording,
   getAppSnapshot,
   installTranscriptionModel,
   openLocalPath,
   refreshModelInventory,
-  resumePendingJobs,
   retryRecordingJobs,
+  setupDiarizationRuntime,
+  skipDiarizationSetup,
   startRecording,
   stopRecording,
   toggleRecordingFromShortcut,
@@ -30,7 +32,7 @@ import type {
   AppSettings,
   AppSettingsUpdate,
   CaptureDeviceInfo,
-  PipelineJob,
+  PipelineStage,
   Recording,
   WorkerSetupProgress
 } from '../../../types/desktop';
@@ -79,6 +81,19 @@ interface SettingsSelectField {
   value: string;
   options: string[];
   onChange: JSX.GenericEventHandler<HTMLSelectElement>;
+  hint?: SettingsFieldHint;
+}
+
+interface SettingsFieldHint {
+  tone: 'muted' | 'warning';
+  title?: string;
+  text: string;
+  links?: SettingsFieldHintLink[];
+}
+
+interface SettingsFieldHintLink {
+  href: string;
+  label: string;
 }
 
 const resolveLatestRecording = (recordings: Recording[]): Recording | null =>
@@ -90,8 +105,61 @@ const canRetryRecording = (recording: Recording): boolean =>
       stage.id !== 'recording' && (stage.status === 'failed' || stage.status === 'needsSetup')
   );
 
-const recordingTitleForJob = (recordings: Recording[], job: PipelineJob): string =>
-  recordings.find((recording) => recording.id === job.recordingId)?.title ?? job.recordingId;
+const stageProgressWeight = (stage: PipelineStage): number => {
+  if (stage.status === 'complete' || stage.status === 'skipped') {
+    return 100;
+  }
+
+  return stage.progress;
+};
+
+const recordingProgress = (recording: Recording): number => {
+  if (recording.stages.length === 0) {
+    return 0;
+  }
+
+  const progress = recording.stages.reduce((total, stage) => total + stageProgressWeight(stage), 0);
+
+  return Math.round(progress / recording.stages.length);
+};
+
+const recordingPipelineStatus = (recording: Recording) => {
+  const blocker = recording.stages.find(
+    (stage) => stage.status === 'failed' || stage.status === 'needsSetup'
+  );
+
+  if (blocker) {
+    return {
+      status: blocker.status,
+      label: blocker.status,
+      message: blocker.message
+    };
+  }
+
+  if (recording.stages.some((stage) => stage.status === 'running')) {
+    return {
+      status: 'running' as const,
+      label: 'running',
+      message: 'Processing recording'
+    };
+  }
+
+  if (
+    recording.stages.every((stage) => stage.status === 'complete' || stage.status === 'skipped')
+  ) {
+    return {
+      status: 'complete' as const,
+      label: 'complete',
+      message: 'Processing complete'
+    };
+  }
+
+  return {
+    status: 'pending' as const,
+    label: 'pending',
+    message: 'Waiting for processing'
+  };
+};
 
 const captureDeviceOptions = (devices: CaptureDeviceInfo[], selectedValue: string): string[] => {
   const options = devices.map((device) => device.name);
@@ -154,6 +222,8 @@ const buildSettingsUpdate = (settings: AppSettings): AppSettingsUpdate => ({
   exactSpeakers: settings.exactSpeakers,
   minSpeakers: settings.minSpeakers,
   maxSpeakers: settings.maxSpeakers,
+  huggingFaceToken: '',
+  diarizationSetupSkipped: settings.diarizationSetupSkipped,
   summaryEnabled: settings.summaryEnabled,
   providerBaseUrl: settings.providerBaseUrl,
   providerModel: settings.providerModel,
@@ -202,8 +272,8 @@ export const useApp = () => {
   const installingModel = useSignal(false);
   const recordingHotkey = useSignal(false);
   const setupProgress = useSignal<WorkerSetupProgress>(initialSetupProgress);
-  const setupReady = useSignal(false);
   const setupRunning = useSignal(false);
+  const bootstrapRequested = useSignal(false);
   const settingsDraft = useSignal<AppSettingsUpdate>(
     buildSettingsUpdate(appSnapshotSignal.value.settings)
   );
@@ -243,7 +313,6 @@ export const useApp = () => {
         step: 'Worker runtime ready',
         error: null
       };
-      setupReady.value = true;
     } catch (error) {
       const message = errorMessage(error, 'Unable to prepare worker runtime');
 
@@ -253,6 +322,49 @@ export const useApp = () => {
         step: 'Worker setup failed',
         error: message
       };
+    } finally {
+      setupRunning.value = false;
+    }
+  };
+
+  const handleSetupDiarization = async () => {
+    setupRunning.value = true;
+    appErrorSignal.value = null;
+    setupProgress.value = {
+      status: 'installing',
+      step: 'Preparing speaker diarization',
+      error: null
+    };
+
+    try {
+      setSnapshot(await setupDiarizationRuntime(settingsDraft.value.huggingFaceToken));
+      setupProgress.value = {
+        status: 'ready',
+        step: 'Speaker diarization runtime ready',
+        error: null
+      };
+    } catch (error) {
+      const message = errorMessage(error, 'Unable to prepare speaker diarization');
+
+      appErrorSignal.value = message;
+      setupProgress.value = {
+        status: 'failed',
+        step: 'Speaker diarization setup failed',
+        error: message
+      };
+    } finally {
+      setupRunning.value = false;
+    }
+  };
+
+  const handleSkipDiarizationSetup = async () => {
+    setupRunning.value = true;
+    appErrorSignal.value = null;
+
+    try {
+      setSnapshot(await skipDiarizationSetup());
+    } catch (error) {
+      appErrorSignal.value = errorMessage(error, 'Unable to skip speaker diarization setup');
     } finally {
       setupRunning.value = false;
     }
@@ -279,19 +391,6 @@ export const useApp = () => {
       setSnapshot(await stopRecording());
     } catch (error) {
       appErrorSignal.value = errorMessage(error, 'Unable to stop recording');
-    } finally {
-      loading.value = false;
-    }
-  };
-
-  const handleResumeJobs = async () => {
-    loading.value = true;
-    appErrorSignal.value = null;
-
-    try {
-      setSnapshot(await resumePendingJobs());
-    } catch (error) {
-      appErrorSignal.value = errorMessage(error, 'Unable to resume jobs');
     } finally {
       loading.value = false;
     }
@@ -395,7 +494,8 @@ export const useApp = () => {
   const handleSaveSettings = async () => {
     const validationErrors = validateSettingsDraft(
       settingsDraft.value,
-      appSnapshotSignal.value.settings.providerApiKeyConfigured
+      appSnapshotSignal.value.settings.providerApiKeyConfigured,
+      appSnapshotSignal.value.desktop.cudaAvailable
     );
 
     if (validationErrors.length > 0) {
@@ -424,6 +524,19 @@ export const useApp = () => {
       setSnapshot(await clearSummaryProviderApiKey());
     } catch (error) {
       appErrorSignal.value = errorMessage(error, 'Unable to clear provider API key');
+    } finally {
+      savingSettings.value = false;
+    }
+  };
+
+  const handleClearHuggingFaceToken = async () => {
+    savingSettings.value = true;
+    appErrorSignal.value = null;
+
+    try {
+      setSnapshot(await clearHuggingFaceToken());
+    } catch (error) {
+      appErrorSignal.value = errorMessage(error, 'Unable to clear Hugging Face token');
     } finally {
       savingSettings.value = false;
     }
@@ -584,6 +697,7 @@ export const useApp = () => {
       'app-snapshot-updated',
       (event) => {
         setSnapshot(event.payload);
+        loading.value = false;
       }
     );
     const errorListener = listen<string>('app-error', (event) => {
@@ -602,14 +716,26 @@ export const useApp = () => {
 
   useEffect(() => {
     if (!isTauriRuntime()) {
-      setupReady.value = true;
       void loadSnapshot();
 
       return;
     }
 
-    void runBootstrap();
+    loading.value = true;
   }, []);
+
+  useEffect(() => {
+    if (
+      !isTauriRuntime() ||
+      bootstrapRequested.value ||
+      appSnapshotSignal.value.settings.databasePath.trim().length === 0
+    ) {
+      return;
+    }
+
+    bootstrapRequested.value = true;
+    void runBootstrap();
+  }, [appSnapshotSignal.value.settings.databasePath]);
 
   const latestRecording = useComputed(() =>
     resolveLatestRecording(appSnapshotSignal.value.recordings)
@@ -629,45 +755,52 @@ export const useApp = () => {
       }
     }))
   );
-  const latestArtifacts = useComputed(() =>
-    latestRecording.value
-      ? latestRecording.value.artifacts.map((artifact) => ({
-          artifact,
-          onOpen: () => {
-            void handleOpenPath(artifact.path);
-          }
-        }))
-      : []
-  );
-  const jobRows = useComputed(() =>
-    appSnapshotSignal.value.jobs.map((job) => {
-      const recording = appSnapshotSignal.value.recordings.find(
-        (candidate) => candidate.id === job.recordingId
-      );
-
-      return {
-        job,
-        recordingTitle: recordingTitleForJob(appSnapshotSignal.value.recordings, job),
-        canRetry: recording ? canRetryRecording(recording) : false,
-        onRetry: recording
-          ? () => {
-              void handleRetryRecording(recording);
-            }
-          : undefined
-      };
-    })
-  );
   const isRecording = useComputed(() => appSnapshotSignal.value.activeRecording !== null);
   const activeJobs = useComputed(() =>
     appSnapshotSignal.value.jobs.filter(
-      (job: PipelineJob) => job.status === 'running' || job.status === 'pending'
+      (job) => job.status === 'running' || job.status === 'pending'
     )
   );
   const settingsValidationErrors = useComputed(() =>
     validateSettingsDraft(
       settingsDraft.value,
-      appSnapshotSignal.value.settings.providerApiKeyConfigured
+      appSnapshotSignal.value.settings.providerApiKeyConfigured,
+      appSnapshotSignal.value.desktop.cudaAvailable
     )
+  );
+  const latestRecordingProgress = useComputed(() =>
+    latestRecording.value ? recordingProgress(latestRecording.value) : 0
+  );
+  const latestRecordingPipelineStatus = useComputed(() =>
+    latestRecording.value ? recordingPipelineStatus(latestRecording.value) : null
+  );
+  const recentRecordingRows = useComputed(() =>
+    appSnapshotSignal.value.recordings.slice(0, 5).map((recording) => ({
+      recording,
+      progress: recordingProgress(recording),
+      pipelineStatus: recordingPipelineStatus(recording),
+      canRetry: canRetryRecording(recording),
+      onOpenFolder: () => {
+        void handleOpenPath(recording.artifactDirectory);
+      },
+      onRetry: () => {
+        void handleRetryRecording(recording);
+      }
+    }))
+  );
+  const groupedJobRows = useComputed(() =>
+    appSnapshotSignal.value.recordings
+      .map((recording) => ({
+        recording,
+        progress: recordingProgress(recording),
+        pipelineStatus: recordingPipelineStatus(recording),
+        canRetry: canRetryRecording(recording),
+        jobs: appSnapshotSignal.value.jobs.filter((job) => job.recordingId === recording.id),
+        onRetry: () => {
+          void handleRetryRecording(recording);
+        }
+      }))
+      .filter((row) => row.jobs.length > 0)
   );
   const selectedModel = useComputed(
     () =>
@@ -675,15 +808,28 @@ export const useApp = () => {
         (model) => model.name === settingsDraft.value.whisperModel
       ) ?? null
   );
+  const workerSetupReady = useComputed(
+    () => appSnapshotSignal.value.desktop.workerSetupStatus === 'ready'
+  );
+  const needsDiarizationSetup = useComputed(
+    () =>
+      workerSetupReady.value &&
+      appSnapshotSignal.value.settings.diarizationBackend === 'pyannote' &&
+      !appSnapshotSignal.value.settings.diarizationRuntimeReady &&
+      !appSnapshotSignal.value.settings.diarizationSetupSkipped
+  );
+  const setupReady = useComputed(() => workerSetupReady.value && !needsDiarizationSetup.value);
 
   return {
     data: {
       snapshot: appSnapshotSignal,
       latestRecording,
       recordingRows,
-      latestArtifacts,
-      jobRows,
+      groupedJobRows,
+      recentRecordingRows,
       activeJobs,
+      latestRecordingProgress,
+      latestRecordingPipelineStatus,
       selectedModel,
       settingsValidationErrors,
       routeLabel,
@@ -696,6 +842,7 @@ export const useApp = () => {
       savingSettings,
       installingModel,
       setupReady,
+      needsDiarizationSetup,
       setupRunning,
       error: appErrorSignal,
       isRecording,
@@ -729,6 +876,13 @@ export const useApp = () => {
         recording: recordingHotkey.value,
         onCapture: handleCaptureHotkey
       } satisfies SettingsHotkeyField,
+      huggingFaceTokenField: {
+        key: 'huggingFaceToken',
+        label: 'Hugging Face token',
+        inputType: 'password',
+        value: settingsDraft.value.huggingFaceToken,
+        onInput: makeTextInputHandler('huggingFaceToken')
+      } satisfies SettingsTextField,
       textFields: [
         {
           key: 'providerBaseUrl',
@@ -825,14 +979,38 @@ export const useApp = () => {
           label: 'Compute type',
           value: settingsDraft.value.computeType,
           options: ['auto', 'cpu', 'cuda', 'metal'],
-          onChange: makeSelectChangeHandler('computeType')
+          onChange: makeSelectChangeHandler('computeType'),
+          hint: {
+            tone: 'warning',
+            title: 'CUDA processing requires NVIDIA libraries.',
+            text: `Install cuBLAS for CUDA 12 and cuDNN 9 for CUDA 12. Runtime check: ${
+              appSnapshotSignal.value.desktop.cudaAvailable
+                ? 'CUDA device and required libraries detected'
+                : (appSnapshotSignal.value.desktop.cudaError ?? 'not ready')
+            }`,
+            links: [
+              {
+                href: 'https://developer.nvidia.com/cublas',
+                label: 'cuBLAS'
+              },
+              {
+                href: 'https://developer.nvidia.com/cudnn',
+                label: 'cuDNN'
+              }
+            ]
+          }
         },
         {
           key: 'diarizationBackend',
           label: 'Diarization backend',
           value: settingsDraft.value.diarizationBackend,
-          options: ['nemoWhisper', 'pyannote'],
-          onChange: makeSelectChangeHandler('diarizationBackend')
+          options: ['pyannote'],
+          onChange: makeSelectChangeHandler('diarizationBackend'),
+          hint: {
+            tone: 'muted',
+            title: 'Local pyannote speaker diarization.',
+            text: 'Requires pyannote.audio, bundled or system ffmpeg, accepted Hugging Face model terms, and a Hugging Face access token. pyannoteAI cloud API support is not implemented.'
+          }
         },
         {
           key: 'speakerCountMode',
@@ -871,13 +1049,15 @@ export const useApp = () => {
       startRecording: handleStartRecording,
       stopRecording: handleStopRecording,
       toggleRecording: handleToggleRecording,
-      resumeJobs: handleResumeJobs,
       checkWorker: handleCheckWorker,
       refreshModels: handleRefreshModels,
       installSelectedModel: handleInstallSelectedModel,
       clearProviderApiKey: handleClearProviderApiKey,
+      clearHuggingFaceToken: handleClearHuggingFaceToken,
       saveSettings: handleSaveSettings,
-      retrySetup: runBootstrap
+      retrySetup: runBootstrap,
+      setupDiarization: handleSetupDiarization,
+      skipDiarizationSetup: handleSkipDiarizationSetup
     }
   };
 };

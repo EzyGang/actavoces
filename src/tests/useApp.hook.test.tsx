@@ -5,7 +5,6 @@ import { useApp } from '../components/app/hooks/useApp.hook';
 import {
   getAppSnapshot,
   openLocalPath,
-  resumePendingJobs,
   retryRecordingJobs,
   startRecording,
   stopRecording
@@ -25,14 +24,16 @@ vi.mock('@tauri-apps/plugin-dialog', () => ({
 vi.mock('../services/desktop/app.service', () => ({
   bootstrapWorkerRuntime: vi.fn(),
   checkWorkerHealth: vi.fn(),
+  clearHuggingFaceToken: vi.fn(),
   clearSummaryProviderApiKey: vi.fn(),
   deleteRecording: vi.fn(),
   getAppSnapshot: vi.fn(),
   installTranscriptionModel: vi.fn(),
   openLocalPath: vi.fn(),
   refreshModelInventory: vi.fn(),
-  resumePendingJobs: vi.fn(),
   retryRecordingJobs: vi.fn(),
+  setupDiarizationRuntime: vi.fn(),
+  skipDiarizationSetup: vi.fn(),
   startRecording: vi.fn(),
   stopRecording: vi.fn(),
   toggleRecordingFromShortcut: vi.fn(),
@@ -48,15 +49,18 @@ const baseSettings: AppSettings = {
   microphoneDevice: 'Default microphone',
   systemAudioSource: 'Default system output',
   sampleRate: 48000,
-  whisperModel: 'medium.en',
+  whisperModel: 'small.en',
   transcriptionLanguage: 'auto',
   computeType: 'auto',
   modelStorageDirectory: '/tmp/actavoces/models',
-  diarizationBackend: 'nemoWhisper',
+  diarizationBackend: 'pyannote',
   speakerCountMode: 'automatic',
   exactSpeakers: null,
   minSpeakers: null,
   maxSpeakers: null,
+  huggingFaceTokenConfigured: false,
+  diarizationSetupSkipped: true,
+  diarizationRuntimeReady: false,
   summaryProviderConfigured: false,
   providerApiKeyConfigured: false,
   summaryEnabled: false,
@@ -127,7 +131,9 @@ const makeSnapshot = (overrides: Partial<AppSnapshot> = {}): AppSnapshot => ({
     workerError: null,
     workerSetupStatus: 'ready',
     workerSetupStep: 'Worker runtime ready',
-    workerSetupError: null
+    workerSetupError: null,
+    cudaAvailable: false,
+    cudaError: null
   },
   settings: baseSettings,
   ...overrides
@@ -145,7 +151,6 @@ describe('useApp hook', () => {
     vi.mocked(openLocalPath).mockReset();
     vi.mocked(startRecording).mockReset();
     vi.mocked(stopRecording).mockReset();
-    vi.mocked(resumePendingJobs).mockReset();
     vi.mocked(retryRecordingJobs).mockReset();
     vi.mocked(open).mockReset();
     resetSignals();
@@ -256,9 +261,8 @@ describe('useApp hook', () => {
     expect(result.current.status.error.value).toBe('stop failed');
   });
 
-  it('resumes jobs and applies job progress', async () => {
-    vi.mocked(getAppSnapshot).mockResolvedValue(makeSnapshot());
-    vi.mocked(resumePendingJobs).mockResolvedValue(
+  it('derives active jobs from the snapshot', async () => {
+    vi.mocked(getAppSnapshot).mockResolvedValue(
       makeSnapshot({
         jobs: [
           {
@@ -277,9 +281,6 @@ describe('useApp hook', () => {
 
     await waitFor(() => {
       expect(vi.mocked(getAppSnapshot)).toHaveBeenCalled();
-    });
-    await act(async () => {
-      await result.current.actions.resumeJobs();
     });
 
     expect(result.current.data.activeJobs.value).toHaveLength(1);
@@ -520,21 +521,5 @@ describe('useApp hook', () => {
 
     expect(retryRecordingJobs).toHaveBeenCalledWith('recording-1');
     expect(result.current.data.snapshot.value.recordings[0].stages[0].status).toBe('running');
-  });
-
-  it('surfaces resume failures', async () => {
-    vi.mocked(getAppSnapshot).mockResolvedValue(makeSnapshot());
-    vi.mocked(resumePendingJobs).mockRejectedValue(new Error('worker missing'));
-
-    const { result } = renderHook(() => useApp());
-
-    await waitFor(() => {
-      expect(vi.mocked(getAppSnapshot)).toHaveBeenCalled();
-    });
-    await act(async () => {
-      await result.current.actions.resumeJobs();
-    });
-
-    expect(result.current.status.error.value).toBe('worker missing');
   });
 });

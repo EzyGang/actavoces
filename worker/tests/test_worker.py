@@ -10,9 +10,33 @@ from app.dtos import SummarizePayload, SummaryOutput
 from app.events import emit
 from app.formatting import render_diarized_transcript, render_raw_transcript
 from app.handlers import handle
-from app.models import install_faster_whisper_model, model_installed, run_faster_whisper
+from app.models import cuda_status, install_faster_whisper_model, model_installed, run_faster_whisper
 from app.protocol import WorkerCommand, WorkerEvent
 from app.summaries import assemble_summary_prompt, build_summary_agent, run_openai_compatible_summary
+
+
+class MockPyannoteTurn:
+    def __init__(self, start: float, end: float) -> None:
+        self.start = start
+        self.end = end
+
+
+class MockPyannoteAnnotation:
+    def itertracks(self, yield_label: bool = False) -> list[tuple[MockPyannoteTurn, None, str]]:
+        return [
+            (MockPyannoteTurn(0, 1), None, 'SPEAKER_00'),
+            (MockPyannoteTurn(1, 2), None, 'SPEAKER_01'),
+        ]
+
+
+class MockPyannotePipeline:
+    def __init__(self) -> None:
+        self.calls: list[dict[str, int]] = []
+
+    def __call__(self, audio_path: str, **kwargs: int) -> MockPyannoteAnnotation:
+        self.calls.append(kwargs)
+
+        return MockPyannoteAnnotation()
 
 
 async def test_health_check_returns_ok_event() -> None:
@@ -109,6 +133,93 @@ def test_faster_whisper_adapter_returns_segments_from_model() -> None:
     assert result.language == 'en'
 
 
+def test_faster_whisper_cuda_fallback_uses_cpu_when_cuda_libraries_are_missing() -> None:
+    calls: list[dict[str, Any]] = []
+
+    class FakeModel:
+        def __init__(self, model_name: str, **kwargs: Any) -> None:
+            calls.append(kwargs)
+            if kwargs.get('device') == 'cuda':
+                raise RuntimeError('Library cublas64_12.dll is not found or cannot be loaded')
+
+        def transcribe(self, audio_path: str, **kwargs: Any) -> tuple[list[SimpleNamespace], SimpleNamespace]:
+            return (
+                [SimpleNamespace(start=0.0, end=1.0, text='CPU fallback')],
+                SimpleNamespace(language='en'),
+            )
+
+    result = run_faster_whisper(
+        audio_path=Path('recording.wav'),
+        model_name='small.en',
+        language='en',
+        compute_type='cuda',
+        model_storage_directory=None,
+        model_factory=FakeModel,
+    )
+
+    assert result.status == 'complete'
+    assert result.warning == 'CUDA libraries are unavailable; CPU fallback was used.'
+    assert calls == [
+        {'device': 'cuda', 'compute_type': 'int8_float16'},
+        {'device': 'cpu', 'compute_type': 'int8'},
+    ]
+
+
+def test_faster_whisper_auto_fallback_uses_cpu_when_cuda_libraries_are_missing() -> None:
+    calls: list[dict[str, Any]] = []
+
+    class FakeModel:
+        def __init__(self, model_name: str, **kwargs: Any) -> None:
+            calls.append(kwargs)
+            if not kwargs:
+                raise RuntimeError('Library cublas64_12.dll is not found or cannot be loaded')
+
+        def transcribe(self, audio_path: str, **kwargs: Any) -> tuple[list[SimpleNamespace], SimpleNamespace]:
+            return (
+                [SimpleNamespace(start=0.0, end=1.0, text='CPU fallback')],
+                SimpleNamespace(language='en'),
+            )
+
+    result = run_faster_whisper(
+        audio_path=Path('recording.wav'),
+        model_name='small.en',
+        language='en',
+        compute_type='auto',
+        model_storage_directory=None,
+        model_factory=FakeModel,
+    )
+
+    assert result.status == 'complete'
+    assert result.warning == 'CUDA libraries are unavailable; CPU fallback was used.'
+    assert calls == [{}, {'device': 'cpu', 'compute_type': 'int8'}]
+
+
+async def test_runtime_capabilities_reports_cuda_status(mocker: MockerFixture) -> None:
+    mocker.patch('app.handlers.cuda_status', return_value=(False, 'missing cuDNN'))
+
+    events = await handle(WorkerCommand(id='capabilities', name='runtime.capabilities'))
+
+    assert events[0].event == 'runtime.capabilities'
+    assert events[0].payload['fasterWhisperAvailable'] is True
+    assert events[0].payload['cudaAvailable'] is False
+    assert events[0].payload['cudaError'] == 'missing cuDNN'
+
+
+def test_cuda_status_requires_nvidia_libraries(mocker: MockerFixture) -> None:
+    mocker.patch('app.models.faster_whisper_model_factory', SimpleNamespace())
+    mocker.patch('app.models.sys.platform', 'win32')
+    mocker.patch('app.models.ctranslate2_module.get_cuda_device_count', return_value=1)
+    mocker.patch('app.models.ctranslate2_module.get_supported_compute_types', return_value={'int8_float16'})
+
+    def load_library(name: str) -> None:
+        if name == 'cudnn64_9.dll':
+            raise OSError('missing')
+
+    mocker.patch('app.models.ctypes.CDLL', side_effect=load_library)
+
+    assert cuda_status() == (False, 'Missing NVIDIA libraries: cudnn64_9.dll')
+
+
 def test_model_installed_detects_expected_storage_names(tmp_path: Path) -> None:
     (tmp_path / 'faster-whisper-medium.en').mkdir()
 
@@ -192,7 +303,51 @@ async def test_diarize_run_reports_backend_specific_setup(tmp_path: Path) -> Non
     )
 
     assert events[-1].event == 'diarize.needs_setup'
-    assert events[-1].payload['dependency'] == 'pyannote-audio'
+    assert events[-1].payload['dependency'] == 'pyannote.audio'
+
+
+async def test_diarization_check_reports_missing_token(mocker: MockerFixture) -> None:
+    mocker.patch('app.diarization.pyannote_pipeline_factory', SimpleNamespace())
+    mocker.patch('app.diarization.shutil.which', return_value='ffmpeg')
+
+    events = await handle(WorkerCommand(id='pyannote-check', name='diarization.check'))
+
+    assert events[-1].event == 'diarization.needs_setup'
+    assert events[-1].payload['dependency'] == 'hugging-face-token'
+
+
+async def test_pyannote_diarize_run_writes_normalized_speakers(tmp_path: Path, mocker: MockerFixture) -> None:
+    audio_path = tmp_path / 'recording.wav'
+    audio_path.write_bytes(b'RIFFdata')
+    pipeline = MockPyannotePipeline()
+    factory = SimpleNamespace(from_pretrained=lambda checkpoint, token: pipeline)
+    mocker.patch('app.diarization.pyannote_pipeline_factory', factory)
+    mocker.patch('app.diarization.shutil.which', return_value='ffmpeg')
+
+    events = await handle(
+        WorkerCommand(
+            id='pyannote-run',
+            name='diarize.run',
+            payload={
+                'audioPath': str(audio_path),
+                'outputDirectory': str(tmp_path),
+                'backend': 'pyannote',
+                'apiKey': 'hf_secret',
+                'speakerCountMode': 'range',
+                'minSpeakers': 1,
+                'maxSpeakers': 2,
+                'segments': [
+                    {'start': 0, 'end': 1, 'text': 'Hello'},
+                    {'start': 1, 'end': 2, 'text': 'Hi'},
+                ],
+            },
+        )
+    )
+
+    assert events[-1].event == 'diarize.complete'
+    assert 'Speaker 1' in (tmp_path / 'diarized-transcript.md').read_text()
+    assert 'Speaker 2' in (tmp_path / 'diarized-transcript.md').read_text()
+    assert pipeline.calls == [{'min_speakers': 1, 'max_speakers': 2}]
 
 
 def test_summary_prompt_assembly_keeps_prompt_and_transcript() -> None:
