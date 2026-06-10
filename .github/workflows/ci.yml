@@ -53,5 +53,8 @@ jobs:
       - name: Install frontend dependencies
         run: pnpm install --frozen-lockfile
 
+      - name: Install worker dependencies
+        run: pnpm sync:py
+
       - name: Run full test suite
         run: pnpm run ci
