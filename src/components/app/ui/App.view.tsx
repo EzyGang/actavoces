@@ -24,6 +24,14 @@ export const AppView = ({ app }: AppViewProps): JSX.Element => (
         </div>
 
         <div class='flex items-center gap-3'>
+          <div class='hidden max-w-56 items-center gap-2 border border-border-base bg-bg-card px-3 py-2 sm:flex'>
+            <span class='font-mono text-text-muted text-[11px] uppercase tracking-[0.05em]'>
+              Hotkey
+            </span>
+            <span class='truncate font-mono text-xs'>
+              {app.data.snapshot.value.settings.hotkey}
+            </span>
+          </div>
           <StatusBadge
             label={app.status.isRecording.value ? 'Recording' : 'Ready'}
             status={app.status.isRecording.value ? 'recording' : 'idle'}
@@ -41,32 +49,22 @@ export const AppView = ({ app }: AppViewProps): JSX.Element => (
       </header>
 
       <div class='grid min-h-0 grid-cols-[176px_minmax(0,1fr)] xl:grid-cols-[176px_minmax(0,1fr)_360px]'>
-        <nav class='flex min-h-0 flex-col justify-between border-border-base border-r bg-bg-page p-3'>
-          <div class='flex flex-col gap-2'>
-            {app.navigation.map((item) => (
-              <button
-                aria-current={item.isActive ? 'page' : undefined}
-                class={
-                  item.isActive
-                    ? 'border border-text-primary bg-text-primary px-3 py-3 text-left font-semibold text-bg-page text-xs uppercase tracking-[0.05em]'
-                    : 'border border-border-base bg-bg-card px-3 py-3 text-left font-semibold text-text-secondary text-xs uppercase tracking-[0.05em] hover:border-text-muted hover:bg-bg-hover hover:text-text-primary'
-                }
-                key={item.route}
-                onClick={item.onSelect}
-                type='button'
-              >
-                {item.label}
-              </button>
-            ))}
-          </div>
-          <div class='flex flex-col gap-2 border border-border-base bg-bg-card p-3'>
-            <span class='font-mono text-text-muted text-[11px] uppercase tracking-[0.05em]'>
-              Hotkey
-            </span>
-            <span class='break-words font-mono text-xs'>
-              {app.data.snapshot.value.settings.hotkey}
-            </span>
-          </div>
+        <nav class='flex min-h-0 flex-col gap-2 border-border-base border-r bg-bg-page p-3'>
+          {app.navigation.map((item) => (
+            <button
+              aria-current={item.isActive ? 'page' : undefined}
+              class={
+                item.isActive
+                  ? 'border border-text-primary bg-text-primary px-3 py-3 text-left font-semibold text-bg-page text-xs uppercase tracking-[0.05em]'
+                  : 'border border-border-base bg-bg-card px-3 py-3 text-left font-semibold text-text-secondary text-xs uppercase tracking-[0.05em] hover:border-text-muted hover:bg-bg-hover hover:text-text-primary'
+              }
+              key={item.route}
+              onClick={item.onSelect}
+              type='button'
+            >
+              {item.label}
+            </button>
+          ))}
         </nav>
 
         <section class='min-h-0 overflow-y-auto bg-bg-page'>

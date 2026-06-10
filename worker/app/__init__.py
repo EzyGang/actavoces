@@ -1,1 +1,0 @@
-"""Actavoces worker package."""

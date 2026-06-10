@@ -29,3 +29,6 @@ cpal = "0.18.1"
 hound = "3.5.1"
 keyring = "4.0.1"
 keyring-core = "1.0.0"
+
+[target.'cfg(windows)'.dependencies]
+windows-core = "=0.61.2"

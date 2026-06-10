@@ -699,6 +699,13 @@ export const useApp = () => {
             settingsDraft.value.systemAudioSource
           ),
           onChange: makeSelectChangeHandler('systemAudioSource')
+        },
+        {
+          key: 'overlayPosition',
+          label: 'Overlay position',
+          value: settingsDraft.value.overlayPosition,
+          options: ['topLeft', 'topRight', 'bottomLeft', 'bottomRight'],
+          onChange: makeSelectChangeHandler('overlayPosition')
         }
       ] satisfies SettingsSelectField[],
       numberFields: [
@@ -762,13 +769,6 @@ export const useApp = () => {
           value: settingsDraft.value.speakerCountMode,
           options: ['automatic', 'exact', 'range'],
           onChange: makeSelectChangeHandler('speakerCountMode')
-        },
-        {
-          key: 'overlayPosition',
-          label: 'Overlay position',
-          value: settingsDraft.value.overlayPosition,
-          options: ['topLeft', 'topRight', 'bottomLeft', 'bottomRight'],
-          onChange: makeSelectChangeHandler('overlayPosition')
         }
       ] satisfies SettingsSelectField[],
       textareaFields: [

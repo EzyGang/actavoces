@@ -1,6 +1,8 @@
 from typing import Any, Literal
 
-from pydantic import BaseModel, Field
+from pydantic import Field
+
+from app.core.pydantic_base import AppBaseModel
 
 
 WorkerCommandName = Literal[
@@ -13,13 +15,13 @@ WorkerCommandName = Literal[
 ]
 
 
-class WorkerCommand(BaseModel):
+class WorkerCommand(AppBaseModel):
     id: str
     name: WorkerCommandName
     payload: dict[str, Any] = Field(default_factory=dict)
 
 
-class WorkerEvent(BaseModel):
+class WorkerEvent(AppBaseModel):
     command_id: str
     event: str
     payload: dict[str, Any] = Field(default_factory=dict)

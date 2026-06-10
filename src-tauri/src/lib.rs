@@ -334,6 +334,7 @@ fn update_app_settings(
         snapshot.active_recording.is_some(),
         snapshot.settings.overlay_position,
     )?;
+    emit_snapshot_update(&app, &snapshot);
 
     Ok(snapshot)
 }
@@ -368,6 +369,7 @@ fn start_recording(
         snapshot.active_recording.is_some(),
         snapshot.settings.overlay_position,
     )?;
+    emit_snapshot_update(&app, &snapshot);
 
     Ok(snapshot)
 }
@@ -387,6 +389,7 @@ fn stop_recording(
         snapshot.active_recording.is_some(),
         snapshot.settings.overlay_position,
     )?;
+    emit_snapshot_update(&app, &snapshot);
 
     Ok(snapshot)
 }
@@ -445,6 +448,10 @@ fn toggle_recording_from_shortcut(
     state: tauri::State<'_, ActavocesState>,
 ) -> Result<AppSnapshot, String> {
     toggle_recording_lifecycle(&app, &state)
+}
+
+fn emit_snapshot_update(app: &tauri::AppHandle, snapshot: &AppSnapshot) {
+    let _ = app.emit("app-snapshot-updated", snapshot);
 }
 
 #[tauri::command]
@@ -1248,9 +1255,7 @@ fn register_global_hotkey(app: &tauri::AppHandle, hotkey: &str) -> DesktopRuntim
             let state = app.state::<ActavocesState>();
 
             match toggle_recording_lifecycle(app, &state) {
-                Ok(snapshot) => {
-                    let _ = app.emit("app-snapshot-updated", snapshot);
-                }
+                Ok(_) => (),
                 Err(error) => {
                     let _ = app.emit("app-error", error);
                 }
@@ -1300,6 +1305,7 @@ fn toggle_recording_lifecycle(
         snapshot.active_recording.is_some(),
         snapshot.settings.overlay_position,
     )?;
+    emit_snapshot_update(app, &snapshot);
 
     Ok(snapshot)
 }
@@ -2563,11 +2569,12 @@ impl AudioCaptureBackend for FileAudioCaptureBackend {
 
         fs::create_dir_all(artifact_directory).map_err(|error| error.to_string())?;
         write_test_wav_file(&artifact_directory.join("recording.wav"), 440)?;
+        write_test_wav_file(&artifact_directory.join("microphone.wav"), 880)?;
         write_capture_metadata(
             artifact_directory,
             "file",
             &[
-                CaptureFileMetadata::ready(CaptureSource::Microphone, "recording.wav"),
+                CaptureFileMetadata::ready(CaptureSource::Microphone, "microphone.wav"),
                 CaptureFileMetadata::ready(CaptureSource::System, "recording.wav"),
             ],
         )?;
@@ -2578,7 +2585,7 @@ impl AudioCaptureBackend for FileAudioCaptureBackend {
         .map_err(|error| error.to_string())?;
 
         Ok(CaptureResult {
-            artifacts: capture_artifacts_with_readiness(artifact_directory, true),
+            artifacts: capture_artifacts_with_readiness(artifact_directory, true, true),
             errors: Vec::new(),
         })
     }
@@ -2714,6 +2721,9 @@ impl AudioCaptureBackend for NativeAudioCaptureBackend {
 
         append_stream_errors(&mut errors, &session.microphone);
         append_stream_errors(&mut errors, &session.system);
+        if let Some(microphone) = microphone.as_ref() {
+            write_pcm_wav_file(&artifact_directory.join("microphone.wav"), microphone)?;
+        }
         write_mixed_recording(
             artifact_directory,
             microphone.as_ref(),
@@ -2727,7 +2737,7 @@ impl AudioCaptureBackend for NativeAudioCaptureBackend {
             &[
                 metadata_for_source(
                     CaptureSource::Microphone,
-                    "recording.wav",
+                    "microphone.wav",
                     microphone.as_ref(),
                 ),
                 metadata_for_source(CaptureSource::System, "recording.wav", system.as_ref()),
@@ -2738,6 +2748,7 @@ impl AudioCaptureBackend for NativeAudioCaptureBackend {
             artifacts: capture_artifacts_with_readiness(
                 artifact_directory,
                 microphone.is_some() || system.is_some(),
+                microphone.is_some(),
             ),
             errors,
         })
@@ -3211,36 +3222,100 @@ fn write_mixed_recording(
     system: Option<&FinalizedSource>,
     file_name: &str,
 ) -> Result<(), String> {
-    let Some(primary) = microphone.or(system) else {
+    let Some(source) = mixed_recording_source(microphone, system) else {
         return Err("No captured audio source is available for mixed recording".to_owned());
     };
-    let sample_rate = primary.sample_rate;
-    let channels = primary.channels;
-    let mut mixed_samples = primary.samples.clone();
 
-    if let Some(secondary) = system {
-        if microphone.is_some()
-            && secondary.channels == channels
-            && secondary.sample_rate == sample_rate
-        {
-            for (index, sample) in secondary.samples.iter().enumerate() {
-                if let Some(target) = mixed_samples.get_mut(index) {
-                    let mixed = *target as i32 + *sample as i32;
-                    *target = mixed.clamp(i16::MIN as i32, i16::MAX as i32) as i16;
-                }
+    write_pcm_wav_file(&artifact_directory.join(file_name), &source)
+}
+
+fn mixed_recording_source(
+    microphone: Option<&FinalizedSource>,
+    system: Option<&FinalizedSource>,
+) -> Option<FinalizedSource> {
+    let primary = microphone.or(system)?;
+    let sample_rate = microphone
+        .zip(system)
+        .map(|(microphone, system)| microphone.sample_rate.max(system.sample_rate))
+        .unwrap_or(primary.sample_rate);
+    let channels = microphone
+        .zip(system)
+        .map(|(microphone, system)| microphone.channels.max(system.channels))
+        .unwrap_or(primary.channels);
+    let frames = [microphone, system]
+        .into_iter()
+        .flatten()
+        .map(|source| converted_frame_count(source, sample_rate))
+        .max()
+        .unwrap_or(0);
+    let mut samples = vec![0; frames * channels.max(1) as usize];
+
+    if let Some(source) = microphone {
+        mix_source_into(&mut samples, source, sample_rate, channels);
+    }
+    if let Some(source) = system {
+        mix_source_into(&mut samples, source, sample_rate, channels);
+    }
+
+    Some(FinalizedSource {
+        samples,
+        sample_rate,
+        channels,
+        frames,
+    })
+}
+
+fn converted_frame_count(source: &FinalizedSource, target_sample_rate: u32) -> usize {
+    if source.sample_rate == target_sample_rate {
+        return source.frames;
+    }
+
+    ((source.frames as u64 * target_sample_rate as u64).div_ceil(source.sample_rate as u64))
+        as usize
+}
+
+fn mix_source_into(
+    target: &mut [i16],
+    source: &FinalizedSource,
+    target_sample_rate: u32,
+    target_channels: u16,
+) {
+    let target_channel_count = target_channels.max(1) as usize;
+    let source_channel_count = source.channels.max(1) as usize;
+    let target_frames = converted_frame_count(source, target_sample_rate);
+
+    for target_frame in 0..target_frames {
+        let source_frame = target_frame * source.sample_rate as usize / target_sample_rate as usize;
+
+        for target_channel in 0..target_channel_count {
+            let target_index = target_frame * target_channel_count + target_channel;
+            let sample = source_sample(source, source_frame, target_channel, source_channel_count);
+
+            if let Some(target_sample) = target.get_mut(target_index) {
+                let mixed = *target_sample as i32 + sample as i32;
+                *target_sample = mixed.clamp(i16::MIN as i32, i16::MAX as i32) as i16;
             }
         }
     }
+}
 
-    write_pcm_wav_file(
-        &artifact_directory.join(file_name),
-        &FinalizedSource {
-            frames: mixed_samples.len() / channels.max(1) as usize,
-            samples: mixed_samples,
-            sample_rate,
-            channels,
-        },
-    )
+fn source_sample(
+    source: &FinalizedSource,
+    frame: usize,
+    channel: usize,
+    source_channels: usize,
+) -> i16 {
+    let source_channel = if source_channels == 1 {
+        0
+    } else {
+        channel.min(source_channels - 1)
+    };
+
+    source
+        .samples
+        .get(frame * source_channels + source_channel)
+        .copied()
+        .unwrap_or_default()
 }
 
 fn write_pcm_wav_file(path: &Path, source: &FinalizedSource) -> Result<(), String> {
@@ -3607,13 +3682,23 @@ fn stage_message(stage: PipelineStageId, status: PipelineStageStatus) -> &'stati
     }
 }
 
-fn capture_artifacts_with_readiness(path: &Path, mixed_ready: bool) -> Vec<Artifact> {
+fn capture_artifacts_with_readiness(
+    path: &Path,
+    mixed_ready: bool,
+    microphone_ready: bool,
+) -> Vec<Artifact> {
     vec![
         artifact(
             ArtifactKind::Audio,
             "Mixed WAV",
             path.join("recording.wav"),
             mixed_ready,
+        ),
+        artifact(
+            ArtifactKind::MicrophoneAudio,
+            "Microphone WAV",
+            path.join("microphone.wav"),
+            microphone_ready,
         ),
         artifact(
             ArtifactKind::RawTranscript,
@@ -3929,9 +4014,10 @@ mod tests {
     use crate::{
         artifact_directory, capture_artifacts_with_readiness, default_records_root,
         default_settings, is_default_system_source_name, is_system_monitor_device_name,
-        AppRepository, AppSettingsUpdate, ArtifactKind, DesktopRuntimeStatus, DiarizationBackend,
-        FileAudioCaptureBackend, ModelInventoryItem, NewRecording, OverlayPosition,
-        PipelineStageStatus, RecordingStatus, SpeakerCountMode,
+        mixed_recording_source, AppRepository, AppSettingsUpdate, ArtifactKind,
+        DesktopRuntimeStatus, DiarizationBackend, FileAudioCaptureBackend, FinalizedSource,
+        ModelInventoryItem, NewRecording, OverlayPosition, PipelineStageStatus, RecordingStatus,
+        SpeakerCountMode,
     };
     use crate::{
         extract_model_inventory, parse_worker_events, resume_pipeline_jobs,
@@ -4231,28 +4317,79 @@ mod tests {
             .unwrap();
         capture_backend.stop("recording-3", &artifact_path).unwrap();
 
-        let file_path = artifact_path.join("recording.wav");
+        let mixed_file_path = artifact_path.join("recording.wav");
+        let microphone_file_path = artifact_path.join("microphone.wav");
 
-        assert!(file_path.exists());
-        assert!(fs::metadata(file_path).unwrap().len() > 44);
-        assert!(!artifact_path.join("mic.wav").exists());
+        assert!(mixed_file_path.exists());
+        assert!(microphone_file_path.exists());
+        assert!(fs::metadata(mixed_file_path).unwrap().len() > 44);
+        assert!(fs::metadata(microphone_file_path).unwrap().len() > 44);
         assert!(!artifact_path.join("system.wav").exists());
     }
 
     #[test]
-    fn capture_artifacts_include_only_canonical_audio() {
-        let artifacts = capture_artifacts_with_readiness(&test_artifact_path("artifacts"), true);
+    fn capture_artifacts_include_mixed_and_microphone_audio() {
+        let artifacts =
+            capture_artifacts_with_readiness(&test_artifact_path("artifacts"), true, true);
 
         assert!(artifacts
             .iter()
             .any(|artifact| artifact.kind == ArtifactKind::Audio && artifact.ready));
-        assert!(!artifacts.iter().any(|artifact| matches!(
-            artifact.kind,
-            ArtifactKind::MicrophoneAudio | ArtifactKind::SystemAudio
-        )));
+        assert!(artifacts
+            .iter()
+            .any(|artifact| artifact.kind == ArtifactKind::MicrophoneAudio && artifact.ready));
+        assert!(!artifacts
+            .iter()
+            .any(|artifact| artifact.kind == ArtifactKind::SystemAudio));
         assert!(artifacts
             .iter()
             .any(|artifact| artifact.kind == ArtifactKind::Metadata && artifact.ready));
+    }
+
+    #[test]
+    fn mixed_recording_source_includes_mono_microphone_and_stereo_system_audio() {
+        let microphone = FinalizedSource {
+            samples: vec![1_000, 1_000],
+            sample_rate: 48_000,
+            channels: 1,
+            frames: 2,
+        };
+        let system = FinalizedSource {
+            samples: vec![100, 200, 300, 400],
+            sample_rate: 48_000,
+            channels: 2,
+            frames: 2,
+        };
+
+        let mixed = mixed_recording_source(Some(&microphone), Some(&system)).unwrap();
+
+        assert_eq!(mixed.sample_rate, 48_000);
+        assert_eq!(mixed.channels, 2);
+        assert_eq!(mixed.frames, 2);
+        assert_eq!(mixed.samples, vec![1_100, 1_200, 1_300, 1_400]);
+    }
+
+    #[test]
+    fn mixed_recording_source_resamples_before_mixing() {
+        let microphone = FinalizedSource {
+            samples: vec![10, 20],
+            sample_rate: 1_000,
+            channels: 1,
+            frames: 2,
+        };
+        let system = FinalizedSource {
+            samples: vec![1, 2, 3, 4],
+            sample_rate: 2_000,
+            channels: 1,
+            frames: 4,
+        };
+
+        let mixed = mixed_recording_source(Some(&microphone), Some(&system)).unwrap();
+
+        assert_eq!(mixed.sample_rate, 2_000);
+        assert_eq!(mixed.channels, 1);
+        assert_eq!(mixed.frames, 4);
+        assert_eq!(mixed.samples, vec![11, 12, 23, 24]);
     }
 
     #[test]

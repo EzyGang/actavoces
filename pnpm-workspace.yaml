@@ -1,3 +1,5 @@
+allowBuilds:
+  esbuild: true
 overrides:
   react: "npm:@preact/compat"
   react-dom: "npm:@preact/compat"
