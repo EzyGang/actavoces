@@ -100,7 +100,7 @@ export interface AppSettings {
   transcriptionLanguage: string;
   computeType: string;
   modelStorageDirectory: string;
-  diarizationBackend: 'nemoWhisper' | 'pyannote';
+  diarizationBackend: 'pyannote';
   speakerCountMode: 'automatic' | 'exact' | 'range';
   exactSpeakers: number | null;
   minSpeakers: number | null;

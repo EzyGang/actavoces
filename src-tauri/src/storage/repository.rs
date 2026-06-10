@@ -236,7 +236,6 @@ impl AppRepository {
         self.upsert_setting("titlePrompt", &settings.title_prompt)?;
         self.upsert_setting("summaryPrompt", &settings.summary_prompt)?;
         self.migrate_default_whisper_model()?;
-        self.migrate_default_diarization_backend()?;
         self.seed_default_models()
     }
 
@@ -259,20 +258,6 @@ impl AppRepository {
             SET value = 'small.en'
             WHERE key = 'whisperModel'
                 AND value = 'medium.en'
-            ",
-            [],
-        )?;
-
-        Ok(())
-    }
-
-    pub(crate) fn migrate_default_diarization_backend(&self) -> rusqlite::Result<()> {
-        self.connection.execute(
-            "
-            UPDATE settings
-            SET value = '\"pyannote\"'
-            WHERE key = 'diarizationBackend'
-                AND value = '\"nemoWhisper\"'
             ",
             [],
         )?;

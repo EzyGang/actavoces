@@ -49,12 +49,12 @@ fn repository_restores_recordings_after_reopen() {
     repository
         .set_setting(
             "diarizationBackend",
-            &serde_json::to_string(&DiarizationBackend::NemoWhisper).unwrap(),
+            &serde_json::to_string(&DiarizationBackend::Pyannote).unwrap(),
         )
         .unwrap();
     assert_eq!(
         repository.settings().unwrap().diarization_backend,
-        DiarizationBackend::NemoWhisper
+        DiarizationBackend::Pyannote
     );
     let recording = NewRecording {
         id: "recording-1".to_owned(),
@@ -464,9 +464,16 @@ fn resume_pipeline_runs_worker_events_and_persists_artifacts() {
     repository
         .set_setting(
             "diarizationBackend",
-            &serde_json::to_string(&DiarizationBackend::NemoWhisper).unwrap(),
+            &serde_json::to_string(&DiarizationBackend::Pyannote).unwrap(),
         )
         .unwrap();
+    repository
+        .set_setting(
+            "speakerCountMode",
+            &serde_json::to_string(&SpeakerCountMode::Exact).unwrap(),
+        )
+        .unwrap();
+    repository.set_setting("exactSpeakers", "1").unwrap();
 
     resume_pipeline_jobs(&mut repository, |command, payload| {
         let output_directory = std::path::PathBuf::from(

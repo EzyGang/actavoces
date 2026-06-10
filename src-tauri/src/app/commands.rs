@@ -625,20 +625,23 @@ where
         if stage_is_complete(repository, &recording.id, PipelineStageId::Transcription)?
             && should_run_stage(repository, &recording.id, PipelineStageId::Diarization)?
         {
-            let diarization_api_key = match settings.diarization_backend {
-                DiarizationBackend::Pyannote => match read_hugging_face_token()? {
-                    Some(token) => token,
-                    None => {
-                        mark_stage_needs_setup(
-                            repository,
-                            &recording.id,
-                            PipelineStageId::Diarization,
-                            "Hugging Face token is required for speaker diarization",
-                        )?;
-                        continue;
-                    }
-                },
-                DiarizationBackend::NemoWhisper => String::new(),
+            let diarization_api_key = if exact_one_speaker_diarization(&settings) {
+                String::new()
+            } else {
+                match settings.diarization_backend {
+                    DiarizationBackend::Pyannote => match read_hugging_face_token()? {
+                        Some(token) => token,
+                        None => {
+                            mark_stage_needs_setup(
+                                repository,
+                                &recording.id,
+                                PipelineStageId::Diarization,
+                                "Hugging Face token is required for speaker diarization",
+                            )?;
+                            continue;
+                        }
+                    },
+                }
             };
             run_pipeline_stage(
                 repository,
@@ -1065,6 +1068,10 @@ pub(crate) fn diarization_payload(
         "minSpeakers": settings.min_speakers,
         "maxSpeakers": settings.max_speakers,
     })
+}
+
+pub(crate) fn exact_one_speaker_diarization(settings: &AppSettings) -> bool {
+    settings.speaker_count_mode == SpeakerCountMode::Exact && settings.exact_speakers == Some(1)
 }
 
 pub(crate) fn summary_payload(

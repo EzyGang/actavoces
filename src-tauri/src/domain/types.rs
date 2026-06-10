@@ -312,7 +312,6 @@ pub struct RecordingRetryInput {
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub enum DiarizationBackend {
-    NemoWhisper,
     Pyannote,
 }
 

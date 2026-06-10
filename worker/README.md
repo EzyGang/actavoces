@@ -20,10 +20,10 @@ raw transcripts first and then add diarized and summary artifacts later.
 
 ## Diarization Backends
 
-The default free backend should be based on
-`MahmoudAshraf97/whisper-diarization`: faster-whisper, CTC forced alignment,
-NeMo diarization, optional Demucs source separation, and punctuation
-restoration.
+The currently supported local backend is `pyannote.audio` with
+`pyannote/speaker-diarization-community-1`.
 
-Pyannote remains an optional backend because its local community model requires
-external model access and token setup.
+It requires accepted Hugging Face model terms, a Hugging Face access token, and
+FFmpeg on PATH or bundled with the desktop app.
+
+NeMo/Whisper-style diarization is planned but not supported yet.

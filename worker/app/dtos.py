@@ -107,7 +107,7 @@ class DiarizePayload(AppBaseModel):
     exact_speakers: Any = None
     min_speakers: Any = None
     max_speakers: Any = None
-    backend: str = 'nemoWhisper'
+    backend: str = 'pyannote'
     api_key: str = ''
 
 

@@ -14,7 +14,7 @@ Last implementation validation observed before this audit:
 
 ## Current Reality
 
-Status: partially implemented.
+Status: mostly implemented, with beta release hardening remaining.
 
 Originally, the app only had a styled shell, in-memory recording state, empty
 audio files, placeholder transcript artifacts, and a worker with only
@@ -30,40 +30,35 @@ Addressed:
   into SQLite.
 - Recording stop writes durable WAV artifacts instead of empty stubs.
 - Worker JSONL commands now include health, model status/install,
-  transcription, diarization fixture/contract output, and summary generation.
+  transcription, pyannote diarization, diarization fixture/contract output, and
+  summary generation.
 - Main app shell has route-backed Dashboard, Recordings, Jobs, and Settings
   views.
 - Dev inspection/recovery is now supported from the app: recordings can open
   artifact folders, ready artifacts can be opened directly, failed/setup-blocked
   recording jobs can be retried, and pipeline stage messages are visible in the
   dashboard/jobs UI.
+- CI workflow automation now runs the full `pnpm run ci` suite on Windows,
+  macOS, and Linux.
+- Release workflow now reads the root `package.json` version, stamps the Tauri
+  config, builds platform packages, creates a tag, creates a GitHub release, and
+  uploads artifacts.
 
 Remaining implementation work:
 
-- Real multi-speaker diarization backend execution is still missing. The worker
-  currently supports the `diarize.run` contract, fixture turns, and exact
-  one-speaker fallback, but not NeMo/Whisper or pyannote execution.
-- Release packaging still needs a bundled or bootstrapped worker runtime. The
-  desktop app currently launches the worker with `uv run python -m app.main`
-  from a nearby `worker` directory.
-- CI workflow automation is not present yet for the TypeScript, Rust, and
-  Python suites.
-- Future schema version upgrade tests are still needed once schema version 2+
-  exists.
+- NeMo/Whisper diarization execution is not implemented and is not exposed as a
+  selectable backend.
+- Basic speaker label editing/renaming is planned. A simple version likely
+  makes completed pipeline artifacts clickable and rewrites the derived speaker
+  labels.
 
-Remaining QA / validation work:
+Beta publishing expectations:
 
-- Manual recording QA has been reported for macOS and Windows; keep those paths
-  in release smoke tests rather than treating them as missing capture code.
-- Manual release checks are still needed for Windows, macOS, and Linux
-  packages, permissions, install/update behavior, and app startup.
-- Linux PulseAudio/PipeWire monitor-device behavior still needs OS-level
-  validation and clearer user-facing setup guidance if Linux is a release
-  target.
-- Global hotkey and always-on-top overlay behavior should be validated per OS
-  as part of release QA.
-- Real end-to-end ML validation is still needed with installed models,
-  optional acceleration, and real provider endpoints.
+- macOS and Windows are supported beta targets and will be tested before beta
+  publishing.
+- Linux is an expected target, but not tested yet.
+- Linux system-audio capture depends on the available PipeWire/PulseAudio
+  monitor or loopback devices.
 
 Accepted limitation:
 
@@ -71,11 +66,11 @@ Accepted limitation:
   an accepted implementation direction for now, but cancellation/shared model
   lifecycle remains weaker than an API server.
 
-## Missing Product Work
+## Product Work Status
 
 ### 1. Real Recording
 
-Status: partially addressed.
+Status: mostly addressed, with OS capture QA remaining.
 
 Original gap: recording did not capture microphone audio, system audio, or a
 mixed track and wrote empty/stub files.
@@ -104,8 +99,8 @@ Required work status:
   setup required.
 - Addressed: Named system audio sources can resolve either matching input
   devices or matching output devices for native loopback-capable backends.
-- Partial: Microphone capture uses the default/configured input device.
-- Partial: System audio capture uses CPAL output-device loopback where the
+- Addressed: Microphone capture uses the default/configured input device.
+- Addressed: System audio capture uses CPAL output-device loopback where the
   backend supports it and monitor/loopback input devices elsewhere.
 - QA: Windows WASAPI loopback is wired through CPAL output-device capture and
   should stay covered by release QA.
@@ -119,7 +114,7 @@ Required work status:
 
 Acceptance criteria status:
 
-- Partial: Starting capture creates a native active recording session when an
+- Addressed: Starting capture creates a native active recording session when an
   input source is available.
 - Addressed: Stopping capture writes non-empty WAV files for captured sources.
 - Addressed: Capture failure is surfaced through errors and persisted to the
@@ -200,10 +195,10 @@ Required work status:
   settings.
 - Addressed: Migration startup exists from day one through `schema_migrations`
   and `CREATE TABLE IF NOT EXISTS`.
-- Partial: Some repository operations use multiple statements rather than a
-  single transaction for every possible lifecycle change.
-- Partial: Migration versioning exists, but future upgrade migrations are not
-  yet represented beyond schema creation and additive column checks.
+- Addressed: Multi-statement settings, runtime status, model inventory,
+  recording lifecycle, artifact, and retry operations use transactions.
+- Accepted limitation: Future schema versions will need upgrade migrations when
+  schema version 2+ exists.
 
 Acceptance criteria status:
 
@@ -216,12 +211,12 @@ Acceptance criteria status:
 - Addressed: Tests cover repository restore, model inventory persistence,
   deletion, retry reset behavior, migration startup behavior indirectly,
   snapshot reconstruction, and artifact path persistence.
-- Implementation: Broader migration version upgrade tests are still needed once
+- Accepted limitation: Broader migration upgrade tests become relevant when
   schema version 2+ exists.
 
 ### 4. Worker Design
 
-Status: partially addressed with CLI JSONL runner.
+Status: mostly addressed with CLI JSONL runner.
 
 Original gap: worker only had a protocol scaffold and `health.check`.
 
@@ -238,6 +233,8 @@ Required work status:
 - Addressed: Tauri can start, stop, and health-check worker runtime status.
 - Addressed: Worker exposes command handlers for health, model status, model
   install, transcription, diarization, and summary.
+- Addressed: Worker exposes runtime capability checks and pyannote diarization
+  setup checks.
 - Addressed: Worker failures are captured and surfaced through persisted
   desktop runtime status and pipeline job state.
 - Addressed: Progress events are parsed and reflected in persisted pipeline
@@ -263,7 +260,7 @@ Acceptance criteria status:
 
 ### 5. Local Transcription
 
-Status: partially addressed.
+Status: mostly addressed, with ML QA remaining.
 
 Original gap: `faster-whisper` was not wired into the worker and there was no
 model setup flow.
@@ -305,7 +302,7 @@ Acceptance criteria status:
 
 ### 6. Diarization
 
-Status: partially addressed.
+Status: mostly addressed, with real-environment ML QA remaining.
 
 Original gap: no diarization backend existed.
 
@@ -317,22 +314,25 @@ Required work status:
 - Addressed: `diarize.run` can synthesize a valid single-speaker diarization
   when speaker settings explicitly request exactly one speaker.
 - Addressed: `diarize.run` reports `diarize.needs_setup` for missing backend
-  setup, with backend-specific dependency names for NeMo and pyannote.
+  setup, with backend-specific dependency names for pyannote and future
+  backends.
+- Addressed: `diarize.run` can execute `pyannote.audio` when pyannote,
+  FFmpeg, Hugging Face model access, and a token are available.
+- Addressed: `diarization.check` validates pyannote setup and reports missing
+  dependency/token/model-access states.
 - Addressed: Pipeline can run diarization after transcription completes.
 - Addressed: Diarization artifacts are persisted and marked ready.
 - Addressed: Speaker count settings exist: automatic, exact, min/max range.
-- Addressed: Diarization backend setting exists with `nemoWhisper` and
-  `pyannote` options.
+- Addressed: Diarization backend setting exists and currently exposes
+  `pyannote`.
 - Addressed: Speaker turns can be represented in `diarization.json`.
-- Implementation: The first supported backend is represented as
-  NeMo/Whisper-oriented setup, but actual NeMo diarization execution is not
-  implemented.
-- Implementation: Pyannote remains an option in settings but is not implemented
-  as a real worker backend.
+- Product decision: NeMo/Whisper diarization is not implemented and is not
+  exposed in Settings.
 - Addressed: The UI exposes setup-blocked stage messages and retry.
 - Addressed: Exact one-speaker diarization is handled without a real
   diarization model.
-- Implementation: Multi-speaker detection still requires a real backend.
+- Addressed: Multi-speaker detection is supported through pyannote when the
+  runtime is configured.
 - Implementation: Speaker label editing/renaming is not implemented.
 
 Acceptance criteria status:
@@ -348,7 +348,10 @@ Acceptance criteria status:
   after configuration changes.
 - Addressed: Tests cover exact single-speaker diarization and backend-specific
   setup-required dependency reporting.
-- Implementation: Real diarization backend execution is not complete.
+- Addressed: Tests cover mocked pyannote execution and normalized multi-speaker
+  output.
+- QA: Real pyannote execution still needs validation with installed dependencies,
+  accepted Hugging Face model terms, and representative recordings.
 
 ### 7. Summary, Titles, and Providers
 
@@ -459,7 +462,8 @@ Required work status:
   retryable downstream jobs.
 - Addressed: Overlay UI is separate from the main window through a dedicated
   Tauri webview label.
-- Partial: There is no separate Models route; model controls live in Settings.
+- Product decision: There is no separate Models route; model controls live in
+  Settings.
 
 Acceptance criteria status:
 
@@ -504,7 +508,8 @@ Acceptance criteria status:
 
 ### 11. Test Coverage
 
-Status: partially addressed.
+Status: mostly addressed, with deeper UI and real-dependency coverage still
+remaining.
 
 Original gap: no frontend, Rust, or Python behavior tests existed.
 
@@ -557,8 +562,8 @@ Acceptance criteria status:
 - Addressed: Python worker tests run through `uv run pytest`.
 - Addressed: Worker formatting/linting and basedpyright checks run through
   `uv run task format-and-lint`.
-- Implementation: CI workflow is not present yet, so CI does not currently run
-  the TypeScript, Rust, and Python suites automatically.
+- Addressed: CI workflow runs the TypeScript, Rust, and Python suites through
+  `pnpm run ci` on Windows, macOS, and Linux.
 
 ## Implementation Plan
 
@@ -573,8 +578,8 @@ Status: mostly addressed.
   options.
 - Addressed: Add native folder pickers for output and model storage settings.
 - Addressed: Add tests for persistence, settings, and artifact paths.
-- Partial: Future schema migrations beyond initial/additive columns still need
-  explicit versioned upgrade tests.
+- Accepted limitation: Future schema migrations become relevant when schema
+  version 2+ exists.
 
 ### Phase 2: Make The Shell Functional
 
@@ -587,12 +592,12 @@ Status: mostly addressed.
 - Addressed: Add artifact open, recording folder open, job retry, and stage
   message visibility for dev inspection/recovery.
 - Addressed: Add route and settings tests.
-- Partial: Models are handled inside Settings rather than a dedicated Models
-  screen.
+- Product decision: Models are handled inside Settings rather than a dedicated
+  Models screen.
 
 ### Phase 3: Real Capture
 
-Status: partially addressed.
+Status: mostly addressed, with OS capture QA remaining.
 
 - Addressed: Implement native capture on the current CPAL-supported input
   path.
@@ -631,32 +636,39 @@ Status: mostly addressed as CLI JSONL.
 
 ### Phase 5: ML Pipeline
 
-Status: partially addressed.
+Status: mostly addressed, with real ML QA remaining.
 
 - Addressed: Implement `faster-whisper` transcription adapter.
-- Implementation: Real diarization backend integration is not implemented.
+- Addressed: Implement pyannote diarization integration.
 - Addressed: Implement speaker configuration and diarization command contract.
 - Addressed: Implement exact one-speaker diarization fallback and
   backend-specific diarization setup reporting.
 - Addressed: Implement OpenAI-compatible summary/title generation.
 - Addressed: Write final Markdown artifacts from structured data/contracts.
 - Addressed: Add fixture-based Python tests.
-- Implementation: Real NeMo/Whisper or pyannote diarization execution.
-- QA: Real end-to-end ML QA with installed ML dependencies and models.
+- Product decision: NeMo/Whisper diarization execution is not implemented or
+  exposed.
+- QA: Real end-to-end ML QA with installed ML dependencies, pyannote, models,
+  and provider endpoints.
 
 ### Phase 6: Packaging
 
-Status: mostly remaining.
+Status: mostly addressed, with beta publishing checks outside normal dev
+workflow.
 
-- Partial: Worker runtime is launched with `uv run`, and worker dependencies
+- Addressed: Worker runtime is launched with `uv run`, and worker dependencies
   are managed with `uv sync`/`uv.lock`.
-- Partial: Model storage and download behavior is defined at app/worker
+- Addressed: Model storage and download behavior is defined at app/worker
   contract level.
-- Implementation: Bundle or bootstrap the worker runtime for release builds.
-- QA: Validate app permissions for mic/system audio on each OS.
-- QA: Add and run release build checks for Windows, macOS, and Linux.
-- Implementation: Add CI workflow to run TypeScript, Rust, and Python test
-  suites.
+- Addressed: Release workflow reads the root package version, stamps the Tauri
+  config, bundles platform uv and FFmpeg runtimes, builds packages, creates a
+  tag, creates a GitHub release, and uploads artifacts.
+- Addressed: App startup can prepare a bundled worker directory and bootstrap
+  worker dependencies through uv.
+- Beta publishing: macOS and Windows packages are expected to be tested before
+  publishing.
+- Beta publishing: Linux packages are expected, but Linux is not tested yet.
+- Addressed: CI workflow runs TypeScript, Rust, and Python checks/tests.
 
 ## Open Questions
 
@@ -676,10 +688,11 @@ Status: mostly remaining.
   - Accepted limitation: revisit only if cancellation/shared model lifecycle
     becomes a hard requirement.
 - Pyannote in first diarization pass:
-  - Current state: UI exposes `pyannote`, but first real backend execution is
-    not implemented.
-  - Product decision: decide whether to keep pyannote as first-pass supported
-    backend or mark it future-only.
+  - Answered: pyannote is the exposed diarization backend.
+  - Addressed: Worker execution, setup checks, speaker-count arguments, and
+    normalized speaker output are implemented.
+  - QA: Real pyannote runs still need validation with installed dependencies,
+    accepted Hugging Face terms, and representative recordings.
 - Cloud summaries in Rust or Python worker:
   - Answered: Python worker handles OpenAI-compatible summary/title generation.
 - Provider API keys in OS keychain from first settings implementation:

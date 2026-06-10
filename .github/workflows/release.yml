@@ -2,10 +2,76 @@ name: Release
 
 on:
   workflow_dispatch:
+    inputs:
+      release_type:
+        description: Release type
+        type: choice
+        default: full
+        options:
+          - full
+          - alpha
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
 
 jobs:
+  version:
+    name: Compute version
+    runs-on: ubuntu-22.04
+    outputs:
+      version: ${{ steps.release.outputs.version }}
+      tag: ${{ steps.release.outputs.tag }}
+      name: ${{ steps.release.outputs.name }}
+      prerelease: ${{ steps.release.outputs.prerelease }}
+      previous_tag: ${{ steps.release.outputs.previous_tag }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Compute release metadata
+        id: release
+        shell: bash
+        run: |
+          set -euo pipefail
+          version="$(node -p "require('./package.json').version")"
+          if [ -z "${version}" ]; then
+            echo "package.json version is empty" >&2
+            exit 1
+          fi
+
+          if [ "${{ inputs.release_type }}" = "alpha" ]; then
+            latest_alpha="$(git tag --list "v${version}-alpha.*" --sort=-v:refname | head -1 || true)"
+            if [ -z "${latest_alpha}" ]; then
+              alpha_num=1
+              previous_tag="$(git tag --list 'v*' --sort=-v:refname | grep -v -- '-alpha' | head -1 || true)"
+            else
+              alpha_num="$(echo "${latest_alpha}" | sed 's/.*-alpha\.//')"
+              alpha_num="$((alpha_num + 1))"
+              previous_tag="${latest_alpha}"
+            fi
+            tag="v${version}-alpha.${alpha_num}"
+            prerelease="true"
+          else
+            previous_tag="$(git tag --list 'v*' --sort=-v:refname | grep -v -- '-alpha' | head -1 || true)"
+            tag="v${version}"
+            prerelease="false"
+          fi
+
+          echo "version=${version}" >> "${GITHUB_OUTPUT}"
+          echo "tag=${tag}" >> "${GITHUB_OUTPUT}"
+          echo "name=${tag}" >> "${GITHUB_OUTPUT}"
+          echo "prerelease=${prerelease}" >> "${GITHUB_OUTPUT}"
+          echo "previous_tag=${previous_tag:-}" >> "${GITHUB_OUTPUT}"
+
   build:
     name: Build ${{ matrix.name }}
+    needs: version
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
@@ -26,7 +92,7 @@ jobs:
             ffmpeg-asset: ffmpeg-osx-arm64.zip
             ffmpeg-binary: ffmpeg
           - name: macOS Intel
-            os: macos-13
+            os: macos-15-intel
             rust-target: x86_64-apple-darwin
             uv-asset: uv-x86_64-apple-darwin.tar.gz
             uv-binary: uv
@@ -75,6 +141,17 @@ jobs:
 
       - name: Install frontend dependencies
         run: pnpm install --frozen-lockfile
+
+      - name: Stamp package version into Tauri config
+        shell: bash
+        run: |
+          node -e "
+            const fs = require('node:fs');
+            const configPath = 'src-tauri/tauri.conf.json';
+            const config = JSON.parse(fs.readFileSync(configPath, 'utf8'));
+            config.version = '${{ needs.version.outputs.version }}';
+            fs.writeFileSync(configPath, `${JSON.stringify(config, null, 2)}\n`);
+          "
 
       - name: Bundle latest uv runtime (Windows)
         if: runner.os == 'Windows'
@@ -225,8 +302,34 @@ jobs:
       - name: Upload bundle artifacts
         uses: actions/upload-artifact@v7
         with:
-          name: actavoces-${{ matrix.rust-target }}
+          name: actavoces-${{ needs.version.outputs.tag }}-${{ matrix.rust-target }}
           path: |
             src-tauri/target/${{ matrix.rust-target }}/release/bundle/**/*
             src-tauri/target/release/bundle/**/*
           if-no-files-found: error
+
+  publish:
+    name: Publish GitHub release
+    needs:
+      - version
+      - build
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Download bundle artifacts
+        uses: actions/download-artifact@v7
+        with:
+          path: release-assets
+
+      - name: Create release and upload assets
+        uses: softprops/action-gh-release@v3
+        with:
+          tag_name: ${{ needs.version.outputs.tag }}
+          target_commitish: ${{ github.sha }}
+          name: ${{ needs.version.outputs.name }}
+          prerelease: ${{ needs.version.outputs.prerelease == 'true' }}
+          generate_release_notes: true
+          previous_tag: ${{ needs.version.outputs.previous_tag }}
+          files: release-assets/**/*

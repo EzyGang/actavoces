@@ -162,4 +162,4 @@ def diarization_dependency(backend: str) -> str:
     if backend == 'pyannote':
         return 'pyannote.audio'
 
-    return 'nemo-toolkit'
+    return backend
