@@ -5,6 +5,7 @@ import { useApp } from '../components/app/hooks/useApp.hook';
 import {
   getAppSnapshot,
   openLocalPath,
+  renameSpeakerLabel,
   retryRecordingJobs,
   startRecording,
   stopRecording
@@ -21,6 +22,14 @@ vi.mock('@tauri-apps/plugin-dialog', () => ({
   open: vi.fn()
 }));
 
+vi.mock('@tauri-apps/plugin-process', () => ({
+  relaunch: vi.fn()
+}));
+
+vi.mock('@tauri-apps/plugin-updater', () => ({
+  check: vi.fn()
+}));
+
 vi.mock('../services/desktop/app.service', () => ({
   bootstrapWorkerRuntime: vi.fn(),
   checkWorkerHealth: vi.fn(),
@@ -31,6 +40,7 @@ vi.mock('../services/desktop/app.service', () => ({
   installTranscriptionModel: vi.fn(),
   openLocalPath: vi.fn(),
   refreshModelInventory: vi.fn(),
+  renameSpeakerLabel: vi.fn(),
   retryRecordingJobs: vi.fn(),
   setupDiarizationRuntime: vi.fn(),
   skipDiarizationSetup: vi.fn(),
@@ -88,7 +98,8 @@ const makeRecording = (id: string): Recording => ({
       message: 'Audio capture complete'
     }
   ],
-  artifacts: []
+  artifacts: [],
+  speakerLabels: []
 });
 
 const makeSnapshot = (overrides: Partial<AppSnapshot> = {}): AppSnapshot => ({
@@ -152,6 +163,7 @@ describe('useApp hook', () => {
     vi.mocked(startRecording).mockReset();
     vi.mocked(stopRecording).mockReset();
     vi.mocked(retryRecordingJobs).mockReset();
+    vi.mocked(renameSpeakerLabel).mockReset();
     vi.mocked(open).mockReset();
     resetSignals();
   });
@@ -521,5 +533,41 @@ describe('useApp hook', () => {
 
     expect(retryRecordingJobs).toHaveBeenCalledWith('recording-1');
     expect(result.current.data.snapshot.value.recordings[0].stages[0].status).toBe('running');
+  });
+
+  it('renames speakers from recording rows', async () => {
+    const prompt = vi.spyOn(window, 'prompt').mockReturnValue('Alice');
+    const recording = {
+      ...makeRecording('recording-1'),
+      speakerLabels: [{ name: 'Speaker 1' }]
+    };
+
+    vi.mocked(getAppSnapshot).mockResolvedValue(makeSnapshot({ recordings: [recording] }));
+    vi.mocked(renameSpeakerLabel).mockResolvedValue(
+      makeSnapshot({
+        recordings: [
+          {
+            ...recording,
+            speakerLabels: [{ name: 'Alice' }]
+          }
+        ]
+      })
+    );
+
+    const { result } = renderHook(() => useApp());
+
+    await waitFor(() => {
+      expect(result.current.data.recordingRows.value[0].recording.speakerLabels[0].name).toBe(
+        'Speaker 1'
+      );
+    });
+    await act(async () => {
+      result.current.data.recordingRows.value[0].onRenameSpeaker('Speaker 1');
+    });
+
+    expect(renameSpeakerLabel).toHaveBeenCalledWith('recording-1', 'Speaker 1', 'Alice');
+    expect(result.current.data.snapshot.value.recordings[0].speakerLabels[0].name).toBe('Alice');
+
+    prompt.mockRestore();
   });
 });

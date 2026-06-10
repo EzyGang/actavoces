@@ -118,6 +118,7 @@ pub struct Recording {
     pub(crate) capture_errors: Vec<CaptureError>,
     pub(crate) stages: Vec<PipelineStage>,
     pub(crate) artifacts: Vec<Artifact>,
+    pub(crate) speaker_labels: Vec<SpeakerLabel>,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -307,6 +308,20 @@ pub struct RecordingDeleteInput {
 #[serde(rename_all = "camelCase")]
 pub struct RecordingRetryInput {
     pub(crate) recording_id: String,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SpeakerLabel {
+    pub(crate) name: String,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SpeakerRenameInput {
+    pub(crate) recording_id: String,
+    pub(crate) speaker: String,
+    pub(crate) replacement: String,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]

@@ -1121,10 +1121,11 @@ impl AppRepository {
             ended_at: row.get(3)?,
             duration_seconds: row.get(4)?,
             status: enum_from_value(&row.get::<_, String>(5)?)?,
-            artifact_directory,
+            artifact_directory: artifact_directory.clone(),
             capture_errors,
             stages: self.stages(&id)?,
             artifacts: self.artifacts(&id)?,
+            speaker_labels: speaker_labels(&artifact_directory),
         })
     }
 
@@ -1189,4 +1190,32 @@ impl AppRepository {
 
         Ok(artifacts)
     }
+}
+
+fn speaker_labels(artifact_directory: &str) -> Vec<SpeakerLabel> {
+    let path = PathBuf::from(artifact_directory).join("diarization.json");
+    let Ok(content) = fs::read_to_string(path) else {
+        return Vec::new();
+    };
+    let Ok(value) = serde_json::from_str::<serde_json::Value>(&content) else {
+        return Vec::new();
+    };
+    let Some(turns) = value.get("turns").and_then(serde_json::Value::as_array) else {
+        return Vec::new();
+    };
+    let mut labels = Vec::new();
+
+    for turn in turns {
+        let Some(name) = turn.get("speaker").and_then(serde_json::Value::as_str) else {
+            continue;
+        };
+        if labels.iter().any(|label: &SpeakerLabel| label.name == name) {
+            continue;
+        }
+        labels.push(SpeakerLabel {
+            name: name.to_owned(),
+        });
+    }
+
+    labels
 }

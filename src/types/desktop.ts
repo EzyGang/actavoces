@@ -85,6 +85,11 @@ export interface Recording {
   captureErrors: CaptureError[];
   stages: PipelineStage[];
   artifacts: Artifact[];
+  speakerLabels: SpeakerLabel[];
+}
+
+export interface SpeakerLabel {
+  name: string;
 }
 
 export interface AppSettings {

@@ -37,6 +37,11 @@ export const retryRecordingJobs = (recordingId: string) =>
     input: { recordingId }
   });
 
+export const renameSpeakerLabel = (recordingId: string, speaker: string, replacement: string) =>
+  invoke<AppSnapshot>('rename_speaker_label', {
+    input: { recordingId, speaker, replacement }
+  });
+
 export const toggleRecordingFromShortcut = () =>
   invoke<AppSnapshot>('toggle_recording_from_shortcut');
 

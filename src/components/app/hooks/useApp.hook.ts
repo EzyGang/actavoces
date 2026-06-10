@@ -1,6 +1,8 @@
 import { useComputed, useSignal } from '@preact/signals';
 import { listen } from '@tauri-apps/api/event';
 import { open } from '@tauri-apps/plugin-dialog';
+import { relaunch } from '@tauri-apps/plugin-process';
+import { check, type Update } from '@tauri-apps/plugin-updater';
 import type { JSX } from 'preact';
 import { useEffect } from 'preact/hooks';
 import {
@@ -13,6 +15,7 @@ import {
   installTranscriptionModel,
   openLocalPath,
   refreshModelInventory,
+  renameSpeakerLabel,
   retryRecordingJobs,
   setupDiarizationRuntime,
   skipDiarizationSetup,
@@ -274,6 +277,10 @@ export const useApp = () => {
   const setupProgress = useSignal<WorkerSetupProgress>(initialSetupProgress);
   const setupRunning = useSignal(false);
   const bootstrapRequested = useSignal(false);
+  const updateChecking = useSignal(false);
+  const updateInstalling = useSignal(false);
+  const updateAvailable = useSignal<Update | null>(null);
+  const updateStatus = useSignal('Updates have not been checked in this session.');
   const settingsDraft = useSignal<AppSettingsUpdate>(
     buildSettingsUpdate(appSnapshotSignal.value.settings)
   );
@@ -438,6 +445,25 @@ export const useApp = () => {
     }
   };
 
+  const handleRenameSpeaker = async (recording: Recording, speaker: string) => {
+    const replacement = window.prompt('Speaker label', speaker);
+
+    if (replacement === null || replacement.trim() === speaker.trim()) {
+      return;
+    }
+
+    loading.value = true;
+    appErrorSignal.value = null;
+
+    try {
+      setSnapshot(await renameSpeakerLabel(recording.id, speaker, replacement));
+    } catch (error) {
+      appErrorSignal.value = errorMessage(error, 'Unable to rename speaker');
+    } finally {
+      loading.value = false;
+    }
+  };
+
   const handleToggleRecording = async () => {
     loading.value = true;
     appErrorSignal.value = null;
@@ -539,6 +565,67 @@ export const useApp = () => {
       appErrorSignal.value = errorMessage(error, 'Unable to clear Hugging Face token');
     } finally {
       savingSettings.value = false;
+    }
+  };
+
+  const handleCheckForUpdates = async () => {
+    if (!isTauriRuntime()) {
+      updateStatus.value = 'Updater is available in the desktop app.';
+
+      return;
+    }
+
+    updateChecking.value = true;
+    appErrorSignal.value = null;
+
+    try {
+      const update = await check();
+
+      updateAvailable.value = update;
+      updateStatus.value = update
+        ? `Version ${update.version} is available.`
+        : 'ActaVoces is up to date.';
+    } catch (error) {
+      const message = errorMessage(error, 'Unable to check for updates');
+
+      appErrorSignal.value = message;
+      updateStatus.value = message;
+    } finally {
+      updateChecking.value = false;
+    }
+  };
+
+  const handleInstallUpdate = async () => {
+    if (!isTauriRuntime()) {
+      updateStatus.value = 'Updater is available in the desktop app.';
+
+      return;
+    }
+
+    updateInstalling.value = true;
+    appErrorSignal.value = null;
+
+    try {
+      const update = updateAvailable.value ?? (await check());
+
+      if (!update) {
+        updateAvailable.value = null;
+        updateStatus.value = 'ActaVoces is up to date.';
+
+        return;
+      }
+
+      updateStatus.value = `Installing version ${update.version}.`;
+      await update.downloadAndInstall();
+      updateStatus.value = 'Update installed. Relaunching ActaVoces.';
+      await relaunch();
+    } catch (error) {
+      const message = errorMessage(error, 'Unable to install update');
+
+      appErrorSignal.value = message;
+      updateStatus.value = message;
+    } finally {
+      updateInstalling.value = false;
     }
   };
 
@@ -750,6 +837,9 @@ export const useApp = () => {
       onRetry: () => {
         void handleRetryRecording(recording);
       },
+      onRenameSpeaker: (speaker: string) => {
+        void handleRenameSpeaker(recording, speaker);
+      },
       onDelete: () => {
         void handleDeleteRecording(recording);
       }
@@ -835,12 +925,16 @@ export const useApp = () => {
       routeLabel,
       formatDuration,
       formatTimestamp,
-      setupProgress
+      setupProgress,
+      updateStatus,
+      updateAvailable
     },
     status: {
       loading,
       savingSettings,
       installingModel,
+      updateChecking,
+      updateInstalling,
       setupReady,
       needsDiarizationSetup,
       setupRunning,
@@ -1055,6 +1149,8 @@ export const useApp = () => {
       clearProviderApiKey: handleClearProviderApiKey,
       clearHuggingFaceToken: handleClearHuggingFaceToken,
       saveSettings: handleSaveSettings,
+      checkForUpdates: handleCheckForUpdates,
+      installUpdate: handleInstallUpdate,
       retrySetup: runBootstrap,
       setupDiarization: handleSetupDiarization,
       skipDiarizationSetup: handleSkipDiarizationSetup

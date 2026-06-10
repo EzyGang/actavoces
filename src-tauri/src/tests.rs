@@ -2,7 +2,9 @@ use std::env;
 use std::fs;
 use std::path::Path;
 
-use crate::app::commands::{resume_pipeline_jobs, start_recording_session, stop_recording_session};
+use crate::app::commands::{
+    resume_pipeline_jobs, rewrite_speaker_label, start_recording_session, stop_recording_session,
+};
 use crate::artifacts::{artifact_directory, capture_artifacts_with_readiness};
 use crate::capture::audio::{
     dedupe_capture_devices, is_default_system_source_name, is_system_monitor_device_name,
@@ -11,7 +13,7 @@ use crate::capture::audio::{
 use crate::domain::types::{
     AppSettingsUpdate, ArtifactKind, CaptureDeviceInfo, DesktopRuntimeStatus, DiarizationBackend,
     ModelInventoryItem, OverlayPosition, PipelineStageId, PipelineStageStatus, RecordingStatus,
-    SpeakerCountMode, WorkerEvent, WorkerSetupStatus,
+    SpeakerCountMode, SpeakerRenameInput, WorkerEvent, WorkerSetupStatus,
 };
 use crate::settings::default_settings;
 use crate::storage::repository::{AppRepository, NewRecording};
@@ -551,6 +553,65 @@ fn resume_pipeline_runs_worker_events_and_persists_artifacts() {
         .artifacts
         .iter()
         .any(|artifact| artifact.kind == ArtifactKind::DiarizedTranscript && artifact.ready));
+}
+
+#[test]
+fn speaker_label_rename_rewrites_diarization_artifacts() {
+    let database_path = test_database_path("speaker-rename");
+    let artifact_path = test_artifact_path("speaker-rename-artifacts");
+    let mut repository = AppRepository::open(&database_path).unwrap();
+    let mut capture_backend = FileAudioCaptureBackend::default();
+    let recording = NewRecording {
+        id: "recording-speakers".to_owned(),
+        title: "Meeting".to_owned(),
+        started_at: "1".to_owned(),
+        artifact_directory: artifact_path.display().to_string(),
+    };
+
+    capture_backend
+        .start(&recording.id, &repository.settings().unwrap())
+        .unwrap();
+    repository.create_recording(recording.clone()).unwrap();
+    let capture_result = capture_backend.stop(&recording.id, &artifact_path).unwrap();
+    repository
+        .finish_recording(
+            &recording.id,
+            "2".to_owned(),
+            1,
+            capture_result.errors,
+            &capture_result.artifacts,
+        )
+        .unwrap();
+    fs::write(
+        artifact_path.join("raw-segments.json"),
+        "{\"segments\":[{\"start\":0,\"end\":4,\"text\":\"Hello there\"}]}\n",
+    )
+    .unwrap();
+    fs::write(
+        artifact_path.join("diarization.json"),
+        "{\"turns\":[{\"speaker\":\"Speaker 1\",\"start\":0,\"end\":4}]}\n",
+    )
+    .unwrap();
+
+    let recording = repository.recording_by_id(&recording.id).unwrap().unwrap();
+    rewrite_speaker_label(
+        &recording,
+        &SpeakerRenameInput {
+            recording_id: recording.id.clone(),
+            speaker: "Speaker 1".to_owned(),
+            replacement: "Alice".to_owned(),
+        },
+    )
+    .unwrap();
+
+    let diarization = fs::read_to_string(artifact_path.join("diarization.json")).unwrap();
+    let transcript = fs::read_to_string(artifact_path.join("diarized-transcript.md")).unwrap();
+    let snapshot = repository.snapshot().unwrap();
+
+    assert!(diarization.contains("\"speaker\": \"Alice\""));
+    assert!(transcript.contains("## Alice"));
+    assert!(transcript.contains("Hello there"));
+    assert_eq!(snapshot.recordings[0].speaker_labels[0].name, "Alice");
 }
 
 #[test]

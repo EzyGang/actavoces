@@ -39,6 +39,8 @@ pub fn run() {
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_process::init())
+        .plugin(tauri_plugin_updater::Builder::new().build())
         .setup(|app| {
             create_recording_overlay(app)?;
             let handle = app.handle().clone();
@@ -66,6 +68,7 @@ pub fn run() {
             app::commands::delete_recording,
             app::commands::open_local_path,
             app::commands::retry_recording_jobs,
+            app::commands::rename_speaker_label,
             app::commands::toggle_recording_from_shortcut,
             app::commands::resume_pending_jobs,
             app::commands::bootstrap_worker_runtime,

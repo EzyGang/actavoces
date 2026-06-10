@@ -242,7 +242,14 @@ export const AppView = ({ app }: AppViewProps): JSX.Element =>
                   {app.data.recordingRows.value.length > 0 ? (
                     <div class='grid gap-3'>
                       {app.data.recordingRows.value.map(
-                        ({ recording, canRetry, onDelete, onOpenFolder, onRetry }) => (
+                        ({
+                          recording,
+                          canRetry,
+                          onDelete,
+                          onOpenFolder,
+                          onRenameSpeaker,
+                          onRetry
+                        }) => (
                           <article
                             class='grid gap-4 border border-border-base bg-bg-card p-4 lg:grid-cols-[minmax(0,1fr)_180px]'
                             key={recording.id}
@@ -258,6 +265,22 @@ export const AppView = ({ app }: AppViewProps): JSX.Element =>
                               <span class='break-words font-mono text-text-muted text-xs'>
                                 {recording.artifactDirectory}
                               </span>
+                              {recording.speakerLabels.length > 0 ? (
+                                <div class='flex flex-wrap gap-2 pt-2'>
+                                  {recording.speakerLabels.map((speaker) => (
+                                    <button
+                                      class='border border-border-base bg-bg-input px-2 py-1 font-mono text-text-secondary text-xs hover:border-border-focus hover:text-text-primary'
+                                      disabled={app.status.loading.value}
+                                      key={speaker.name}
+                                      onClick={() => onRenameSpeaker(speaker.name)}
+                                      title='Rename speaker'
+                                      type='button'
+                                    >
+                                      {speaker.name}
+                                    </button>
+                                  ))}
+                                </div>
+                              ) : null}
                             </div>
                             <div class='flex flex-col gap-3 lg:items-end'>
                               <div class='flex flex-col gap-1 lg:items-end'>
@@ -426,6 +449,37 @@ export const AppView = ({ app }: AppViewProps): JSX.Element =>
                       ))}
                     </div>
                   ) : null}
+
+                  <section class='flex flex-col gap-4 border border-border-base bg-bg-card p-5'>
+                    <div class='flex items-center justify-between gap-4'>
+                      <div class='flex flex-col gap-1'>
+                        <h2 class='font-semibold text-xl'>Updates</h2>
+                        <p class='text-sm text-text-muted'>{app.data.updateStatus.value}</p>
+                      </div>
+                      <div class='flex gap-2'>
+                        <Button
+                          class='h-9 px-3'
+                          disabled={
+                            app.status.updateChecking.value || app.status.updateInstalling.value
+                          }
+                          onClick={app.actions.checkForUpdates}
+                          variant='ghost'
+                        >
+                          Check
+                        </Button>
+                        <Button
+                          class='h-9 px-3'
+                          disabled={
+                            app.status.updateInstalling.value || !app.data.updateAvailable.value
+                          }
+                          onClick={app.actions.installUpdate}
+                          variant='secondary'
+                        >
+                          Install
+                        </Button>
+                      </div>
+                    </div>
+                  </section>
 
                   <section class='grid gap-4 xl:grid-cols-2'>
                     <article class='flex flex-col gap-4 border border-border-base bg-bg-card p-5'>

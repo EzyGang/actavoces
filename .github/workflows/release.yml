@@ -80,6 +80,7 @@ jobs:
           - name: Windows x64
             os: windows-latest
             rust-target: x86_64-pc-windows-msvc
+            updater-platform: windows-x86_64
             uv-asset: uv-x86_64-pc-windows-msvc.zip
             uv-binary: uv.exe
             ffmpeg-asset: ffmpeg-windows-x64.zip
@@ -87,6 +88,7 @@ jobs:
           - name: macOS Apple Silicon
             os: macos-latest
             rust-target: aarch64-apple-darwin
+            updater-platform: darwin-aarch64
             uv-asset: uv-aarch64-apple-darwin.tar.gz
             uv-binary: uv
             ffmpeg-asset: ffmpeg-osx-arm64.zip
@@ -94,6 +96,7 @@ jobs:
           - name: macOS Intel
             os: macos-15-intel
             rust-target: x86_64-apple-darwin
+            updater-platform: darwin-x86_64
             uv-asset: uv-x86_64-apple-darwin.tar.gz
             uv-binary: uv
             ffmpeg-asset: ffmpeg-osx-x64.zip
@@ -101,6 +104,7 @@ jobs:
           - name: Linux x64
             os: ubuntu-22.04
             rust-target: x86_64-unknown-linux-gnu
+            updater-platform: linux-x86_64
             uv-asset: uv-x86_64-unknown-linux-gnu.tar.gz
             uv-binary: uv
             ffmpeg-asset: ffmpeg-linux-x64.zip
@@ -144,12 +148,27 @@ jobs:
 
       - name: Stamp package version into Tauri config
         shell: bash
+        env:
+          TAURI_UPDATER_PUBKEY: ${{ vars.TAURI_UPDATER_PUBKEY || secrets.TAURI_UPDATER_PUBKEY }}
         run: |
           node -e "
             const fs = require('node:fs');
             const configPath = 'src-tauri/tauri.conf.json';
+            const pubkey = process.env.TAURI_UPDATER_PUBKEY;
+            if (!pubkey) {
+              throw new Error('TAURI_UPDATER_PUBKEY must be configured as a GitHub variable or secret');
+            }
             const config = JSON.parse(fs.readFileSync(configPath, 'utf8'));
             config.version = '${{ needs.version.outputs.version }}';
+            config.bundle = config.bundle || {};
+            config.bundle.createUpdaterArtifacts = true;
+            config.plugins = config.plugins || {};
+            config.plugins.updater = {
+              pubkey,
+              endpoints: [
+                'https://github.com/${{ github.repository }}/releases/latest/download/latest.json'
+              ]
+            };
             fs.writeFileSync(configPath, `${JSON.stringify(config, null, 2)}\n`);
           "
 
@@ -297,7 +316,61 @@ jobs:
           "${runtime_path}/${binary_name}" -version
 
       - name: Build Tauri bundle
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         run: pnpm tauri build --target ${{ matrix.rust-target }}
+
+      - name: Write updater manifest
+        shell: bash
+        env:
+          UPDATER_PLATFORM: ${{ matrix.updater-platform }}
+          RUST_TARGET: ${{ matrix.rust-target }}
+        run: |
+          node - <<'NODE'
+          const fs = require('node:fs');
+          const path = require('node:path');
+          const platform = process.env.UPDATER_PLATFORM;
+          const target = process.env.RUST_TARGET;
+          const bundleRoot = path.join('src-tauri', 'target', target, 'release', 'bundle');
+          const walk = (directory) => {
+            if (!fs.existsSync(directory)) {
+              return [];
+            }
+            const files = [];
+            for (const entry of fs.readdirSync(directory, { withFileTypes: true })) {
+              const entryPath = path.join(directory, entry.name);
+              if (entry.isDirectory()) {
+                files.push(...walk(entryPath));
+              } else {
+                files.push(entryPath);
+              }
+            }
+            return files;
+          };
+          const files = walk(bundleRoot).filter((filePath) => !filePath.endsWith('.sig'));
+          const byPreference = (candidates) => {
+            const artifact = candidates.find((filePath) => fs.existsSync(`${filePath}.sig`));
+            if (!artifact) {
+              throw new Error(`No signed updater artifact found for ${platform}`);
+            }
+            return artifact;
+          };
+          const artifact = platform.startsWith('darwin-')
+            ? byPreference(files.filter((filePath) => filePath.endsWith('.app.tar.gz')))
+            : platform === 'linux-x86_64'
+              ? byPreference(files.filter((filePath) => filePath.endsWith('.AppImage')))
+              : byPreference([
+                  ...files.filter((filePath) => filePath.endsWith('.msi')),
+                  ...files.filter((filePath) => filePath.endsWith('.exe')),
+                ]);
+          const manifest = {
+            platform,
+            assetName: path.basename(artifact),
+            signature: fs.readFileSync(`${artifact}.sig`, 'utf8').trim(),
+          };
+          fs.writeFileSync(`updater-${platform}.json`, `${JSON.stringify(manifest, null, 2)}\n`);
+          NODE
 
       - name: Upload bundle artifacts
         uses: actions/upload-artifact@v7
@@ -306,6 +379,7 @@ jobs:
           path: |
             src-tauri/target/${{ matrix.rust-target }}/release/bundle/**/*
             src-tauri/target/release/bundle/**/*
+            updater-${{ matrix.updater-platform }}.json
           if-no-files-found: error
 
   publish:
@@ -322,6 +396,12 @@ jobs:
         uses: actions/download-artifact@v7
         with:
           path: release-assets
+
+      - name: Create updater latest.json
+        run: node .github/scripts/create-updater-latest.js release-assets ${{ needs.version.outputs.tag }} ${{ needs.version.outputs.version }}
+
+      - name: Remove temporary updater manifests
+        run: find release-assets -type f -name 'updater-*.json' -delete
 
       - name: Create release and upload assets
         uses: softprops/action-gh-release@v3

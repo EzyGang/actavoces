@@ -1,118 +1,149 @@
 # ActaVoces
 
-ActaVoces records meeting audio and writes transcripts, summaries, and job
-metadata into a folder people and tools can inspect.
+**ActaVoces records meetings into a folder you can inspect with normal tools.**
 
-The app follows a few plain goals:
-
-- Record microphone audio and available system audio from the desktop.
-- Produce Markdown and JSON artifacts that work outside the app.
-- Run local processing by default where practical.
-- Allow remote processing through explicit provider settings.
-- Keep the record folder useful for humans, scripts, and personal AI agents.
+It captures desktop meeting audio, runs transcription and optional speaker
+diarization, then writes Markdown and JSON artifacts beside the recording. The
+result works in the app, in a text editor, in scripts, and in personal agent
+harnesses such as OpenClaw, Hermes, or similar assistant setups.
 
 Pronunciation: `AHK-tah VOH-kays`.
 
-The name joins two Latin roots: `acta`, meaning records or proceedings, and
-`voces`, meaning voices.
+The name joins two Latin roots:
 
-## Why it exists
+- `acta`: records or proceedings
+- `voces`: voices
 
-Many meeting-note tools make the useful record hard to reuse:
+## Features
+
+- **Local-first recording archive**
+  Stores recordings and generated artifacts under your configured records
+  folder. Existing recording folders keep stable paths after settings changes.
+
+- **Inspectable file output**
+  Produces `recording.wav`, Markdown transcripts, JSON segments, speaker turns,
+  metadata, and a JSONL job log. You can search, diff, back up, sync, or process
+  these files outside the app.
+
+- **Desktop capture**
+  Records microphone audio and available system audio through the desktop app.
+  Capture can be controlled from the app, a global hotkey, and a small recording
+  overlay.
+
+- **Local transcription**
+  Uses a Python worker with `faster-whisper`. Model status and install controls
+  live in Settings.
+
+- **Speaker diarization**
+  Supports local `pyannote.audio` diarization after Hugging Face setup. Exact
+  one-speaker mode works without a diarization model.
+
+- **Speaker label editing**
+  Completed recordings expose speaker labels in the Recordings view. Renaming a
+  speaker rewrites `diarization.json` and regenerates `diarized-transcript.md`.
+
+- **Optional summaries**
+  Generates `summary.md` through an OpenAI-compatible provider when configured.
+  Summary generation can be disabled without blocking transcripts.
+
+- **Persistent job state**
+  Uses SQLite for settings, recordings, pipeline jobs, providers, model
+  inventory, and worker status. Failed downstream jobs can be retried from the
+  app.
+
+- **Self-updates**
+  Tauri updater support is wired for signed public GitHub Release artifacts and
+  a GitHub-hosted `latest.json`.
+
+- **Agent-friendly records**
+  The record folder is meant for humans and software. You can point an assistant
+  at past meeting folders, ask questions over transcripts, extract action items,
+  or feed records into planning workflows.
+
+## Why ActaVoces Exists
+
+Many meeting-note tools hide the useful record behind a product surface:
 
 - A bot joins the call.
-- Audio goes to a remote pipeline by default.
-- Notes stay locked inside a product UI.
-- Exports lose the raw transcript, segments, job log, or source metadata.
+- Audio leaves the machine by default.
+- Notes stay trapped in a web app.
+- Exports omit raw segments, speaker turns, job logs, or source metadata.
 
-ActaVoces serves people who want a durable meeting archive:
+ActaVoces optimizes for a durable local archive:
 
-- Searchable transcripts.
-- Markdown summaries.
-- JSON segment and speaker data.
-- A folder that can be opened with normal tools.
-- Files that can be handed to personal agent harnesses such as OpenClaw,
-  Hermes, or similar local assistant setups.
+- **Own the files.**
+- **Keep the raw transcript.**
+- **Keep the machine-readable data.**
+- **Use local processing where practical.**
+- **Allow remote processing only through explicit provider settings.**
 
-The record folder drives the design. A user should be able to ask an assistant
-about past meetings, feed transcripts into planning workflows, or process files
-with their own scripts.
+## Artifact Layout
 
-## What it does
+Each recording gets its own directory under the configured records folder:
 
-ActaVoces aims to support this workflow:
+```text
+~/actavoces/records/YYYY/MM/YYYY-MM-DD-HHMMSS-title/
+```
 
-1. Start capture from the app or a global hotkey.
-2. Record microphone audio and available system audio.
-3. Stop capture and write a durable recording folder.
-4. Transcribe the audio through the configured worker path.
-5. Add speaker labels when diarization has been configured.
-6. Generate optional summaries through an OpenAI-compatible provider.
-7. Keep every output as a file beside the recording.
+Expected artifacts:
 
-Generated artifact folders use stable paths, so later settings changes do not
-move older recordings.
+```text
+recording.wav
+raw-transcript.md
+raw-segments.json
+diarization.json
+diarized-transcript.md
+summary.md
+metadata.json
+job-log.jsonl
+```
 
-## Current status
+The raw transcript can appear before diarization and summary finish. Later
+pipeline stages update their own files instead of rewriting one combined note.
 
-Current state: working foundation for contributors, with release hardening still
-pending.
+## Processing Model
 
-Implemented pieces:
+ActaVoces keeps storage local by default:
 
-- Tauri v2 desktop shell with Dashboard, Recordings, Jobs, and Settings views.
-- Native recording lifecycle with persistent WAV artifacts.
-- SQLite-backed settings, recordings, pipeline jobs, providers, and model
-  inventory.
-- Global-hotkey and recording-overlay plumbing.
-- Python JSONL worker commands for health checks, model status/install,
-  transcription, diarization, and summaries.
-- `faster-whisper` transcription integration.
-- Optional `pyannote.audio` diarization path with Hugging Face token setup.
-- OpenAI-compatible summary provider settings.
-- CI workflow coverage for Windows, macOS, and Linux.
-- Release workflow that tags, creates a GitHub release, and uploads platform
-  artifacts.
+- **Transcription:** local Python worker with `faster-whisper`
+- **Diarization:** local `pyannote.audio` after setup
+- **Summaries:** optional OpenAI-compatible remote provider
+- **Secrets:** OS keychain where possible
 
-Known work before a public release:
+Remote processing for more stages can fit the same explicit provider model.
+NeMo/Whisper-style diarization is planned, but not supported yet.
 
-- Real ML runs need validation with installed models, pyannote, and provider
-  endpoints.
-- Linux system-audio behavior needs OS-level validation and user-facing setup
-  guidance.
+Users remain responsible for consent and recording-law compliance in their
+jurisdiction.
 
-See [docs/implementation-gaps.md](docs/implementation-gaps.md) for the detailed
-implementation audit.
+## Platform Support
 
-## Beta support
+Beta releases target desktop use:
 
-Beta releases target desktop use with this support matrix:
+- **macOS:** supported beta target, tested before beta publishing
+- **Windows:** supported beta target, tested before beta publishing
+- **Linux:** expected target, not tested yet
 
-- macOS: supported target, tested before beta publishing.
-- Windows: supported target, tested before beta publishing.
-- Linux: expected target, not tested yet.
-
-Linux builds are expected to work, but system-audio capture depends on the
-available PipeWire/PulseAudio monitor or loopback devices.
+Linux system-audio capture depends on available PipeWire/PulseAudio monitor or
+loopback devices.
 
 ## Prerequisites
 
 For local development:
 
-- Node.js with `pnpm`.
-- Rust stable with Cargo.
-- Tauri v2 system dependencies for your operating system.
-- Python 3.14.
-- `uv` for the Python worker.
-- OS microphone and audio-capture permissions.
+- **Node.js** with `pnpm`
+- **Rust stable** with Cargo
+- **Tauri v2 system dependencies** for your operating system
+- **Python 3.14**
+- **uv** for the Python worker
+- **OS microphone and audio-capture permissions**
 
-Optional runtime features:
+Optional runtime setup:
 
-- `ffmpeg` for `pyannote.audio` diarization when the bundled runtime does not
-  provide it.
-- A Hugging Face token with access to
-  `pyannote/speaker-diarization-community-1` for speaker diarization.
-- An OpenAI-compatible API key and model name for summaries.
+- **ffmpeg** for `pyannote.audio` when the bundled runtime does not provide it
+- **Hugging Face token** with access to
+  `pyannote/speaker-diarization-community-1`
+- **OpenAI-compatible API key and model** for summaries
 
 ## Setup
 
@@ -142,7 +173,7 @@ pnpm dev
 
 The renderer dev server uses port `1420`.
 
-## Common commands
+## Common Commands
 
 ```bash
 pnpm validate     # Biome + TypeScript
@@ -171,11 +202,19 @@ pnpm test:rust
 
 Releases are created through the GitHub Actions release workflow:
 
-- Manually dispatch the workflow from the branch to publish.
-- The workflow reads `version` from the root `package.json`.
-- The same version is stamped into the Tauri config before packaging.
-- The workflow builds platform bundles, creates tag `v<version>`, creates the
-  GitHub release, and uploads the generated artifacts.
+- **Manual dispatch:** run the workflow from the branch to publish
+- **Version source:** root `package.json`
+- **Full release tag:** `v<version>`
+- **Alpha release tag:** `v<version>-alpha.N`
+- **Artifacts:** platform bundles uploaded to the GitHub Release
+- **Updater metadata:** signed updater artifacts plus `latest.json`
+
+Updater releases require:
+
+- `TAURI_SIGNING_PRIVATE_KEY` as a GitHub secret
+- `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` as a GitHub secret when the key has a
+  password
+- `TAURI_UPDATER_PUBKEY` as a GitHub repository variable or secret
 
 ## Architecture
 
@@ -183,70 +222,58 @@ Releases are created through the GitHub Actions release workflow:
 src/                 Preact renderer
 src-tauri/           Tauri shell, Rust commands, capture, storage
 worker/              Python worker for transcription and AI processing
-docs/                Project notes and implementation audits
 public/              Static renderer assets
 ```
 
 Main stack:
 
-- Frontend: Preact 10, TypeScript, `@preact/signals`, Tailwind CSS v4.
-- Desktop backend: Tauri v2, Rust, SQLite through `rusqlite`, native capture
-  through `cpal`.
-- Worker: Python 3.14, `uv`, Pydantic, `faster-whisper`, optional
-  `pyannote.audio`, `pydantic-ai`.
+- **Frontend:** Preact 10, TypeScript, `@preact/signals`, Tailwind CSS v4
+- **Desktop backend:** Tauri v2, Rust, SQLite through `rusqlite`, native capture
+  through `cpal`
+- **Worker:** Python 3.14, `uv`, Pydantic, `faster-whisper`, optional
+  `pyannote.audio`, `pydantic-ai`
 
 The Rust app owns windows, hotkeys, capture, filesystem paths, SQLite state, and
 worker process orchestration. The Python worker owns ML-heavy processing and
 communicates with the desktop app through newline-delimited JSON.
 
-## Artifact layout
+## Project Status
 
-Each recording gets its own directory under the configured records folder. The
-default records root follows this shape:
+ActaVoces has the main app path implemented:
 
-```text
-~/actavoces/records/YYYY/MM/YYYY-MM-DD-HHMMSS-title/
-```
+- Capture lifecycle and durable WAV output
+- SQLite-backed settings and recordings
+- Route-backed Dashboard, Recordings, Jobs, and Settings views
+- Local worker bootstrap and JSONL command protocol
+- Transcription, diarization, summaries, job retry, artifact opening
+- CI across TypeScript, Rust, and Python
+- Release workflow with signed updater metadata
 
-Expected artifacts:
+Before beta publishing, the remaining work is release hardening:
 
-```text
-recording.wav
-raw-transcript.md
-raw-segments.json
-diarization.json
-diarized-transcript.md
-summary.md
-metadata.json
-job-log.jsonl
-```
-
-The raw transcript can appear before diarization and summary stages finish.
-Later stages update their own files instead of rewriting one combined note.
-
-## Processing model
-
-ActaVoces stores recordings, transcripts, job logs, and metadata on the local
-machine by default.
-
-Processing stays local-first, with remote stages available through explicit
-provider configuration:
-
-- Local transcription uses the Python worker and `faster-whisper`.
-- Local speaker diarization can use `pyannote.audio` after setup.
-- NeMo/Whisper-style diarization is planned but not supported yet.
-- Remote summaries use an OpenAI-compatible provider.
-- Future remote transcription or formatting stages should follow the same
-  explicit provider model.
-
-Secrets are stored through the operating system keychain where possible.
-
-Users remain responsible for consent and recording-law compliance in their
-jurisdiction.
+- Validate packaged macOS and Windows builds
+- Validate real `faster-whisper`, pyannote, and provider runs
+- Validate Linux behavior and document Linux audio setup if needed
 
 ## Contributing
 
-The project remains early. Small, focused changes are easiest to review.
+Contributions are welcome. Keep changes focused, documented by tests where
+practical, and aligned with the local-first file archive model.
+
+Good first contributions include:
+
+- Documentation fixes
+- Platform setup notes
+- Focused UI polish
+- Worker error-message improvements
+- Tests for existing behavior
+
+Before larger changes, open an issue or draft pull request that explains:
+
+- **Problem:** what user pain or project risk the change addresses
+- **Approach:** how the change fits the existing architecture
+- **Tradeoffs:** any added dependency, runtime cost, or behavior change
+- **Validation:** how the change was tested
 
 Before opening a pull request, run the checks that match your changes:
 
@@ -259,8 +286,24 @@ pnpm lint:py
 pnpm test:py
 ```
 
-Use the existing frontend triplet pattern, keep Rust domain logic out of
-`lib.rs`, and keep worker imports rooted at `app.`.
+Contribution guidelines:
+
+- **Keep pull requests small.** One bug fix, feature, or cleanup per PR is
+  easiest to review.
+- **Preserve artifact compatibility.** Do not rename, move, or change generated
+  files without a migration path and README update.
+- **Follow existing architecture.** Frontend features use the hook/view/container
+  triplet pattern. Rust domain logic stays out of `lib.rs`. Python worker
+  imports stay rooted at `app.`.
+- **Avoid hidden network behavior.** Remote processing must be explicit in
+  Settings and documented in user-facing text.
+- **Protect user data.** Do not log secrets, transcript content, or provider API
+  keys. Store secrets through the OS keychain where possible.
+- **Add tests for behavior changes.** Use Vitest for frontend behavior, Rust
+  unit tests for desktop/storage logic, and pytest for worker contracts.
+- **Document platform assumptions.** Capture, hotkeys, overlays, and updater
+  behavior can vary by OS. Include the tested OS and version when reporting
+  platform work.
 
 ## License
 
