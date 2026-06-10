@@ -7,10 +7,11 @@ from pydantic_ai.models.test import TestModel
 from pytest_mock import MockerFixture
 
 from app.dtos import SummarizePayload, SummaryOutput
+from app.events import emit
 from app.formatting import render_diarized_transcript, render_raw_transcript
 from app.handlers import handle
 from app.models import install_faster_whisper_model, model_installed, run_faster_whisper
-from app.protocol import WorkerCommand
+from app.protocol import WorkerCommand, WorkerEvent
 from app.summaries import assemble_summary_prompt, build_summary_agent, run_openai_compatible_summary
 
 
@@ -18,6 +19,12 @@ async def test_health_check_returns_ok_event() -> None:
     events = await handle(WorkerCommand(id='1', name='health.check'))
 
     assert events[0].event == 'health.ok'
+
+
+def test_emit_serializes_worker_event_aliases(capsys: Any) -> None:
+    emit(WorkerEvent(command_id='1', event='health.ok', payload={'worker': 'test'}))
+
+    assert capsys.readouterr().out == '{"commandId":"1","event":"health.ok","payload":{"worker":"test"}}\n'
 
 
 async def test_transcribe_run_writes_supplied_segments(tmp_path: Path) -> None:

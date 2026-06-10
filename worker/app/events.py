@@ -6,7 +6,7 @@ from app.protocol import WorkerCommand, WorkerEvent
 
 
 def emit(event: WorkerEvent) -> None:
-    sys.stdout.write(f'{event.model_dump_json()}\n')
+    sys.stdout.write(f'{event.model_dump_json(by_alias=True)}\n')
     sys.stdout.flush()
 
 

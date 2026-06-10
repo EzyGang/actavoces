@@ -28,7 +28,10 @@ const initialSnapshot: AppSnapshot = {
     hotkeyError: null,
     workerRunning: false,
     workerHealthOk: false,
-    workerError: null
+    workerError: null,
+    workerSetupStatus: 'missing',
+    workerSetupStep: '',
+    workerSetupError: null
   },
   settings: {
     outputDirectory: '',

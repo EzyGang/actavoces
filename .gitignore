@@ -18,7 +18,8 @@ vite.config.js
 __pycache__
 *.pyc
 .venv
-
+src-tauri/resources/runtime/uv/*
+!src-tauri/resources/runtime/uv/README.md
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json

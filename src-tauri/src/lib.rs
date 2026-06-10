@@ -6,7 +6,7 @@ use std::fs;
 use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, OnceLock};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use rusqlite::{params, Connection, OptionalExtension};
@@ -54,6 +54,9 @@ pub struct DesktopRuntimeStatus {
     worker_running: bool,
     worker_health_ok: bool,
     worker_error: Option<String>,
+    worker_setup_status: WorkerSetupStatus,
+    worker_setup_step: String,
+    worker_setup_error: Option<String>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -69,6 +72,23 @@ pub struct WorkerStatus {
 #[serde(rename_all = "camelCase")]
 pub enum WorkerMode {
     CliJsonl,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum WorkerSetupStatus {
+    Missing,
+    Installing,
+    Ready,
+    Failed,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WorkerSetupProgress {
+    status: WorkerSetupStatus,
+    step: String,
+    error: Option<String>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -475,6 +495,36 @@ fn resume_pending_jobs(
     )?;
 
     Ok(snapshot)
+}
+
+#[tauri::command]
+async fn bootstrap_worker_runtime(app: tauri::AppHandle) -> Result<AppSnapshot, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let state = app.state::<ActavocesState>();
+
+        match bootstrap_worker(&app, &state) {
+            Ok(()) => {
+                let repository = state.repository.lock().map_err(lock_error)?;
+
+                repository.snapshot().map_err(|error| error.to_string())
+            }
+            Err(error) => {
+                let progress = WorkerSetupProgress {
+                    status: WorkerSetupStatus::Failed,
+                    step: "Worker setup failed".to_owned(),
+                    error: Some(error.clone()),
+                };
+
+                persist_worker_setup_progress(&state, &progress)?;
+                app.emit("worker-setup-progress", progress)
+                    .map_err(|emit_error| emit_error.to_string())?;
+
+                Err(error)
+            }
+        }
+    })
+    .await
+    .map_err(|error| format!("Worker setup task failed: {error}"))?
 }
 
 #[tauri::command]
@@ -1294,6 +1344,9 @@ fn register_global_hotkey(app: &tauri::AppHandle, hotkey: &str) -> DesktopRuntim
             worker_running: false,
             worker_health_ok: false,
             worker_error: None,
+            worker_setup_status: WorkerSetupStatus::Missing,
+            worker_setup_step: String::new(),
+            worker_setup_error: None,
         },
         Err(error) => DesktopRuntimeStatus {
             overlay_visible: false,
@@ -1302,6 +1355,9 @@ fn register_global_hotkey(app: &tauri::AppHandle, hotkey: &str) -> DesktopRuntim
             worker_running: false,
             worker_health_ok: false,
             worker_error: None,
+            worker_setup_status: WorkerSetupStatus::Missing,
+            worker_setup_step: String::new(),
+            worker_setup_error: None,
         },
     }
 }
@@ -1398,6 +1454,7 @@ pub fn run() {
             retry_recording_jobs,
             toggle_recording_from_shortcut,
             resume_pending_jobs,
+            bootstrap_worker_runtime,
             get_worker_status,
             start_worker,
             stop_worker,
@@ -1597,6 +1654,12 @@ impl AppRepository {
         self.upsert_setting("workerRunning", "false")?;
         self.upsert_setting("workerHealthOk", "false")?;
         self.upsert_setting("workerError", "")?;
+        self.upsert_setting(
+            "workerSetupStatus",
+            &enum_value(WorkerSetupStatus::Missing)?,
+        )?;
+        self.upsert_setting("workerSetupStep", "")?;
+        self.upsert_setting("workerSetupError", "")?;
         self.upsert_setting("summaryEnabled", &settings.summary_enabled.to_string())?;
         self.upsert_setting("providerBaseUrl", &settings.provider_base_url)?;
         self.upsert_setting("providerModel", &settings.provider_model)?;
@@ -1825,6 +1888,12 @@ impl AppRepository {
                 "workerError",
                 status.worker_error.clone().unwrap_or_default(),
             ),
+            ("workerSetupStatus", enum_value(status.worker_setup_status)?),
+            ("workerSetupStep", status.worker_setup_step.clone()),
+            (
+                "workerSetupError",
+                status.worker_setup_error.clone().unwrap_or_default(),
+            ),
         ];
 
         for (key, value) in values {
@@ -1847,6 +1916,33 @@ impl AppRepository {
         desktop_status.worker_running = status.running;
         desktop_status.worker_health_ok = status.health_ok;
         desktop_status.worker_error = status.last_error.clone();
+
+        self.update_desktop_runtime_status(&desktop_status)
+    }
+
+    fn update_worker_setup_progress(
+        &mut self,
+        progress: &WorkerSetupProgress,
+    ) -> rusqlite::Result<()> {
+        let mut desktop_status = self.desktop_runtime_status()?;
+
+        desktop_status.worker_setup_status = progress.status;
+        desktop_status.worker_setup_step = progress.step.clone();
+        desktop_status.worker_setup_error = progress.error.clone();
+
+        match progress.status {
+            WorkerSetupStatus::Ready => {
+                desktop_status.worker_running = true;
+                desktop_status.worker_health_ok = true;
+                desktop_status.worker_error = None;
+            }
+            WorkerSetupStatus::Failed => {
+                desktop_status.worker_running = true;
+                desktop_status.worker_health_ok = false;
+                desktop_status.worker_error = progress.error.clone();
+            }
+            WorkerSetupStatus::Missing | WorkerSetupStatus::Installing => (),
+        }
 
         self.update_desktop_runtime_status(&desktop_status)
     }
@@ -2262,6 +2358,11 @@ impl AppRepository {
             worker_running: parse_bool(&self.setting_value("workerRunning", "false")?),
             worker_health_ok: parse_bool(&self.setting_value("workerHealthOk", "false")?),
             worker_error: empty_string_to_none(self.setting_value("workerError", "")?),
+            worker_setup_status: enum_from_value(
+                &self.setting_value("workerSetupStatus", "missing")?,
+            )?,
+            worker_setup_step: self.setting_value("workerSetupStep", "")?,
+            worker_setup_error: empty_string_to_none(self.setting_value("workerSetupError", "")?),
         })
     }
 
@@ -2438,6 +2539,25 @@ struct WorkerRuntimeState {
     last_error: Option<String>,
 }
 
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct WorkerRuntimePaths {
+    uv_executable: PathBuf,
+    worker_directory: PathBuf,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct WorkerBootstrapManifest {
+    worker_version: String,
+    uv_ready: bool,
+    synced: bool,
+    health_ok: bool,
+    default_model: String,
+    default_model_installed: bool,
+}
+
+static WORKER_RUNTIME_PATHS: OnceLock<WorkerRuntimePaths> = OnceLock::new();
+
 impl WorkerRuntimeState {
     fn status(&self) -> WorkerStatus {
         WorkerStatus {
@@ -2449,23 +2569,284 @@ impl WorkerRuntimeState {
     }
 }
 
+fn bootstrap_worker(
+    app: &tauri::AppHandle,
+    state: &tauri::State<'_, ActavocesState>,
+) -> Result<(), String> {
+    let paths = worker_runtime_paths(app)?;
+    WORKER_RUNTIME_PATHS.get_or_init(|| paths.clone());
+
+    match worker_bootstrap_is_ready(&paths) {
+        true => {
+            persist_worker_setup_progress(
+                state,
+                &WorkerSetupProgress {
+                    status: WorkerSetupStatus::Ready,
+                    step: "Worker runtime ready".to_owned(),
+                    error: None,
+                },
+            )?;
+
+            Ok(())
+        }
+        false => run_worker_bootstrap(app, state, paths),
+    }
+}
+
+fn run_worker_bootstrap(
+    app: &tauri::AppHandle,
+    state: &tauri::State<'_, ActavocesState>,
+    paths: WorkerRuntimePaths,
+) -> Result<(), String> {
+    emit_worker_setup_progress(
+        app,
+        state,
+        WorkerSetupStatus::Installing,
+        "Preparing worker files",
+        None,
+    )?;
+    prepare_worker_directory(app, &paths.worker_directory)?;
+    prepare_uv_executable(app, &paths.uv_executable)?;
+
+    emit_worker_setup_progress(
+        app,
+        state,
+        WorkerSetupStatus::Installing,
+        "Installing Python runtime",
+        None,
+    )?;
+    run_uv_sync(&paths)?;
+
+    emit_worker_setup_progress(
+        app,
+        state,
+        WorkerSetupStatus::Installing,
+        "Checking worker health",
+        None,
+    )?;
+    let health_events =
+        run_worker_command_with_paths(&paths, "health.check", serde_json::json!({}))?;
+
+    if !health_events.iter().any(|event| event.event == "health.ok") {
+        return Err("Worker health check did not return health.ok".to_owned());
+    }
+
+    let settings = {
+        let repository = state.repository.lock().map_err(lock_error)?;
+
+        repository.settings().map_err(|error| error.to_string())?
+    };
+
+    emit_worker_setup_progress(
+        app,
+        state,
+        WorkerSetupStatus::Installing,
+        "Installing small.en model",
+        None,
+    )?;
+    let install_events = run_worker_command_with_paths(
+        &paths,
+        "models.install",
+        serde_json::json!({
+            "model": "small.en",
+            "computeType": settings.compute_type,
+            "modelStorageDirectory": settings.model_storage_directory,
+        }),
+    )?;
+
+    if !install_events
+        .iter()
+        .any(|event| event.event == "models.install.complete")
+    {
+        return Err(model_install_message(&install_events));
+    }
+
+    let status_events = run_worker_command_with_paths(
+        &paths,
+        "models.status",
+        serde_json::json!({
+            "modelStorageDirectory": settings.model_storage_directory,
+        }),
+    )?;
+    let models = extract_model_inventory(&status_events)?;
+
+    {
+        let mut repository = state.repository.lock().map_err(lock_error)?;
+
+        repository
+            .replace_model_inventory(&models)
+            .map_err(|error| error.to_string())?;
+    }
+
+    write_worker_bootstrap_manifest(&paths)?;
+    emit_worker_setup_progress(
+        app,
+        state,
+        WorkerSetupStatus::Ready,
+        "Worker runtime ready",
+        None,
+    )
+}
+
+fn worker_runtime_paths(app: &tauri::AppHandle) -> Result<WorkerRuntimePaths, String> {
+    let app_data_directory = app
+        .path()
+        .app_data_dir()
+        .map_err(|error| format!("Unable to resolve app data directory: {error}"))?;
+    let worker_directory = app_data_directory
+        .join("worker")
+        .join(worker_runtime_version());
+    let uv_executable = app_data_directory
+        .join("runtime")
+        .join("uv")
+        .join(uv_executable_name());
+
+    Ok(WorkerRuntimePaths {
+        uv_executable,
+        worker_directory,
+    })
+}
+
+fn worker_bootstrap_is_ready(paths: &WorkerRuntimePaths) -> bool {
+    if !uv_runtime_is_available(paths)
+        || !paths.worker_directory.join("app").join("main.py").exists()
+    {
+        return false;
+    }
+
+    match read_worker_bootstrap_manifest(paths) {
+        Some(manifest) => {
+            manifest.worker_version == worker_runtime_version()
+                && manifest.uv_ready
+                && manifest.synced
+                && manifest.health_ok
+                && manifest.default_model == "small.en"
+                && manifest.default_model_installed
+        }
+        None => false,
+    }
+}
+
+fn uv_runtime_is_available(paths: &WorkerRuntimePaths) -> bool {
+    if paths.uv_executable.exists() {
+        return true;
+    }
+
+    Command::new("uv")
+        .arg("--version")
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .status()
+        .map(|status| status.success())
+        .unwrap_or(false)
+}
+
+fn prepare_worker_directory(app: &tauri::AppHandle, target: &Path) -> Result<(), String> {
+    fs::create_dir_all(target)
+        .map_err(|error| format!("Unable to create worker directory: {error}"))?;
+
+    let source = resolve_worker_resource_directory(app)?;
+    copy_directory(&source.join("app"), &target.join("app"))?;
+    copy_file(
+        &source.join("pyproject.toml"),
+        &target.join("pyproject.toml"),
+    )?;
+    copy_file(&source.join("uv.lock"), &target.join("uv.lock"))
+}
+
+fn prepare_uv_executable(app: &tauri::AppHandle, target: &Path) -> Result<(), String> {
+    if let Some(parent) = target.parent() {
+        fs::create_dir_all(parent)
+            .map_err(|error| format!("Unable to create uv runtime directory: {error}"))?;
+    }
+
+    match resolve_uv_resource_executable(app) {
+        Ok(source) => copy_file(&source, target)?,
+        Err(_) => {
+            let status = Command::new("uv")
+                .arg("--version")
+                .stdout(Stdio::null())
+                .stderr(Stdio::null())
+                .status()
+                .map_err(|error| {
+                    format!("Bundled uv was not found and PATH uv is unavailable: {error}")
+                })?;
+
+            if !status.success() {
+                return Err(
+                    "Bundled uv was not found and PATH uv did not run successfully".to_owned(),
+                );
+            }
+
+            return Ok(());
+        }
+    }
+
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+
+        let mut permissions = fs::metadata(target)
+            .map_err(|error| format!("Unable to read uv permissions: {error}"))?
+            .permissions();
+        permissions.set_mode(0o755);
+        fs::set_permissions(target, permissions)
+            .map_err(|error| format!("Unable to set uv executable permissions: {error}"))?;
+    }
+
+    Ok(())
+}
+
+fn run_uv_sync(paths: &WorkerRuntimePaths) -> Result<(), String> {
+    let output = Command::new(resolve_uv_command(paths))
+        .arg("sync")
+        .arg("--locked")
+        .arg("--no-dev")
+        .current_dir(&paths.worker_directory)
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .output()
+        .map_err(|error| format!("Unable to run uv sync: {error}"))?;
+
+    if output.status.success() {
+        return Ok(());
+    }
+
+    Err(worker_command_error("uv sync failed", &output))
+}
+
 fn run_worker_command(
     command_name: &str,
     payload: serde_json::Value,
 ) -> Result<Vec<WorkerEvent>, String> {
-    let worker_directory = resolve_worker_directory()?;
+    let paths = match WORKER_RUNTIME_PATHS.get() {
+        Some(paths) => paths.clone(),
+        None => WorkerRuntimePaths {
+            uv_executable: PathBuf::from("uv"),
+            worker_directory: resolve_worker_directory()?,
+        },
+    };
+
+    run_worker_command_with_paths(&paths, command_name, payload)
+}
+
+fn run_worker_command_with_paths(
+    paths: &WorkerRuntimePaths,
+    command_name: &str,
+    payload: serde_json::Value,
+) -> Result<Vec<WorkerEvent>, String> {
     let command = serde_json::json!({
         "id": format!("rust-{}", unix_timestamp()),
         "name": command_name,
         "payload": payload,
     });
-    let mut process = Command::new("uv")
+    let mut process = Command::new(resolve_uv_command(paths))
         .arg("run")
         .arg("python")
         .arg("-m")
         .arg("app.main")
-        .current_dir(&worker_directory)
-        .env("PYTHONPATH", &worker_directory)
+        .current_dir(&paths.worker_directory)
+        .env("PYTHONPATH", &paths.worker_directory)
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
@@ -2485,10 +2866,168 @@ fn run_worker_command(
         .map_err(|error| format!("Unable to read worker output: {error}"))?;
 
     if !output.status.success() {
-        return Err(String::from_utf8_lossy(&output.stderr).trim().to_owned());
+        return Err(worker_command_error("Worker command failed", &output));
     }
 
     parse_worker_events(&String::from_utf8_lossy(&output.stdout))
+}
+
+fn resolve_uv_command(paths: &WorkerRuntimePaths) -> PathBuf {
+    match paths.uv_executable.exists() {
+        true => paths.uv_executable.clone(),
+        false => PathBuf::from("uv"),
+    }
+}
+
+fn resolve_worker_resource_directory(app: &tauri::AppHandle) -> Result<PathBuf, String> {
+    let resource_directory = app
+        .path()
+        .resource_dir()
+        .map_err(|error| format!("Unable to resolve resource directory: {error}"))?;
+    let bundled_worker = resource_directory.join("worker");
+
+    if bundled_worker.join("app").join("main.py").exists() {
+        return Ok(bundled_worker);
+    }
+
+    resolve_worker_directory()
+}
+
+fn resolve_uv_resource_executable(app: &tauri::AppHandle) -> Result<PathBuf, String> {
+    let resource_directory = app
+        .path()
+        .resource_dir()
+        .map_err(|error| format!("Unable to resolve resource directory: {error}"))?;
+    let candidate = resource_directory
+        .join("runtime")
+        .join("uv")
+        .join(uv_executable_name());
+
+    match candidate.exists() {
+        true => Ok(candidate),
+        false => Err("Bundled uv executable was not found".to_owned()),
+    }
+}
+
+fn copy_directory(source: &Path, target: &Path) -> Result<(), String> {
+    if target.exists() {
+        fs::remove_dir_all(target).map_err(|error| {
+            format!("Unable to replace directory {}: {error}", target.display())
+        })?;
+    }
+
+    fs::create_dir_all(target)
+        .map_err(|error| format!("Unable to create directory {}: {error}", target.display()))?;
+
+    for entry in fs::read_dir(source)
+        .map_err(|error| format!("Unable to read directory {}: {error}", source.display()))?
+    {
+        let entry = entry.map_err(|error| format!("Unable to read directory entry: {error}"))?;
+        let source_path = entry.path();
+        let target_path = target.join(entry.file_name());
+
+        if source_path.is_dir() {
+            copy_directory(&source_path, &target_path)?;
+        } else {
+            copy_file(&source_path, &target_path)?;
+        }
+    }
+
+    Ok(())
+}
+
+fn copy_file(source: &Path, target: &Path) -> Result<(), String> {
+    if let Some(parent) = target.parent() {
+        fs::create_dir_all(parent)
+            .map_err(|error| format!("Unable to create directory {}: {error}", parent.display()))?;
+    }
+
+    fs::copy(source, target).map_err(|error| {
+        format!(
+            "Unable to copy {} to {}: {error}",
+            source.display(),
+            target.display()
+        )
+    })?;
+
+    Ok(())
+}
+
+fn read_worker_bootstrap_manifest(paths: &WorkerRuntimePaths) -> Option<WorkerBootstrapManifest> {
+    let manifest_path = paths.worker_directory.join("actavoces-worker-runtime.json");
+    let content = fs::read_to_string(manifest_path).ok()?;
+
+    serde_json::from_str(&content).ok()
+}
+
+fn write_worker_bootstrap_manifest(paths: &WorkerRuntimePaths) -> Result<(), String> {
+    let manifest = WorkerBootstrapManifest {
+        worker_version: worker_runtime_version(),
+        uv_ready: true,
+        synced: true,
+        health_ok: true,
+        default_model: "small.en".to_owned(),
+        default_model_installed: true,
+    };
+    let content = serde_json::to_string_pretty(&manifest)
+        .map_err(|error| format!("Unable to serialize worker manifest: {error}"))?;
+
+    fs::write(
+        paths.worker_directory.join("actavoces-worker-runtime.json"),
+        content,
+    )
+    .map_err(|error| format!("Unable to write worker manifest: {error}"))
+}
+
+fn emit_worker_setup_progress(
+    app: &tauri::AppHandle,
+    state: &tauri::State<'_, ActavocesState>,
+    status: WorkerSetupStatus,
+    step: &str,
+    error: Option<String>,
+) -> Result<(), String> {
+    let progress = WorkerSetupProgress {
+        status,
+        step: step.to_owned(),
+        error,
+    };
+
+    persist_worker_setup_progress(state, &progress)?;
+    app.emit("worker-setup-progress", progress)
+        .map_err(|error| error.to_string())
+}
+
+fn persist_worker_setup_progress(
+    state: &tauri::State<'_, ActavocesState>,
+    progress: &WorkerSetupProgress,
+) -> Result<(), String> {
+    let mut repository = state.repository.lock().map_err(lock_error)?;
+
+    repository
+        .update_worker_setup_progress(progress)
+        .map_err(|error| error.to_string())
+}
+
+fn worker_command_error(context: &str, output: &std::process::Output) -> String {
+    let stderr = String::from_utf8_lossy(&output.stderr).trim().to_owned();
+    let stdout = String::from_utf8_lossy(&output.stdout).trim().to_owned();
+
+    match (stderr.is_empty(), stdout.is_empty()) {
+        (false, _) => format!("{context}: {stderr}"),
+        (true, false) => format!("{context}: {stdout}"),
+        (true, true) => context.to_owned(),
+    }
+}
+
+fn worker_runtime_version() -> String {
+    env!("CARGO_PKG_VERSION").to_owned()
+}
+
+fn uv_executable_name() -> &'static str {
+    match cfg!(windows) {
+        true => "uv.exe",
+        false => "uv",
+    }
 }
 
 fn parse_worker_events(output: &str) -> Result<Vec<WorkerEvent>, String> {
@@ -4049,7 +4588,7 @@ mod tests {
         mixed_recording_source, AppRepository, AppSettingsUpdate, ArtifactKind,
         DesktopRuntimeStatus, DiarizationBackend, FileAudioCaptureBackend, FinalizedSource,
         ModelInventoryItem, NewRecording, OverlayPosition, PipelineStageStatus, RecordingStatus,
-        SpeakerCountMode,
+        SpeakerCountMode, WorkerSetupStatus,
     };
     use crate::{
         extract_model_inventory, parse_worker_events, resume_pipeline_jobs,
@@ -4605,6 +5144,9 @@ mod tests {
                 worker_running: true,
                 worker_health_ok: true,
                 worker_error: None,
+                worker_setup_status: WorkerSetupStatus::Ready,
+                worker_setup_step: "Worker runtime ready".to_owned(),
+                worker_setup_error: None,
             })
             .unwrap();
 

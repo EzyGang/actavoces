@@ -1,0 +1,167 @@
+name: Release
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    name: Build ${{ matrix.name }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: Windows x64
+            os: windows-latest
+            rust-target: x86_64-pc-windows-msvc
+            uv-asset: uv-x86_64-pc-windows-msvc.zip
+            uv-binary: uv.exe
+          - name: macOS Apple Silicon
+            os: macos-latest
+            rust-target: aarch64-apple-darwin
+            uv-asset: uv-aarch64-apple-darwin.tar.gz
+            uv-binary: uv
+          - name: macOS Intel
+            os: macos-13
+            rust-target: x86_64-apple-darwin
+            uv-asset: uv-x86_64-apple-darwin.tar.gz
+            uv-binary: uv
+          - name: Linux x64
+            os: ubuntu-22.04
+            rust-target: x86_64-unknown-linux-gnu
+            uv-asset: uv-x86_64-unknown-linux-gnu.tar.gz
+            uv-binary: uv
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Linux dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev \
+            libgtk-3-dev \
+            libayatana-appindicator3-dev \
+            librsvg2-dev \
+            libasound2-dev \
+            libssl-dev \
+            pkg-config \
+            patchelf
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Setup Rust target
+        shell: pwsh
+        run: rustup target add ${{ matrix.rust-target }}
+
+      - name: Install frontend dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Bundle latest uv runtime (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+
+          $assetName = '${{ matrix.uv-asset }}'
+          $assetUrl = "https://github.com/astral-sh/uv/releases/latest/download/$assetName"
+          $checksumUrl = "$assetUrl.sha256"
+          New-Item -ItemType Directory -Force -Path '.release/uv' | Out-Null
+          $archivePath = Join-Path '.release/uv' $assetName
+          $checksumPath = "$archivePath.sha256"
+
+          Invoke-WebRequest -Uri $assetUrl -OutFile $archivePath
+          Invoke-WebRequest -Uri $checksumUrl -OutFile $checksumPath
+
+          $checksumContent = Get-Content $checksumPath -Raw
+          $expectedHash = [regex]::Match($checksumContent, '[a-fA-F0-9]{64}').Value.ToLowerInvariant()
+          $actualHash = (Get-FileHash -Algorithm SHA256 $archivePath).Hash.ToLowerInvariant()
+
+          if ($expectedHash -ne $actualHash) {
+            throw "uv checksum mismatch for $assetName"
+          }
+
+          $extractPath = '.release/uv/extracted'
+          New-Item -ItemType Directory -Force -Path $extractPath | Out-Null
+          Expand-Archive -Path $archivePath -DestinationPath $extractPath -Force
+
+          $binaryName = '${{ matrix.uv-binary }}'
+          $binary = Get-ChildItem -Path $extractPath -Recurse -File |
+            Where-Object { $_.Name -eq $binaryName } |
+            Select-Object -First 1
+
+          if ($null -eq $binary) {
+            throw "Unable to find extracted uv binary: $binaryName"
+          }
+
+          $runtimePath = 'src-tauri/resources/runtime/uv'
+          New-Item -ItemType Directory -Force -Path $runtimePath | Out-Null
+          Copy-Item -Path $binary.FullName -Destination (Join-Path $runtimePath $binaryName) -Force
+
+          & (Join-Path $runtimePath $binaryName) --version
+
+      - name: Bundle latest uv runtime (macOS/Linux)
+        if: runner.os != 'Windows'
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          asset_name='${{ matrix.uv-asset }}'
+          binary_name='${{ matrix.uv-binary }}'
+          asset_url="https://github.com/astral-sh/uv/releases/latest/download/${asset_name}"
+          checksum_url="${asset_url}.sha256"
+          archive_path=".release/uv/${asset_name}"
+          checksum_path="${archive_path}.sha256"
+          extract_path=".release/uv/extracted"
+          runtime_path="src-tauri/resources/runtime/uv"
+
+          mkdir -p ".release/uv" "${extract_path}" "${runtime_path}"
+          curl -fsSL "${asset_url}" -o "${archive_path}"
+          curl -fsSL "${checksum_url}" -o "${checksum_path}"
+
+          expected_hash="$(grep -Eo '[a-fA-F0-9]{64}' "${checksum_path}" | head -n 1 | tr 'A-F' 'a-f')"
+          if command -v sha256sum >/dev/null 2>&1; then
+            actual_hash="$(sha256sum "${archive_path}" | awk '{print $1}')"
+          else
+            actual_hash="$(shasum -a 256 "${archive_path}" | awk '{print $1}')"
+          fi
+
+          if [ "${expected_hash}" != "${actual_hash}" ]; then
+            echo "uv checksum mismatch for ${asset_name}" >&2
+            exit 1
+          fi
+
+          tar -xzf "${archive_path}" -C "${extract_path}"
+          binary_path="$(find "${extract_path}" -type f -name "${binary_name}" | head -n 1)"
+
+          if [ -z "${binary_path}" ]; then
+            echo "Unable to find extracted uv binary: ${binary_name}" >&2
+            exit 1
+          fi
+
+          cp "${binary_path}" "${runtime_path}/${binary_name}"
+          chmod +x "${runtime_path}/${binary_name}"
+          "${runtime_path}/${binary_name}" --version
+
+      - name: Build Tauri bundle
+        run: pnpm tauri build --target ${{ matrix.rust-target }}
+
+      - name: Upload bundle artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: actavoces-${{ matrix.rust-target }}
+          path: |
+            src-tauri/target/${{ matrix.rust-target }}/release/bundle/**/*
+            src-tauri/target/release/bundle/**/*
+          if-no-files-found: error

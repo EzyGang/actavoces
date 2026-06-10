@@ -33,6 +33,8 @@ export const toggleRecordingFromShortcut = () =>
 
 export const resumePendingJobs = () => invoke<AppSnapshot>('resume_pending_jobs');
 
+export const bootstrapWorkerRuntime = () => invoke<AppSnapshot>('bootstrap_worker_runtime');
+
 export const refreshModelInventory = () => invoke<AppSnapshot>('refresh_model_inventory');
 
 export const installTranscriptionModel = (model: string) =>

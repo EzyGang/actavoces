@@ -26,6 +26,12 @@
   "bundle": {
     "active": true,
     "targets": "all",
+    "resources": {
+      "../worker/app": "worker/app",
+      "../worker/pyproject.toml": "worker/pyproject.toml",
+      "../worker/uv.lock": "worker/uv.lock",
+      "resources/runtime/uv": "runtime/uv"
+    },
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",

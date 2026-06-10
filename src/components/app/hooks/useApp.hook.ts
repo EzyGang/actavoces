@@ -4,6 +4,7 @@ import { open } from '@tauri-apps/plugin-dialog';
 import type { JSX } from 'preact';
 import { useEffect } from 'preact/hooks';
 import {
+  bootstrapWorkerRuntime,
   checkWorkerHealth,
   clearSummaryProviderApiKey,
   deleteRecording,
@@ -30,7 +31,8 @@ import type {
   AppSettingsUpdate,
   CaptureDeviceInfo,
   PipelineJob,
-  Recording
+  Recording,
+  WorkerSetupProgress
 } from '../../../types/desktop';
 import { formatDuration, formatTimestamp } from '../../../utils/format';
 import { validateSettingsDraft } from '../../../utils/settings';
@@ -172,11 +174,36 @@ const routeLabel: Record<AppRoute, string> = {
 
 const isTauriRuntime = () => '__TAURI_INTERNALS__' in window;
 
+const initialSetupProgress: WorkerSetupProgress = {
+  status: 'missing',
+  step: 'Preparing local worker runtime',
+  error: null
+};
+
+const errorMessage = (error: unknown, fallback: string): string => {
+  if (error instanceof Error) {
+    return error.message;
+  }
+
+  if (typeof error === 'string' && error.trim().length > 0) {
+    return error;
+  }
+
+  if (error && typeof error === 'object') {
+    return JSON.stringify(error);
+  }
+
+  return fallback;
+};
+
 export const useApp = () => {
   const loading = useSignal(false);
   const savingSettings = useSignal(false);
   const installingModel = useSignal(false);
   const recordingHotkey = useSignal(false);
+  const setupProgress = useSignal<WorkerSetupProgress>(initialSetupProgress);
+  const setupReady = useSignal(false);
+  const setupRunning = useSignal(false);
   const settingsDraft = useSignal<AppSettingsUpdate>(
     buildSettingsUpdate(appSnapshotSignal.value.settings)
   );
@@ -193,9 +220,41 @@ export const useApp = () => {
     try {
       setSnapshot(await getAppSnapshot());
     } catch (error) {
-      appErrorSignal.value = error instanceof Error ? error.message : 'Desktop backend unavailable';
+      appErrorSignal.value = errorMessage(error, 'Desktop backend unavailable');
     } finally {
       loading.value = false;
+    }
+  };
+
+  const runBootstrap = async () => {
+    setupRunning.value = true;
+    appErrorSignal.value = null;
+    setupProgress.value = {
+      ...setupProgress.value,
+      status: 'installing',
+      step: 'Preparing local worker runtime',
+      error: null
+    };
+
+    try {
+      setSnapshot(await bootstrapWorkerRuntime());
+      setupProgress.value = {
+        status: 'ready',
+        step: 'Worker runtime ready',
+        error: null
+      };
+      setupReady.value = true;
+    } catch (error) {
+      const message = errorMessage(error, 'Unable to prepare worker runtime');
+
+      appErrorSignal.value = message;
+      setupProgress.value = {
+        status: 'failed',
+        step: 'Worker setup failed',
+        error: message
+      };
+    } finally {
+      setupRunning.value = false;
     }
   };
 
@@ -206,7 +265,7 @@ export const useApp = () => {
     try {
       setSnapshot(await startRecording());
     } catch (error) {
-      appErrorSignal.value = error instanceof Error ? error.message : 'Unable to start recording';
+      appErrorSignal.value = errorMessage(error, 'Unable to start recording');
     } finally {
       loading.value = false;
     }
@@ -219,7 +278,7 @@ export const useApp = () => {
     try {
       setSnapshot(await stopRecording());
     } catch (error) {
-      appErrorSignal.value = error instanceof Error ? error.message : 'Unable to stop recording';
+      appErrorSignal.value = errorMessage(error, 'Unable to stop recording');
     } finally {
       loading.value = false;
     }
@@ -232,7 +291,7 @@ export const useApp = () => {
     try {
       setSnapshot(await resumePendingJobs());
     } catch (error) {
-      appErrorSignal.value = error instanceof Error ? error.message : 'Unable to resume jobs';
+      appErrorSignal.value = errorMessage(error, 'Unable to resume jobs');
     } finally {
       loading.value = false;
     }
@@ -251,7 +310,7 @@ export const useApp = () => {
     try {
       setSnapshot(await deleteRecording(recording.id));
     } catch (error) {
-      appErrorSignal.value = error instanceof Error ? error.message : 'Unable to delete recording';
+      appErrorSignal.value = errorMessage(error, 'Unable to delete recording');
     } finally {
       loading.value = false;
     }
@@ -263,7 +322,7 @@ export const useApp = () => {
     try {
       await openLocalPath(path);
     } catch (error) {
-      appErrorSignal.value = error instanceof Error ? error.message : 'Unable to open path';
+      appErrorSignal.value = errorMessage(error, 'Unable to open path');
     }
   };
 
@@ -274,8 +333,7 @@ export const useApp = () => {
     try {
       setSnapshot(await retryRecordingJobs(recording.id));
     } catch (error) {
-      appErrorSignal.value =
-        error instanceof Error ? error.message : 'Unable to retry recording jobs';
+      appErrorSignal.value = errorMessage(error, 'Unable to retry recording jobs');
     } finally {
       loading.value = false;
     }
@@ -288,7 +346,7 @@ export const useApp = () => {
     try {
       setSnapshot(await toggleRecordingFromShortcut());
     } catch (error) {
-      appErrorSignal.value = error instanceof Error ? error.message : 'Unable to toggle recording';
+      appErrorSignal.value = errorMessage(error, 'Unable to toggle recording');
     } finally {
       loading.value = false;
     }
@@ -302,7 +360,7 @@ export const useApp = () => {
       await checkWorkerHealth();
       setSnapshot(await getAppSnapshot());
     } catch (error) {
-      appErrorSignal.value = error instanceof Error ? error.message : 'Unable to check worker';
+      appErrorSignal.value = errorMessage(error, 'Unable to check worker');
     } finally {
       loading.value = false;
     }
@@ -315,7 +373,7 @@ export const useApp = () => {
     try {
       setSnapshot(await refreshModelInventory());
     } catch (error) {
-      appErrorSignal.value = error instanceof Error ? error.message : 'Unable to refresh models';
+      appErrorSignal.value = errorMessage(error, 'Unable to refresh models');
     } finally {
       loading.value = false;
     }
@@ -328,7 +386,7 @@ export const useApp = () => {
     try {
       setSnapshot(await installTranscriptionModel(settingsDraft.value.whisperModel));
     } catch (error) {
-      appErrorSignal.value = error instanceof Error ? error.message : 'Unable to install model';
+      appErrorSignal.value = errorMessage(error, 'Unable to install model');
     } finally {
       installingModel.value = false;
     }
@@ -352,7 +410,7 @@ export const useApp = () => {
     try {
       setSnapshot(await updateAppSettings(settingsDraft.value));
     } catch (error) {
-      appErrorSignal.value = error instanceof Error ? error.message : 'Unable to save settings';
+      appErrorSignal.value = errorMessage(error, 'Unable to save settings');
     } finally {
       savingSettings.value = false;
     }
@@ -365,8 +423,7 @@ export const useApp = () => {
     try {
       setSnapshot(await clearSummaryProviderApiKey());
     } catch (error) {
-      appErrorSignal.value =
-        error instanceof Error ? error.message : 'Unable to clear provider API key';
+      appErrorSignal.value = errorMessage(error, 'Unable to clear provider API key');
     } finally {
       savingSettings.value = false;
     }
@@ -391,7 +448,7 @@ export const useApp = () => {
         [key]: selectedPath
       };
     } catch (error) {
-      appErrorSignal.value = error instanceof Error ? error.message : 'Unable to select folder';
+      appErrorSignal.value = errorMessage(error, 'Unable to select folder');
     }
   };
 
@@ -485,10 +542,6 @@ export const useApp = () => {
   };
 
   useEffect(() => {
-    void loadSnapshot();
-  }, []);
-
-  useEffect(() => {
     if (!recordingHotkey.value) {
       return;
     }
@@ -536,11 +589,26 @@ export const useApp = () => {
     const errorListener = listen<string>('app-error', (event) => {
       appErrorSignal.value = event.payload;
     });
+    const setupListener = listen<WorkerSetupProgress>('worker-setup-progress', (event) => {
+      setupProgress.value = event.payload;
+    });
 
     return () => {
       void snapshotListener.then((unlisten) => unlisten());
       void errorListener.then((unlisten) => unlisten());
+      void setupListener.then((unlisten) => unlisten());
     };
+  }, []);
+
+  useEffect(() => {
+    if (!isTauriRuntime()) {
+      setupReady.value = true;
+      void loadSnapshot();
+
+      return;
+    }
+
+    void runBootstrap();
   }, []);
 
   const latestRecording = useComputed(() =>
@@ -620,12 +688,15 @@ export const useApp = () => {
       settingsValidationErrors,
       routeLabel,
       formatDuration,
-      formatTimestamp
+      formatTimestamp,
+      setupProgress
     },
     status: {
       loading,
       savingSettings,
       installingModel,
+      setupReady,
+      setupRunning,
       error: appErrorSignal,
       isRecording,
       activeRoute: activeRouteSignal,
@@ -805,7 +876,8 @@ export const useApp = () => {
       refreshModels: handleRefreshModels,
       installSelectedModel: handleInstallSelectedModel,
       clearProviderApiKey: handleClearProviderApiKey,
-      saveSettings: handleSaveSettings
+      saveSettings: handleSaveSettings,
+      retrySetup: runBootstrap
     }
   };
 };

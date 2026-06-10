@@ -122,6 +122,17 @@ export interface DesktopRuntimeStatus {
   workerRunning: boolean;
   workerHealthOk: boolean;
   workerError: string | null;
+  workerSetupStatus: WorkerSetupStatus;
+  workerSetupStep: string;
+  workerSetupError: string | null;
+}
+
+export type WorkerSetupStatus = 'missing' | 'installing' | 'ready' | 'failed';
+
+export interface WorkerSetupProgress {
+  status: WorkerSetupStatus;
+  step: string;
+  error: string | null;
 }
 
 export interface WorkerStatus {

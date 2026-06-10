@@ -23,6 +23,7 @@ vi.mock('@tauri-apps/plugin-dialog', () => ({
 }));
 
 vi.mock('../services/desktop/app.service', () => ({
+  bootstrapWorkerRuntime: vi.fn(),
   checkWorkerHealth: vi.fn(),
   clearSummaryProviderApiKey: vi.fn(),
   deleteRecording: vi.fn(),
@@ -123,7 +124,10 @@ const makeSnapshot = (overrides: Partial<AppSnapshot> = {}): AppSnapshot => ({
     hotkeyError: null,
     workerRunning: false,
     workerHealthOk: false,
-    workerError: null
+    workerError: null,
+    workerSetupStatus: 'ready',
+    workerSetupStep: 'Worker runtime ready',
+    workerSetupError: null
   },
   settings: baseSettings,
   ...overrides
