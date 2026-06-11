@@ -84,6 +84,7 @@
     "globals": ["expect", "describe", "it", "beforeEach", "test", "beforeAll"],
     "formatter": {
       "jsxQuoteStyle": "single",
+      "lineEnding": "lf",
       "quoteProperties": "asNeeded",
       "trailingCommas": "none",
       "semicolons": "always",
