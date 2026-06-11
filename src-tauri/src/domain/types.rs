@@ -263,7 +263,6 @@ pub struct AppSettings {
     pub(crate) summary_enabled: bool,
     pub(crate) provider_base_url: String,
     pub(crate) provider_model: String,
-    pub(crate) title_prompt: String,
     pub(crate) summary_prompt: String,
 }
 
@@ -294,7 +293,6 @@ pub struct AppSettingsUpdate {
     pub(crate) provider_base_url: String,
     pub(crate) provider_model: String,
     pub(crate) provider_api_key: Option<String>,
-    pub(crate) title_prompt: String,
     pub(crate) summary_prompt: String,
 }
 

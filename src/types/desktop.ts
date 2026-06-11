@@ -115,7 +115,6 @@ export interface AppSettings {
   summaryEnabled: boolean;
   providerBaseUrl: string;
   providerModel: string;
-  titlePrompt: string;
   summaryPrompt: string;
 }
 

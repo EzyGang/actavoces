@@ -27,7 +27,6 @@ const validSettings: AppSettingsUpdate = {
   providerBaseUrl: 'https://api.openai.com/v1',
   providerModel: '',
   providerApiKey: '',
-  titlePrompt: 'Title',
   summaryPrompt: 'Summary'
 };
 
@@ -46,21 +45,17 @@ describe('settings validation', () => {
       })
     ).toEqual([
       'Provider base URL is required when summaries are enabled.',
-      'Provider model is required when summaries are enabled.',
-      'Provider API key is required when summaries are enabled.'
+      'Provider model is required when summaries are enabled.'
     ]);
   });
 
-  it('accepts summaries when provider details and an existing key are present', () => {
+  it('accepts summaries when provider details are present without an API key', () => {
     expect(
-      validateSettingsDraft(
-        {
-          ...validSettings,
-          summaryEnabled: true,
-          providerModel: 'gpt-4o-mini'
-        },
-        true
-      )
+      validateSettingsDraft({
+        ...validSettings,
+        summaryEnabled: true,
+        providerModel: 'gpt-4o-mini'
+      })
     ).toEqual([]);
   });
 

@@ -243,12 +243,6 @@ const textareaFields = (
   onInput: (key: keyof AppSettingsUpdate) => JSX.InputEventHandler<HTMLTextAreaElement>
 ): SettingsTextareaField[] => [
   {
-    key: 'titlePrompt',
-    label: 'Title prompt',
-    value: draft.value.titlePrompt,
-    onInput: onInput('titlePrompt')
-  },
-  {
     key: 'summaryPrompt',
     label: 'Summary prompt',
     value: draft.value.summaryPrompt,

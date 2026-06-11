@@ -2,7 +2,7 @@ import type { AppSettingsUpdate } from '../types/desktop';
 
 export const validateSettingsDraft = (
   settings: AppSettingsUpdate,
-  providerApiKeyConfigured = false,
+  _providerApiKeyConfigured = false,
   cudaAvailable = false
 ): string[] => {
   const errors: string[] = [];
@@ -32,10 +32,6 @@ export const validateSettingsDraft = (
 
     if (settings.providerModel.trim().length === 0) {
       errors.push('Provider model is required when summaries are enabled.');
-    }
-
-    if (!providerApiKeyConfigured && settings.providerApiKey.trim().length === 0) {
-      errors.push('Provider API key is required when summaries are enabled.');
     }
   }
 

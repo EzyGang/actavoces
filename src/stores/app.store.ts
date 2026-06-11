@@ -63,7 +63,6 @@ const initialSnapshot: AppSnapshot = {
     summaryEnabled: false,
     providerBaseUrl: 'https://api.openai.com/v1',
     providerModel: '',
-    titlePrompt: 'Create a concise meeting title from the transcript.',
     summaryPrompt: 'Summarize decisions, action items, risks, and unanswered questions.'
   }
 };

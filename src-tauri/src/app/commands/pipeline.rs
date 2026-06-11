@@ -175,19 +175,10 @@ where
                 continue;
             }
 
-            let Some(api_key) = repository
+            let api_key = repository
                 .read_summary_provider_api_key()
                 .map_err(|error| error.to_string())?
-            else {
-                mark_stage_needs_setup(
-                    repository,
-                    &recording.id,
-                    PipelineStageId::Summary,
-                    "Summary provider API key is required",
-                )?;
-                on_update(repository)?;
-                continue;
-            };
+                .unwrap_or_default();
 
             run_pipeline_stage(
                 repository,
@@ -701,13 +692,12 @@ fn summary_payload(
     let artifact_directory = PathBuf::from(&recording.artifact_directory);
 
     serde_json::json!({
-        "outputDirectory": artifact_directory,
-        "providerBaseUrl": settings.provider_base_url,
-        "apiKey": api_key,
+        "output_directory": artifact_directory,
+        "provider_base_url": settings.provider_base_url,
+        "api_key": api_key,
         "model": settings.provider_model,
-        "diarizedTranscriptPath": artifact_directory.join("diarized-transcript.md"),
-        "transcriptPath": artifact_directory.join("raw-transcript.md"),
-        "titlePrompt": settings.title_prompt,
-        "summaryPrompt": settings.summary_prompt,
+        "diarized_transcript_path": artifact_directory.join("diarized-transcript.md"),
+        "transcript_path": artifact_directory.join("raw-transcript.md"),
+        "summary_prompt": settings.summary_prompt,
     })
 }

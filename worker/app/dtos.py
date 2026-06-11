@@ -1,7 +1,7 @@
 from pathlib import Path
 from typing import Any, Literal, Protocol
 
-from pydantic import Field
+from pydantic import BaseModel, Field
 
 from app.core.pydantic_base import AppBaseModel
 
@@ -55,9 +55,14 @@ class SpeakerTurn(AppBaseModel):
     end: float = 0
 
 
-class SummaryOutput(AppBaseModel):
-    title: str = ''
-    summary: str = ''
+class SummaryOutput(BaseModel):
+    title: str = Field(description='Concise (max 48) title of the conversation', max_length=48)
+    summary: str = Field(
+        description=(
+            'Summary of a conversation. No limits. Markdown format preffered. '
+            'Overall information, action items, risks, and unanswered questions and so on.'
+        )
+    )
 
 
 class NeedsSetupResult(AppBaseModel):
@@ -130,11 +135,9 @@ class SummarizePayload(AppBaseModel):
     provider_base_url: str = ''
     api_key: str = ''
     model: str = ''
-    transcript: str | None = None
     diarized_transcript_path: Path | None = None
     transcript_path: Path | None = None
     summary_prompt: str = ''
-    title_prompt: str = ''
 
 
 class ModelStatus(AppBaseModel):

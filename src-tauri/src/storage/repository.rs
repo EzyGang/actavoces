@@ -8,7 +8,7 @@ use crate::capture::audio::capture_devices;
 use crate::domain::types::*;
 use crate::settings::{
     default_model_inventory, default_settings, settings_pairs, summary_provider_configured_for,
-    validate_settings, DEFAULT_SUMMARY_PROMPT, DEFAULT_TITLE_PROMPT, HUGGING_FACE_TOKEN_SETTING,
+    validate_settings, DEFAULT_SUMMARY_PROMPT, HUGGING_FACE_TOKEN_SETTING,
     SUMMARY_PROVIDER_API_KEY_SETTING,
 };
 use crate::utils::{
@@ -250,7 +250,6 @@ impl AppRepository {
         self.upsert_setting("summaryEnabled", &settings.summary_enabled.to_string())?;
         self.upsert_setting("providerBaseUrl", &settings.provider_base_url)?;
         self.upsert_setting("providerModel", &settings.provider_model)?;
-        self.upsert_setting("titlePrompt", &settings.title_prompt)?;
         self.upsert_setting("summaryPrompt", &settings.summary_prompt)?;
         self.migrate_default_whisper_model()?;
         self.seed_default_models()
@@ -329,12 +328,8 @@ impl AppRepository {
             secret_configured(&get_value(SUMMARY_PROVIDER_API_KEY_SETTING, ""));
         let hugging_face_token_configured =
             secret_configured(&get_value(HUGGING_FACE_TOKEN_SETTING, ""));
-        let summary_provider_configured = summary_provider_configured_for(
-            summary_enabled,
-            &provider_base_url,
-            &provider_model,
-            provider_api_key_configured,
-        );
+        let summary_provider_configured =
+            summary_provider_configured_for(summary_enabled, &provider_base_url, &provider_model);
 
         Ok(AppSettings {
             output_directory: get_value("outputDirectory", &default_records_root()),
@@ -380,7 +375,6 @@ impl AppRepository {
             summary_enabled,
             provider_base_url,
             provider_model,
-            title_prompt: get_value("titlePrompt", DEFAULT_TITLE_PROMPT),
             summary_prompt: get_value("summaryPrompt", DEFAULT_SUMMARY_PROMPT),
         })
     }
@@ -398,7 +392,7 @@ impl AppRepository {
         let provider_api_key_configured = secret_configured(&provider_api_key);
         let hugging_face_token_configured = secret_configured(&hugging_face_token);
 
-        validate_settings(&input, provider_api_key_configured, cuda_available)?;
+        validate_settings(&input, cuda_available)?;
         ensure_configured_storage_directories(
             &input.output_directory,
             &input.model_storage_directory,
@@ -409,7 +403,6 @@ impl AppRepository {
             input.summary_enabled,
             &input.provider_base_url,
             &input.provider_model,
-            provider_api_key_configured,
         );
 
         for (key, value) in settings_pairs(
@@ -508,7 +501,6 @@ impl AppRepository {
             settings.summary_enabled,
             &settings.provider_base_url,
             &settings.provider_model,
-            provider_api_key_configured,
         );
         let transaction = self.connection.transaction()?;
 

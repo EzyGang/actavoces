@@ -6,7 +6,7 @@ from pydantic_ai import Agent
 from pydantic_ai.models.test import TestModel
 from pytest_mock import MockerFixture
 
-from app.dtos import SummarizePayload, SummaryOutput
+from app.dtos import SummaryOutput
 from app.events import emit
 from app.formatting import render_diarized_transcript, render_raw_transcript
 from app.handlers import handle
@@ -371,13 +371,12 @@ async def test_summarize_reports_setup_when_provider_details_are_missing(tmp_pat
             name='summarize.run',
             payload={
                 'output_directory': str(tmp_path),
-                'transcript': 'We shipped.',
             },
         )
     )
 
     assert events[0].event == 'summarize.needs_setup'
-    assert SummarizePayload.model_fields['provider_base_url'].alias in events[0].payload['missing']
+    assert 'provider_base_url' in events[0].payload['missing']
 
 
 async def test_openai_compatible_summary_uses_pydantic_ai_structured_output() -> None:
@@ -392,7 +391,6 @@ async def test_openai_compatible_summary_uses_pydantic_ai_structured_output() ->
         model='meeting-model',
         transcript='We shipped.',
         summary_prompt='Summarize decisions.',
-        title_prompt='Name the meeting.',
         agent=agent,
     )
 
@@ -415,12 +413,12 @@ async def test_summarize_writes_provider_summary(mocker: MockerFixture, tmp_path
         payload={
             'output_directory': str(tmp_path),
             'provider_base_url': 'https://provider.test/v1',
-            'api_key': 'secret',
             'model': 'meeting-model',
-            'transcript': 'We shipped.',
             'summary_prompt': 'Summarize decisions.',
+            'transcript_path': str(tmp_path / 'raw-transcript.md'),
         },
     )
+    (tmp_path / 'raw-transcript.md').write_text('We shipped.')
 
     events = await handle(command)
 

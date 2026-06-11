@@ -221,7 +221,6 @@ async def handle_summarize(command: WorkerCommand) -> list[WorkerEvent]:
             model=payload.model,
             transcript=summary_transcript(payload=payload),
             summary_prompt=payload.summary_prompt,
-            title_prompt=payload.title_prompt,
         )
 
         if result.status == 'needs_setup':

@@ -89,7 +89,6 @@ export const buildSettingsUpdate = (settings: AppSettings): AppSettingsUpdate =>
   providerBaseUrl: settings.providerBaseUrl,
   providerModel: settings.providerModel,
   providerApiKey: '',
-  titlePrompt: settings.titlePrompt,
   summaryPrompt: settings.summaryPrompt
 });
 

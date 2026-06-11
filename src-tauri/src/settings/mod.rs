@@ -2,7 +2,6 @@ use std::path::Path;
 
 use crate::domain::types::*;
 use crate::utils::{default_model_storage_root, default_records_root, option_number_to_string};
-pub(crate) const DEFAULT_TITLE_PROMPT: &str = "Create a concise meeting title from the transcript.";
 pub(crate) const DEFAULT_SUMMARY_PROMPT: &str =
     "Summarize decisions, action items, risks, and unanswered questions.";
 pub(crate) const SUMMARY_PROVIDER_API_KEY_SETTING: &str = "providerApiKey";
@@ -37,7 +36,6 @@ pub(crate) fn default_settings(database_path: &Path) -> AppSettings {
         summary_enabled: false,
         provider_base_url: "https://api.openai.com/v1".to_owned(),
         provider_model: String::new(),
-        title_prompt: DEFAULT_TITLE_PROMPT.to_owned(),
         summary_prompt: DEFAULT_SUMMARY_PROMPT.to_owned(),
     }
 }
@@ -119,14 +117,12 @@ pub(crate) fn settings_pairs(
         ("summaryEnabled", input.summary_enabled.to_string()),
         ("providerBaseUrl", input.provider_base_url.clone()),
         ("providerModel", input.provider_model.clone()),
-        ("titlePrompt", input.title_prompt.clone()),
         ("summaryPrompt", input.summary_prompt.clone()),
     ]
 }
 
 pub(crate) fn validate_settings(
     input: &AppSettingsUpdate,
-    provider_api_key_configured: bool,
     cuda_available: bool,
 ) -> rusqlite::Result<()> {
     if input.output_directory.trim().is_empty() {
@@ -166,12 +162,6 @@ pub(crate) fn validate_settings(
                 "Provider model is required when summaries are enabled".to_owned(),
             ));
         }
-
-        if !provider_api_key_configured {
-            return Err(rusqlite::Error::InvalidParameterName(
-                "Provider API key is required when summaries are enabled".to_owned(),
-            ));
-        }
     }
 
     match input.speaker_count_mode {
@@ -195,10 +185,6 @@ pub(crate) fn summary_provider_configured_for(
     summary_enabled: bool,
     provider_base_url: &str,
     provider_model: &str,
-    provider_api_key_configured: bool,
 ) -> bool {
-    summary_enabled
-        && !provider_base_url.trim().is_empty()
-        && !provider_model.trim().is_empty()
-        && provider_api_key_configured
+    summary_enabled && !provider_base_url.trim().is_empty() && !provider_model.trim().is_empty()
 }

@@ -1,7 +1,5 @@
-from typing import cast
-
-from pydantic_ai import Agent
-from pydantic_ai.models.openai import OpenAIChatModel, OpenAIModelName
+from pydantic_ai import Agent, ModelSettings
+from pydantic_ai.models.openai import OpenAIChatModel
 from pydantic_ai.providers.openai import OpenAIProvider
 
 from app.dtos import (
@@ -16,15 +14,15 @@ from app.dtos import (
 
 type SummaryResult = NeedsSetupResult | FailedResult | SummaryCompleteResult
 
+DEFAULT_SUMMARY_PROMPT = 'Summarize decisions, action items, risks, and unanswered questions.'
+TITLE_INSTRUCTION = 'Create a concise meeting title from the transcript.'
+
 
 def assemble_summary_prompt(transcript: str, prompt: str) -> str:
     return f'{prompt.strip()}\n\nTranscript:\n{transcript.strip()}'
 
 
 def summary_transcript(payload: SummarizePayload) -> str:
-    if payload.transcript:
-        return payload.transcript
-
     for path in (payload.diarized_transcript_path, payload.transcript_path):
         if path is not None and path.exists():
             return path.read_text(encoding='utf-8')
@@ -38,15 +36,12 @@ async def run_openai_compatible_summary(
     model: str,
     transcript: str,
     summary_prompt: str,
-    title_prompt: str,
     agent: Agent[None, SummaryOutput] | None = None,
 ) -> SummaryResult:
     missing = missing_summary_inputs(
         provider_base_url=provider_base_url,
-        api_key=api_key,
         model=model,
         transcript=transcript,
-        summary_prompt=summary_prompt,
     )
 
     if missing:
@@ -66,7 +61,7 @@ async def run_openai_compatible_summary(
         result = await summary_agent.run(
             assemble_summary_prompt(
                 transcript=transcript,
-                prompt=summary_response_prompt(summary_prompt=summary_prompt, title_prompt=title_prompt),
+                prompt=summary_response_prompt(summary_prompt=summary_prompt),
             )
         )
 
@@ -75,32 +70,32 @@ async def run_openai_compatible_summary(
         return FailedResult(payload={'error': str(error)})
 
 
-def build_summary_agent(provider_base_url: str, api_key: str, model: str) -> Agent[None, SummaryOutput]:
+def build_summary_agent(provider_base_url: str, api_key: str, model: str) -> Agent[None, SummaryOutput | str]:
     provider = OpenAIProvider(base_url=provider_base_url, api_key=api_key)
-    openai_model = OpenAIChatModel(model_name=cast(OpenAIModelName, model), provider=provider)
+    openai_model = OpenAIChatModel(model_name=model, provider=provider, settings=ModelSettings(tool_choice='auto'))
 
     return Agent(
         openai_model,
-        output_type=SummaryOutput,
-        system_prompt='You produce concise meeting notes.',
+        output_type=[SummaryOutput, str],
+        retries=3,
+        instructions=(
+            'You are a transcript summary/title creator agent. '
+            'Make sure to return result as a structured output type defined'
+        ),
     )
 
 
 def missing_summary_inputs(
     provider_base_url: str,
-    api_key: str,
     model: str,
     transcript: str,
-    summary_prompt: str,
 ) -> list[str]:
     missing: list[str] = []
 
     for name, value in [
         ('provider_base_url', provider_base_url),
-        ('api_key', api_key),
         ('model', model),
         ('transcript', transcript),
-        ('summary_prompt', summary_prompt),
     ]:
         if not value.strip():
             missing.append(name)
@@ -109,16 +104,10 @@ def missing_summary_inputs(
 
 
 def missing_input_aliases(missing: list[str]) -> list[str]:
-    aliases: list[str] = []
-
-    for field_name in missing:
-        field = SummarizePayload.model_fields[field_name]
-        aliases.append(field.alias or field_name)
-
-    return aliases
+    return missing
 
 
-def summary_response_prompt(summary_prompt: str, title_prompt: str) -> str:
-    title_instruction = title_prompt.strip() or 'Create a concise title.'
+def summary_response_prompt(summary_prompt: str) -> str:
+    prompt = summary_prompt.strip() or DEFAULT_SUMMARY_PROMPT
 
-    return f'{summary_prompt.strip()}\n\n{title_instruction}'
+    return f'{prompt}\n\n{TITLE_INSTRUCTION}'

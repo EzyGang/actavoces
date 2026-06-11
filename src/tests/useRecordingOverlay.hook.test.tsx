@@ -41,7 +41,6 @@ const baseSettings: AppSettings = {
   summaryEnabled: false,
   providerBaseUrl: 'https://api.openai.com/v1',
   providerModel: '',
-  titlePrompt: 'Title',
   summaryPrompt: 'Summary'
 };
 

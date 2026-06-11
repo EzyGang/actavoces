@@ -696,6 +696,142 @@ fn resume_pipeline_runs_worker_events_and_persists_artifacts() {
 }
 
 #[test]
+fn resume_pipeline_sends_snake_case_summary_payload_without_required_api_key() {
+    let database_path = test_database_path("pipeline-summary-payload");
+    let artifact_path = test_artifact_path("pipeline-summary-payload-recording");
+    let mut repository = AppRepository::open(&database_path).unwrap();
+    let mut capture_backend = FileAudioCaptureBackend::default();
+    let recording = NewRecording {
+        id: "recording-summary-payload".to_owned(),
+        title: "Meeting".to_owned(),
+        started_at: "1".to_owned(),
+        artifact_directory: artifact_path.display().to_string(),
+    };
+
+    repository.set_setting("summaryEnabled", "true").unwrap();
+    repository
+        .set_setting("providerBaseUrl", "http://localhost:11434/v1")
+        .unwrap();
+    repository.set_setting("providerModel", "llama3").unwrap();
+    repository
+        .set_setting(
+            "diarizationBackend",
+            &serde_json::to_string(&DiarizationBackend::Pyannote).unwrap(),
+        )
+        .unwrap();
+    repository
+        .set_setting(
+            "speakerCountMode",
+            &serde_json::to_string(&SpeakerCountMode::Exact).unwrap(),
+        )
+        .unwrap();
+    repository.set_setting("exactSpeakers", "1").unwrap();
+    capture_backend
+        .start(&recording.id, &repository.settings().unwrap())
+        .unwrap();
+    repository.create_recording(recording.clone()).unwrap();
+    let capture_result = capture_backend.stop(&recording.id, &artifact_path).unwrap();
+    repository
+        .finish_recording(
+            &recording.id,
+            "2".to_owned(),
+            1,
+            capture_result.errors,
+            &capture_result.artifacts,
+        )
+        .unwrap();
+
+    let mut observed_summary_payload = None;
+
+    resume_pipeline_jobs(
+        &mut repository,
+        |command, payload| {
+            let output_directory_key = match command {
+                "summarize.run" => "output_directory",
+                _ => "outputDirectory",
+            };
+            let output_directory = std::path::PathBuf::from(
+                payload
+                    .get(output_directory_key)
+                    .and_then(serde_json::Value::as_str)
+                    .unwrap(),
+            );
+
+            match command {
+                "transcribe.run" => {
+                    fs::write(
+                        output_directory.join("raw-segments.json"),
+                        "{\"segments\":[{\"start\":0,\"end\":1,\"text\":\"Hello\"}]}\n",
+                    )
+                    .unwrap();
+                    fs::write(
+                        output_directory.join("raw-transcript.md"),
+                        "# Raw\n\nHello\n",
+                    )
+                    .unwrap();
+
+                    Ok(vec![worker_event(
+                        "transcribe.complete",
+                        serde_json::json!({
+                            "segmentsPath": output_directory.join("raw-segments.json"),
+                            "transcriptPath": output_directory.join("raw-transcript.md"),
+                        }),
+                    )])
+                }
+                "diarize.run" => {
+                    fs::write(
+                        output_directory.join("diarization.json"),
+                        "{\"turns\":[{\"speaker\":\"Speaker 1\",\"start\":0,\"end\":1}]}\n",
+                    )
+                    .unwrap();
+                    fs::write(
+                        output_directory.join("diarized-transcript.md"),
+                        "# Diarized\n\nHello\n",
+                    )
+                    .unwrap();
+
+                    Ok(vec![worker_event(
+                        "diarize.complete",
+                        serde_json::json!({
+                            "diarizationPath": output_directory.join("diarization.json"),
+                            "transcriptPath": output_directory.join("diarized-transcript.md"),
+                        }),
+                    )])
+                }
+                "summarize.run" => {
+                    observed_summary_payload = Some(payload);
+                    fs::write(output_directory.join("summary.md"), "# Summary\n\nDone\n").unwrap();
+
+                    Ok(vec![worker_event(
+                        "summarize.complete",
+                        serde_json::json!({
+                            "summaryPath": output_directory.join("summary.md"),
+                            "title": "Meeting",
+                        }),
+                    )])
+                }
+                other => Err(format!("unexpected worker command: {other}")),
+            }
+        },
+        |_| Ok(()),
+    )
+    .unwrap();
+
+    let payload = observed_summary_payload.unwrap();
+
+    assert_eq!(payload["provider_base_url"], "http://localhost:11434/v1");
+    assert_eq!(payload["api_key"], "");
+    assert_eq!(payload["model"], "llama3");
+    assert!(payload.get("output_directory").is_some());
+    assert!(payload.get("diarized_transcript_path").is_some());
+    assert!(payload.get("transcript_path").is_some());
+    assert!(payload.get("summary_prompt").is_some());
+    assert!(payload.get("providerBaseUrl").is_none());
+    assert!(payload.get("apiKey").is_none());
+    assert!(payload.get("titlePrompt").is_none());
+}
+
+#[test]
 fn speaker_label_rename_rewrites_diarization_artifacts() {
     let database_path = test_database_path("speaker-rename");
     let artifact_path = test_artifact_path("speaker-rename-artifacts");
@@ -913,7 +1049,6 @@ fn settings_update(output_directory: String) -> AppSettingsUpdate {
         provider_base_url: "https://api.openai.com/v1".to_owned(),
         provider_model: String::new(),
         provider_api_key: None,
-        title_prompt: "Title".to_owned(),
         summary_prompt: "Summary".to_owned(),
     }
 }
