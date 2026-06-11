@@ -41,9 +41,20 @@ jobs:
           RELEASE_TYPE: ${{ inputs.release_type }}
         run: bash .github/scripts/compute-release-metadata.sh
 
+  approval:
+    name: Approve release
+    needs: version
+    runs-on: ubuntu-22.04
+    environment: release
+    steps:
+      - name: Release approved
+        run: echo "Release deployment approved."
+
   build:
     name: Build ${{ matrix.name }}
-    needs: version
+    needs:
+      - version
+      - approval
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
