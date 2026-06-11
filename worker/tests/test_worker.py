@@ -6,13 +6,18 @@ from pydantic_ai import Agent
 from pydantic_ai.models.test import TestModel
 from pytest_mock import MockerFixture
 
-from app.dtos import SummaryOutput
+from app.dtos import SummarizePayload, SummaryOutput
 from app.events import emit
 from app.formatting import render_diarized_transcript, render_raw_transcript
 from app.handlers import handle
 from app.models import cuda_status, install_faster_whisper_model, model_installed, run_faster_whisper
 from app.protocol import WorkerCommand, WorkerEvent
-from app.summaries import assemble_summary_prompt, build_summary_agent, run_openai_compatible_summary
+from app.summaries import (
+    assemble_summary_prompt,
+    build_summary_agent,
+    run_openai_compatible_summary,
+    summary_transcript,
+)
 
 
 class MockPyannoteTurn:
@@ -361,7 +366,43 @@ async def test_pyannote_diarize_run_writes_normalized_speakers(tmp_path: Path, m
 def test_summary_prompt_assembly_keeps_prompt_and_transcript() -> None:
     prompt = assemble_summary_prompt('We shipped.', 'List decisions.')
 
-    assert prompt == 'List decisions.\n\nTranscript:\nWe shipped.'
+    assert 'List decisions.' in prompt
+    assert 'Transcript:' in prompt
+    assert 'We shipped.' in prompt
+
+
+def test_summary_transcript_prefers_diarized_transcript(tmp_path: Path) -> None:
+    diarized_path = tmp_path / 'diarized-transcript.md'
+    raw_path = tmp_path / 'raw-transcript.md'
+    diarized_path.write_text('Speaker 1: Diarized notes')
+    raw_path.write_text('Raw notes')
+
+    transcript = summary_transcript(
+        SummarizePayload(
+            output_directory=tmp_path,
+            diarized_transcript_path=diarized_path,
+            transcript_path=raw_path,
+        )
+    )
+
+    assert transcript == 'Speaker 1: Diarized notes'
+
+
+def test_summary_transcript_falls_back_when_diarized_transcript_is_empty(tmp_path: Path) -> None:
+    diarized_path = tmp_path / 'diarized-transcript.md'
+    raw_path = tmp_path / 'raw-transcript.md'
+    diarized_path.write_text('')
+    raw_path.write_text('Raw notes')
+
+    transcript = summary_transcript(
+        SummarizePayload(
+            output_directory=tmp_path,
+            diarized_transcript_path=diarized_path,
+            transcript_path=raw_path,
+        )
+    )
+
+    assert transcript == 'Raw notes'
 
 
 async def test_summarize_reports_setup_when_provider_details_are_missing(tmp_path: Path) -> None:

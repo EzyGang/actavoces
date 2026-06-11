@@ -216,6 +216,9 @@ export const useRecordings = ({ loading, setError, setSnapshot }: UseRecordingsI
 
     return {
       canRetry: canRetryRecording(recording),
+      onOpenFolder: () => {
+        void openPath(recording.artifactDirectory);
+      },
       onRetry: () => {
         void retry(recording);
       }

@@ -62,12 +62,21 @@ export const DashboardRoute = ({ app }: DashboardRouteProps): JSX.Element => (
                 label={app.data.latestRecordingPipelineStatus.value.label}
                 status={app.data.latestRecordingPipelineStatus.value.status}
               />
-              {app.data.latestRecordingActions.value ? (
+              {app.data.latestRecordingActions.value &&
+              app.data.latestRecordingPipelineStatus.value.status === 'complete' ? (
                 <Button
                   class='h-9 px-3'
-                  disabled={
-                    app.status.loading.value || !app.data.latestRecordingActions.value.canRetry
-                  }
+                  disabled={app.status.loading.value}
+                  onClick={app.data.latestRecordingActions.value.onOpenFolder}
+                  variant='ghost'
+                >
+                  Open
+                </Button>
+              ) : null}
+              {app.data.latestRecordingActions.value?.canRetry ? (
+                <Button
+                  class='h-9 px-3'
+                  disabled={app.status.loading.value}
                   onClick={app.data.latestRecordingActions.value.onRetry}
                   variant='ghost'
                 >

@@ -19,13 +19,23 @@ TITLE_INSTRUCTION = 'Create a concise meeting title from the transcript.'
 
 
 def assemble_summary_prompt(transcript: str, prompt: str) -> str:
-    return f'{prompt.strip()}\n\nTranscript:\n{transcript.strip()}'
+    return f"""
+    {prompt.strip()}
+
+    Transcript:
+    ```
+    {transcript.strip()}
+    ```
+    """
 
 
 def summary_transcript(payload: SummarizePayload) -> str:
     for path in (payload.diarized_transcript_path, payload.transcript_path):
         if path is not None and path.exists():
-            return path.read_text(encoding='utf-8')
+            transcript = path.read_text(encoding='utf-8').strip()
+
+            if transcript:
+                return transcript
 
     return ''
 
@@ -64,6 +74,9 @@ async def run_openai_compatible_summary(
                 prompt=summary_response_prompt(summary_prompt=summary_prompt),
             )
         )
+
+        if not isinstance(result.output, SummaryOutput):
+            return FailedResult(payload={'error': 'Summary agent returned an unexpected result. Please retry!'})
 
         return SummaryCompleteResult(title=result.output.title.strip(), summary=result.output.summary.strip())
     except Exception as error:
