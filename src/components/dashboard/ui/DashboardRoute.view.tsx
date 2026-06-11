@@ -92,7 +92,7 @@ export const DashboardRoute = ({ app }: DashboardRouteProps): JSX.Element => (
                 <span>{app.data.latestRecordingProgress.value}%</span>
               </div>
             </div>
-            <div class='grid gap-3 md:grid-cols-5'>
+            <div class='grid gap-3 md:grid-cols-4'>
               {app.data.latestRecording.value.stages.map((stage, index) => (
                 <article
                   class='flex min-h-36 flex-col justify-between gap-4 border border-border-base bg-bg-input p-4'

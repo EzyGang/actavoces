@@ -142,7 +142,7 @@ fn extract_onnxruntime_zip(
         let mut file = archive.by_index(index).map_err(|error| error.to_string())?;
         let normalized_name = file.name().replace('\\', "/");
 
-        if !normalized_name.contains("/lib/") || !is_onnxruntime_library_name(&normalized_name) {
+        if !normalized_name.contains("/lib/") || file.is_dir() {
             continue;
         }
 
@@ -283,4 +283,52 @@ fn runtime_directory_name(package: &OrtRuntimePackage) -> &str {
 
 fn ort_runtime_url(package: &OrtRuntimePackage) -> String {
     format!("{ORT_RUNTIME_RELEASE_URL}/{}", package.archive_file)
+}
+
+#[cfg(all(test, target_os = "windows"))]
+mod tests {
+    use std::io::Write;
+
+    use zip::write::SimpleFileOptions;
+
+    use super::*;
+
+    #[test]
+    fn zip_extraction_finds_windows_runtime_by_file_name() {
+        let root =
+            std::env::temp_dir().join(format!("actavoces-onnxruntime-test-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&root);
+        fs::create_dir_all(&root).unwrap();
+        let archive_path = root.join("onnxruntime-win-x64-1.24.2.zip");
+        let destination_directory = root.join("onnxruntime-win-x64-1.24.2");
+        fs::create_dir_all(&destination_directory).unwrap();
+
+        {
+            let archive_file = fs::File::create(&archive_path).unwrap();
+            let mut archive = zip::ZipWriter::new(archive_file);
+            let options = SimpleFileOptions::default();
+
+            archive
+                .start_file("onnxruntime-win-x64-1.24.2/lib/onnxruntime.dll", options)
+                .unwrap();
+            archive.write_all(b"runtime").unwrap();
+            archive
+                .start_file(
+                    "onnxruntime-win-x64-1.24.2/lib/onnxruntime_providers_shared.dll",
+                    options,
+                )
+                .unwrap();
+            archive.write_all(b"provider").unwrap();
+            archive.finish().unwrap();
+        }
+
+        extract_onnxruntime_zip(&archive_path, &destination_directory).unwrap();
+
+        assert!(destination_directory.join("onnxruntime.dll").exists());
+        assert!(destination_directory
+            .join("onnxruntime_providers_shared.dll")
+            .exists());
+
+        fs::remove_dir_all(root).unwrap();
+    }
 }

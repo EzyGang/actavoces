@@ -95,6 +95,79 @@ fn repository_restores_recordings_after_reopen() {
 }
 
 #[test]
+fn repository_removes_legacy_alignment_stage_rows() {
+    let database_path = test_database_path("legacy-alignment-stage");
+    let artifact_path = test_artifact_path("legacy-alignment-stage-artifacts");
+    let mut repository = AppRepository::open(&database_path).unwrap();
+    let recording = NewRecording {
+        id: "recording-1".to_owned(),
+        title: "Untitled meeting".to_owned(),
+        started_at: "1".to_owned(),
+        artifact_directory: artifact_path.display().to_string(),
+    };
+
+    repository.create_recording(recording.clone()).unwrap();
+    repository
+        .connection
+        .execute(
+            "
+            INSERT INTO pipeline_jobs (id, recording_id, stage, status, progress, message)
+            VALUES (?1, ?2, 'alignment', 'skipped', 100, 'legacy alignment')
+            ",
+            rusqlite::params!["recording-1-alignment", recording.id],
+        )
+        .unwrap();
+    repository
+        .connection
+        .execute(
+            "
+            INSERT INTO job_events (recording_id, stage, status, message, created_at)
+            VALUES (?1, 'alignment', 'skipped', 'legacy alignment', '1')
+            ",
+            rusqlite::params![recording.id],
+        )
+        .unwrap();
+    drop(repository);
+
+    let repository = AppRepository::open(&database_path).unwrap();
+    let legacy_jobs = repository
+        .connection
+        .query_row(
+            "SELECT COUNT(*) FROM pipeline_jobs WHERE stage = 'alignment'",
+            [],
+            |row| row.get::<_, u32>(0),
+        )
+        .unwrap();
+    let legacy_events = repository
+        .connection
+        .query_row(
+            "SELECT COUNT(*) FROM job_events WHERE stage = 'alignment'",
+            [],
+            |row| row.get::<_, u32>(0),
+        )
+        .unwrap();
+
+    assert_eq!(legacy_jobs, 0);
+    assert_eq!(legacy_events, 0);
+    let stages = repository
+        .stages(&recording.id)
+        .unwrap()
+        .iter()
+        .map(|stage| stage.id)
+        .collect::<Vec<_>>();
+
+    assert_eq!(
+        stages,
+        vec![
+            PipelineStageId::Recording,
+            PipelineStageId::Transcription,
+            PipelineStageId::Diarization,
+            PipelineStageId::Summary,
+        ]
+    );
+}
+
+#[test]
 fn repository_seeds_and_updates_model_inventory() {
     let database_path = test_database_path("models");
     let mut repository = AppRepository::open(&database_path).unwrap();

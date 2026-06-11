@@ -36,18 +36,12 @@ export const useRecordingOverlay = () => {
 
     void getAppSnapshot()
       .then((snapshot) => {
-        displayMode.value =
-          snapshot.settings.overlayDisplayMode === 'minimal' || window.innerWidth <= 80
-            ? 'minimal'
-            : snapshot.settings.overlayDisplayMode;
+        displayMode.value = snapshot.settings.overlayDisplayMode;
       })
       .catch(() => undefined);
 
     const snapshotListener = listen<AppSnapshot>('app-snapshot-updated', (event) => {
-      displayMode.value =
-        event.payload.settings.overlayDisplayMode === 'minimal' || window.innerWidth <= 80
-          ? 'minimal'
-          : event.payload.settings.overlayDisplayMode;
+      displayMode.value = event.payload.settings.overlayDisplayMode;
     });
 
     return () => {

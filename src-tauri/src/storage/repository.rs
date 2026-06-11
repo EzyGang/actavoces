@@ -136,7 +136,17 @@ impl AppRepository {
             "models",
             "dependency",
             "ALTER TABLE models ADD COLUMN dependency TEXT NOT NULL DEFAULT 'faster-whisper'",
-        )
+        )?;
+        self.remove_alignment_stage()
+    }
+
+    fn remove_alignment_stage(&self) -> rusqlite::Result<()> {
+        self.connection
+            .execute("DELETE FROM pipeline_jobs WHERE stage = 'alignment'", [])?;
+        self.connection
+            .execute("DELETE FROM job_events WHERE stage = 'alignment'", [])?;
+
+        Ok(())
     }
 
     pub(crate) fn ensure_column(
@@ -858,7 +868,6 @@ impl AppRepository {
                 PipelineStageStatus::Pending,
                 0,
             ),
-            (PipelineStageId::Alignment, PipelineStageStatus::Pending, 0),
             (
                 PipelineStageId::Diarization,
                 PipelineStageStatus::Pending,
@@ -1322,10 +1331,9 @@ impl AppRepository {
             ORDER BY CASE stage
                 WHEN 'recording' THEN 1
                 WHEN 'transcription' THEN 2
-                WHEN 'alignment' THEN 3
-                WHEN 'diarization' THEN 4
-                WHEN 'summary' THEN 5
-                ELSE 6
+                WHEN 'diarization' THEN 3
+                WHEN 'summary' THEN 4
+                ELSE 5
             END
             ",
         )?;

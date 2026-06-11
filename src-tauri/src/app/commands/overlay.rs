@@ -45,7 +45,7 @@ fn size_recording_overlay(
     display_mode: OverlayDisplayMode,
 ) -> Result<(), String> {
     let size = match display_mode {
-        OverlayDisplayMode::Full => Size::Logical(LogicalSize::new(380.0, 72.0)),
+        OverlayDisplayMode::Full => Size::Logical(LogicalSize::new(300.0, 72.0)),
         OverlayDisplayMode::Minimal => Size::Physical(PhysicalSize::new(64, 64)),
         OverlayDisplayMode::None => Size::Logical(LogicalSize::new(380.0, 72.0)),
     };

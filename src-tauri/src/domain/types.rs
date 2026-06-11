@@ -159,7 +159,6 @@ pub enum RecordingStatus {
 pub enum PipelineStageId {
     Recording,
     Transcription,
-    Alignment,
     Diarization,
     Summary,
 }

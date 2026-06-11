@@ -11,7 +11,6 @@ pub(crate) fn recording_stages() -> Vec<PipelineStage> {
             PipelineStageStatus::Pending,
             0,
         ),
-        stage(PipelineStageId::Alignment, PipelineStageStatus::Pending, 0),
         stage(
             PipelineStageId::Diarization,
             PipelineStageStatus::Pending,
@@ -39,7 +38,6 @@ pub(crate) fn stage_label(stage: PipelineStageId) -> &'static str {
     match stage {
         PipelineStageId::Recording => "Capture",
         PipelineStageId::Transcription => "Raw transcript",
-        PipelineStageId::Alignment => "Alignment",
         PipelineStageId::Diarization => "Diarization",
         PipelineStageId::Summary => "Summary",
     }
@@ -50,9 +48,6 @@ pub(crate) fn stage_message(stage: PipelineStageId, status: PipelineStageStatus)
         (PipelineStageId::Recording, PipelineStageStatus::Complete) => "Audio capture complete",
         (PipelineStageId::Transcription, PipelineStageStatus::NeedsSetup) => {
             "Local transcription setup required"
-        }
-        (PipelineStageId::Alignment, PipelineStageStatus::Skipped) => {
-            "Skipped because transcript timestamps are already available; no separate alignment pass is needed."
         }
         (PipelineStageId::Summary, PipelineStageStatus::Skipped) => {
             "Summary generation is disabled"

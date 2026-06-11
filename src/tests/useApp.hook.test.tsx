@@ -501,6 +501,8 @@ describe('useApp hook', () => {
         }
       } as Event & { currentTarget: HTMLSelectElement });
     });
+    expect(result.current.status.hasUnsavedSettings.value).toBe(true);
+
     await act(async () => {
       await result.current.actions.saveSettings();
     });
@@ -511,6 +513,7 @@ describe('useApp hook', () => {
       })
     );
     expect(result.current.settings.captureSelectFields[3].value).toBe('minimal');
+    expect(result.current.status.hasUnsavedSettings.value).toBe(false);
   });
 
   it('selects folder settings through the native dialog', async () => {

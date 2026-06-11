@@ -1,11 +1,6 @@
 export type RecordingStatus = 'idle' | 'recording' | 'processing' | 'complete';
 
-export type PipelineStageId =
-  | 'recording'
-  | 'transcription'
-  | 'alignment'
-  | 'diarization'
-  | 'summary';
+export type PipelineStageId = 'recording' | 'transcription' | 'diarization' | 'summary';
 
 export type PipelineStageStatus =
   | 'pending'

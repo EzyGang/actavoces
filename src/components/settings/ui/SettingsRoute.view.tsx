@@ -21,7 +21,9 @@ export const SettingsRoute = ({ app }: SettingsRouteProps): JSX.Element => (
       </div>
       <Button
         disabled={
-          app.status.savingSettings.value || app.data.settingsValidationErrors.value.length > 0
+          !app.status.hasUnsavedSettings.value ||
+          app.status.savingSettings.value ||
+          app.data.settingsValidationErrors.value.length > 0
         }
         onClick={app.actions.saveSettings}
         variant='primary'

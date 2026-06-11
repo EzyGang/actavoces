@@ -119,11 +119,6 @@ where
             )?;
         }
 
-        if stage_is_complete(repository, &recording.id, PipelineStageId::Transcription)? {
-            complete_alignment_stage(repository, &recording.id)?;
-            on_update(repository)?;
-        }
-
         if stage_is_complete(repository, &recording.id, PipelineStageId::Transcription)?
             && should_run_stage(repository, &recording.id, PipelineStageId::Diarization)?
         {
@@ -479,7 +474,7 @@ fn apply_complete_event(
                 }
             }
         }
-        PipelineStageId::Recording | PipelineStageId::Alignment => {}
+        PipelineStageId::Recording => {}
     }
 
     let message = event
@@ -513,22 +508,6 @@ fn upsert_ready_artifact_from_event(
             &artifact(kind, label, PathBuf::from(path), true),
         )
         .map_err(|error| error.to_string())
-}
-
-fn complete_alignment_stage(
-    repository: &mut AppRepository,
-    recording_id: &str,
-) -> Result<(), String> {
-    if !should_run_stage(repository, recording_id, PipelineStageId::Alignment)? {
-        return Ok(());
-    }
-
-    mark_stage_skipped(
-        repository,
-        recording_id,
-        PipelineStageId::Alignment,
-        "Skipped because transcript timestamps are already available; no separate alignment pass is needed.",
-    )
 }
 
 fn complete_disabled_summary_stage(
