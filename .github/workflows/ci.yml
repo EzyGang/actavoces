@@ -65,7 +65,7 @@ jobs:
         run: pnpm sync:py
 
       - name: Lint and type-check
-        run: pnpm lint:all
+        run: pnpm ci-run && pnpm type-check && pnpm lint:rust && pnpm lint:py
 
       - name: Run tests
         run: pnpm test:all
