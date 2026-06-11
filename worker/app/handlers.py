@@ -1,4 +1,5 @@
 from collections.abc import Awaitable, Callable
+from pathlib import Path
 
 from app.diarization import check_pyannote_setup, diarization_dependency, run_pyannote_diarization, single_speaker_turns
 from app.dtos import (
@@ -120,10 +121,13 @@ async def handle_transcribe(command: WorkerCommand) -> list[WorkerEvent]:
     if result.status != 'complete':
         return transcription_failure_events(command=command, result=result)
 
-    payload.output_directory.mkdir(parents=True, exist_ok=True)
-    write_json(payload.output_directory / 'raw-segments.json', {'segments': segment_payloads(segments=result.segments)})
+    prepare_output_directories(output_directory=payload.output_directory)
+    write_json(
+        raw_segments_path(output_directory=payload.output_directory),
+        {'segments': segment_payloads(segments=result.segments)},
+    )
     write_text(
-        payload.output_directory / 'raw-transcript.md',
+        raw_transcript_path(output_directory=payload.output_directory),
         render_raw_transcript(segments=result.segments, title=payload.title),
     )
 
@@ -133,8 +137,8 @@ async def handle_transcribe(command: WorkerCommand) -> list[WorkerEvent]:
             command=command,
             name='transcribe.complete',
             payload=TranscribeCompletePayload(
-                segments_path=str(payload.output_directory / 'raw-segments.json'),
-                transcript_path=str(payload.output_directory / 'raw-transcript.md'),
+                segments_path=str(raw_segments_path(output_directory=payload.output_directory)),
+                transcript_path=str(raw_transcript_path(output_directory=payload.output_directory)),
                 warning=result.warning,
             ),
         ),
@@ -151,7 +155,7 @@ async def handle_diarize(command: WorkerCommand) -> list[WorkerEvent]:
 
     if not turns and payload.backend == 'pyannote':
         result = run_pyannote_diarization(
-            audio_path=payload.audio_path or payload.output_directory / 'recording.wav',
+            audio_path=payload.audio_path or mixed_audio_path(output_directory=payload.output_directory),
             api_key=payload.api_key,
             speaker_count_mode=payload.speaker_count_mode,
             exact_speakers=payload.exact_speakers,
@@ -179,10 +183,10 @@ async def handle_diarize(command: WorkerCommand) -> list[WorkerEvent]:
             ),
         ]
 
-    payload.output_directory.mkdir(parents=True, exist_ok=True)
-    write_json(payload.output_directory / 'diarization.json', {'turns': turn_payloads(turns=turns)})
+    prepare_output_directories(output_directory=payload.output_directory)
+    write_json(diarization_path(output_directory=payload.output_directory), {'turns': turn_payloads(turns=turns)})
     write_text(
-        payload.output_directory / 'diarized-transcript.md',
+        diarized_transcript_path(output_directory=payload.output_directory),
         render_diarized_transcript(segments=payload.segments, turns=turns, title=payload.title),
     )
 
@@ -192,8 +196,8 @@ async def handle_diarize(command: WorkerCommand) -> list[WorkerEvent]:
             command=command,
             name='diarize.complete',
             payload=DiarizeCompletePayload(
-                diarization_path=str(payload.output_directory / 'diarization.json'),
-                transcript_path=str(payload.output_directory / 'diarized-transcript.md'),
+                diarization_path=str(diarization_path(output_directory=payload.output_directory)),
+                transcript_path=str(diarized_transcript_path(output_directory=payload.output_directory)),
             ),
         ),
     ]
@@ -232,15 +236,15 @@ async def handle_summarize(command: WorkerCommand) -> list[WorkerEvent]:
         title = result.title
         summary = result.summary
 
-    payload.output_directory.mkdir(parents=True, exist_ok=True)
-    write_text(payload.output_directory / 'summary.md', render_summary(summary=summary))
+    prepare_output_directories(output_directory=payload.output_directory)
+    write_text(summary_path(output_directory=payload.output_directory), render_summary(summary=summary))
 
     return [
         command_event(
             command=command,
             name='summarize.complete',
             payload=SummaryCompletePayload(
-                summary_path=str(payload.output_directory / 'summary.md'),
+                summary_path=str(summary_path(output_directory=payload.output_directory)),
                 title=title,
             ),
         )
@@ -281,6 +285,38 @@ def segment_payloads(segments: list[Segment]) -> list[dict[str, int | float | st
 
 def turn_payloads(turns: list[SpeakerTurn]) -> list[dict[str, float | str]]:
     return [turn.model_dump() for turn in turns]
+
+
+def prepare_output_directories(output_directory: Path) -> None:
+    meta_path(output_directory=output_directory).mkdir(parents=True, exist_ok=True)
+
+
+def meta_path(output_directory: Path) -> Path:
+    return output_directory / 'meta'
+
+
+def mixed_audio_path(output_directory: Path) -> Path:
+    return meta_path(output_directory=output_directory) / 'recording.wav'
+
+
+def raw_segments_path(output_directory: Path) -> Path:
+    return meta_path(output_directory=output_directory) / 'raw-segments.json'
+
+
+def raw_transcript_path(output_directory: Path) -> Path:
+    return output_directory / 'raw-transcript.md'
+
+
+def diarization_path(output_directory: Path) -> Path:
+    return meta_path(output_directory=output_directory) / 'diarization.json'
+
+
+def diarized_transcript_path(output_directory: Path) -> Path:
+    return output_directory / 'diarized-transcript.md'
+
+
+def summary_path(output_directory: Path) -> Path:
+    return meta_path(output_directory=output_directory) / 'summary.md'
 
 
 COMMAND_HANDLERS: dict[str, CommandHandler] = {

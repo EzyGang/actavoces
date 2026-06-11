@@ -3,7 +3,8 @@ use std::path::{Path, PathBuf};
 use tauri::{Emitter, Manager};
 
 use crate::artifacts::{
-    artifact, rewrite_diarized_transcript_title, rewrite_raw_transcript_title, stage_label,
+    artifact, diarized_transcript_path, mixed_audio_path, raw_segments_path, raw_transcript_path,
+    stage_label,
 };
 use crate::diarization::{
     run_single_speaker_diarization, run_sortformer_diarization, TranscriptSegment,
@@ -14,6 +15,7 @@ use crate::utils::{pipeline_job_id, read_json_file};
 use crate::worker::runtime::run_worker_command;
 
 use super::overlay::sync_recording_overlay;
+use super::recordings::rename_recording_outputs;
 
 pub fn emit_snapshot_update(app: &tauri::AppHandle, snapshot: &AppSnapshot) {
     let _ = app.emit("app-snapshot-updated", snapshot);
@@ -283,7 +285,7 @@ fn run_local_diarization(
     }
 
     run_sortformer_diarization(
-        &artifact_directory.join("recording.wav"),
+        &mixed_audio_path(artifact_directory),
         artifact_directory,
         &PathBuf::from(&settings.model_storage_directory),
         segments,
@@ -451,17 +453,7 @@ fn apply_complete_event(
                 .and_then(serde_json::Value::as_str)
             {
                 if !title.trim().is_empty() {
-                    repository
-                        .update_recording_title(&recording.id, title.trim())
-                        .map_err(|error| error.to_string())?;
-                    rewrite_raw_transcript_title(
-                        &PathBuf::from(&recording.artifact_directory),
-                        title.trim(),
-                    )?;
-                    rewrite_diarized_transcript_title(
-                        &PathBuf::from(&recording.artifact_directory),
-                        title.trim(),
-                    )?;
+                    rename_recording_outputs(repository, recording, title.trim())?;
                 }
             }
         }
@@ -639,7 +631,7 @@ fn transcription_payload(recording: &Recording, settings: &AppSettings) -> serde
     let artifact_directory = PathBuf::from(&recording.artifact_directory);
 
     serde_json::json!({
-        "audioPath": artifact_directory.join("recording.wav"),
+        "audioPath": mixed_audio_path(&artifact_directory),
         "outputDirectory": artifact_directory,
         "title": recording.title,
         "model": settings.whisper_model,
@@ -655,12 +647,12 @@ fn diarization_payload(
     api_key: String,
 ) -> serde_json::Value {
     let artifact_directory = PathBuf::from(&recording.artifact_directory);
-    let segments = read_json_file(artifact_directory.join("raw-segments.json"))
+    let segments = read_json_file(raw_segments_path(&artifact_directory))
         .and_then(|value| value.get("segments").cloned())
         .unwrap_or_else(|| serde_json::json!([]));
 
     serde_json::json!({
-        "audioPath": artifact_directory.join("recording.wav"),
+        "audioPath": mixed_audio_path(&artifact_directory),
         "outputDirectory": artifact_directory,
         "segments": segments,
         "title": recording.title,
@@ -674,7 +666,7 @@ fn diarization_payload(
 }
 
 fn read_transcript_segments(artifact_directory: &Path) -> Vec<TranscriptSegment> {
-    read_json_file(artifact_directory.join("raw-segments.json"))
+    read_json_file(raw_segments_path(artifact_directory))
         .and_then(|value| value.get("segments").cloned())
         .and_then(|value| serde_json::from_value(value).ok())
         .unwrap_or_default()
@@ -696,8 +688,8 @@ fn summary_payload(
         "provider_base_url": settings.provider_base_url,
         "api_key": api_key,
         "model": settings.provider_model,
-        "diarized_transcript_path": artifact_directory.join("diarized-transcript.md"),
-        "transcript_path": artifact_directory.join("raw-transcript.md"),
+        "diarized_transcript_path": diarized_transcript_path(&artifact_directory),
+        "transcript_path": raw_transcript_path(&artifact_directory),
         "summary_prompt": settings.summary_prompt,
     })
 }

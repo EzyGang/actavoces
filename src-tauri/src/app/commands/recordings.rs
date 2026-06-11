@@ -4,7 +4,8 @@ use std::path::PathBuf;
 use tauri::Manager;
 
 use crate::artifacts::{
-    artifact_directory, rewrite_diarized_transcript_title, rewrite_raw_transcript_title,
+    artifact_directory, meta_directory, rename_artifact_directory, renamed_artifact_directory,
+    rewrite_diarized_transcript_title, rewrite_raw_transcript_title,
 };
 use crate::capture::audio::AudioCaptureBackend;
 use crate::domain::types::*;
@@ -135,18 +136,34 @@ pub fn rename_recording_title(
         .map_err(|error| error.to_string())?
         .ok_or_else(|| "Recording not found".to_owned())?;
 
-    repository
-        .update_recording_title(&input.recording_id, title)
-        .map_err(|error| error.to_string())?;
-    let artifact_directory = PathBuf::from(recording.artifact_directory);
-
-    rewrite_raw_transcript_title(&artifact_directory, title)?;
-    rewrite_diarized_transcript_title(&artifact_directory, title)?;
+    rename_recording_outputs(&mut repository, &recording, title)?;
     let snapshot = repository.snapshot().map_err(|error| error.to_string())?;
 
     emit_snapshot_update(&app, &snapshot);
 
     Ok(snapshot)
+}
+
+pub(crate) fn rename_recording_outputs(
+    repository: &mut AppRepository,
+    recording: &Recording,
+    title: &str,
+) -> Result<(), String> {
+    let current_directory = PathBuf::from(&recording.artifact_directory);
+    let target_directory =
+        renamed_artifact_directory(&current_directory, &recording.started_at, title);
+    let artifact_directory = rename_artifact_directory(&current_directory, &target_directory)?;
+
+    repository
+        .update_recording_title_and_artifact_directory(
+            &recording.id,
+            title,
+            &current_directory,
+            &artifact_directory,
+        )
+        .map_err(|error| error.to_string())?;
+    rewrite_raw_transcript_title(&artifact_directory, title)?;
+    rewrite_diarized_transcript_title(&artifact_directory, title)
 }
 
 #[tauri::command]
@@ -195,7 +212,7 @@ pub fn start_recording_session(
     let recording_id = format!("recording-{started_at}");
     let artifact_directory = artifact_directory(&settings.output_directory, started_at, &title);
 
-    fs::create_dir_all(&artifact_directory).map_err(|error| error.to_string())?;
+    fs::create_dir_all(meta_directory(&artifact_directory)).map_err(|error| error.to_string())?;
     capture_backend.start(&recording_id, &settings)?;
 
     let recording = NewRecording {

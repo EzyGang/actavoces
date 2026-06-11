@@ -3,9 +3,14 @@ use std::fs;
 use std::path::Path;
 
 use crate::app::commands::{
-    resume_pipeline_jobs, rewrite_speaker_label, start_recording_session, stop_recording_session,
+    rename_recording_outputs, resume_pipeline_jobs, rewrite_speaker_label, start_recording_session,
+    stop_recording_session,
 };
-use crate::artifacts::{artifact_directory, capture_artifacts_with_readiness};
+use crate::artifacts::{
+    artifact_directory, capture_artifacts_with_readiness, diarization_path,
+    diarized_transcript_path, microphone_audio_path, mixed_audio_path, raw_segments_path,
+    raw_transcript_path, summary_path,
+};
 use crate::capture::audio::{
     dedupe_capture_devices, is_default_system_source_name, is_system_monitor_device_name,
     mixed_recording_source, AudioCaptureBackend, FileAudioCaptureBackend, FinalizedSource,
@@ -35,10 +40,7 @@ fn artifact_directory_uses_date_layout_and_stable_slug() {
 
     assert_eq!(
         path,
-        Path::new("/tmp/records")
-            .join("2024")
-            .join("06")
-            .join("2024-06-09-130012-untitled-meeting")
+        Path::new("/tmp/records").join("2024-06-09-1300-untitled-meeting")
     );
 }
 
@@ -455,14 +457,14 @@ fn capture_backend_writes_non_empty_audio_files() {
         .unwrap();
     capture_backend.stop("recording-3", &artifact_path).unwrap();
 
-    let mixed_file_path = artifact_path.join("recording.wav");
-    let microphone_file_path = artifact_path.join("microphone.wav");
+    let mixed_file_path = mixed_audio_path(&artifact_path);
+    let microphone_file_path = microphone_audio_path(&artifact_path);
 
     assert!(mixed_file_path.exists());
     assert!(microphone_file_path.exists());
     assert!(fs::metadata(mixed_file_path).unwrap().len() > 44);
     assert!(fs::metadata(microphone_file_path).unwrap().len() > 44);
-    assert!(!artifact_path.join("system.wav").exists());
+    assert!(!artifact_path.join("meta").join("system.wav").exists());
 }
 
 #[test]
@@ -616,32 +618,28 @@ fn resume_pipeline_runs_worker_events_and_persists_artifacts() {
             match command {
                 "transcribe.run" => {
                     fs::write(
-                        output_directory.join("raw-segments.json"),
+                        raw_segments_path(&output_directory),
                         "{\"segments\":[{\"start\":0,\"end\":1,\"text\":\"Hello\"}]}\n",
                     )
                     .unwrap();
-                    fs::write(
-                        output_directory.join("raw-transcript.md"),
-                        "# Raw\n\nHello\n",
-                    )
-                    .unwrap();
+                    fs::write(raw_transcript_path(&output_directory), "# Raw\n\nHello\n").unwrap();
 
                     Ok(vec![worker_event(
                         "transcribe.complete",
                         serde_json::json!({
-                            "segmentsPath": output_directory.join("raw-segments.json"),
-                            "transcriptPath": output_directory.join("raw-transcript.md"),
+                            "segmentsPath": raw_segments_path(&output_directory),
+                            "transcriptPath": raw_transcript_path(&output_directory),
                         }),
                     )])
                 }
                 "diarize.run" => {
                     fs::write(
-                        output_directory.join("diarization.json"),
+                        diarization_path(&output_directory),
                         "{\"turns\":[{\"speaker\":\"Speaker 1\",\"start\":0,\"end\":1}]}\n",
                     )
                     .unwrap();
                     fs::write(
-                        output_directory.join("diarized-transcript.md"),
+                        diarized_transcript_path(&output_directory),
                         "# Diarized\n\nHello\n",
                     )
                     .unwrap();
@@ -649,8 +647,8 @@ fn resume_pipeline_runs_worker_events_and_persists_artifacts() {
                     Ok(vec![worker_event(
                         "diarize.complete",
                         serde_json::json!({
-                            "diarizationPath": output_directory.join("diarization.json"),
-                            "transcriptPath": output_directory.join("diarized-transcript.md"),
+                            "diarizationPath": diarization_path(&output_directory),
+                            "transcriptPath": diarized_transcript_path(&output_directory),
                         }),
                     )])
                 }
@@ -760,32 +758,28 @@ fn resume_pipeline_sends_snake_case_summary_payload_without_required_api_key() {
             match command {
                 "transcribe.run" => {
                     fs::write(
-                        output_directory.join("raw-segments.json"),
+                        raw_segments_path(&output_directory),
                         "{\"segments\":[{\"start\":0,\"end\":1,\"text\":\"Hello\"}]}\n",
                     )
                     .unwrap();
-                    fs::write(
-                        output_directory.join("raw-transcript.md"),
-                        "# Raw\n\nHello\n",
-                    )
-                    .unwrap();
+                    fs::write(raw_transcript_path(&output_directory), "# Raw\n\nHello\n").unwrap();
 
                     Ok(vec![worker_event(
                         "transcribe.complete",
                         serde_json::json!({
-                            "segmentsPath": output_directory.join("raw-segments.json"),
-                            "transcriptPath": output_directory.join("raw-transcript.md"),
+                            "segmentsPath": raw_segments_path(&output_directory),
+                            "transcriptPath": raw_transcript_path(&output_directory),
                         }),
                     )])
                 }
                 "diarize.run" => {
                     fs::write(
-                        output_directory.join("diarization.json"),
+                        diarization_path(&output_directory),
                         "{\"turns\":[{\"speaker\":\"Speaker 1\",\"start\":0,\"end\":1}]}\n",
                     )
                     .unwrap();
                     fs::write(
-                        output_directory.join("diarized-transcript.md"),
+                        diarized_transcript_path(&output_directory),
                         "# Diarized\n\nHello\n",
                     )
                     .unwrap();
@@ -793,20 +787,20 @@ fn resume_pipeline_sends_snake_case_summary_payload_without_required_api_key() {
                     Ok(vec![worker_event(
                         "diarize.complete",
                         serde_json::json!({
-                            "diarizationPath": output_directory.join("diarization.json"),
-                            "transcriptPath": output_directory.join("diarized-transcript.md"),
+                            "diarizationPath": diarization_path(&output_directory),
+                            "transcriptPath": diarized_transcript_path(&output_directory),
                         }),
                     )])
                 }
                 "summarize.run" => {
                     observed_summary_payload = Some(payload);
-                    fs::write(output_directory.join("summary.md"), "# Summary\n\nDone\n").unwrap();
+                    fs::write(summary_path(&output_directory), "# Summary\n\nDone\n").unwrap();
 
                     Ok(vec![worker_event(
                         "summarize.complete",
                         serde_json::json!({
-                            "summaryPath": output_directory.join("summary.md"),
-                            "title": "Meeting",
+                            "summaryPath": summary_path(&output_directory),
+                            "title": "Launch",
                         }),
                     )])
                 }
@@ -829,6 +823,23 @@ fn resume_pipeline_sends_snake_case_summary_payload_without_required_api_key() {
     assert!(payload.get("providerBaseUrl").is_none());
     assert!(payload.get("apiKey").is_none());
     assert!(payload.get("titlePrompt").is_none());
+
+    let snapshot = repository.snapshot().unwrap();
+    let recording = &snapshot.recordings[0];
+
+    assert_eq!(recording.title, "Launch");
+    assert!(Path::new(&recording.artifact_directory).ends_with("1970-01-01-0000-launch"));
+    assert!(summary_path(Path::new(&recording.artifact_directory)).exists());
+    assert!(fs::read_to_string(raw_transcript_path(Path::new(
+        &recording.artifact_directory
+    )))
+    .unwrap()
+    .starts_with("# Raw transcript - Launch"));
+    assert!(fs::read_to_string(diarized_transcript_path(Path::new(
+        &recording.artifact_directory
+    )))
+    .unwrap()
+    .starts_with("# Diarized transcript - Launch"));
 }
 
 #[test]
@@ -859,12 +870,12 @@ fn speaker_label_rename_rewrites_diarization_artifacts() {
         )
         .unwrap();
     fs::write(
-        artifact_path.join("raw-segments.json"),
+        raw_segments_path(&artifact_path),
         "{\"segments\":[{\"start\":0,\"end\":4,\"text\":\"Hello there\"}]}\n",
     )
     .unwrap();
     fs::write(
-        artifact_path.join("diarization.json"),
+        diarization_path(&artifact_path),
         "{\"turns\":[{\"speaker\":\"Speaker 1\",\"start\":0,\"end\":4}]}\n",
     )
     .unwrap();
@@ -880,14 +891,78 @@ fn speaker_label_rename_rewrites_diarization_artifacts() {
     )
     .unwrap();
 
-    let diarization = fs::read_to_string(artifact_path.join("diarization.json")).unwrap();
-    let transcript = fs::read_to_string(artifact_path.join("diarized-transcript.md")).unwrap();
+    let diarization = fs::read_to_string(diarization_path(&artifact_path)).unwrap();
+    let transcript = fs::read_to_string(diarized_transcript_path(&artifact_path)).unwrap();
     let snapshot = repository.snapshot().unwrap();
 
     assert!(diarization.contains("\"speaker\": \"Alice\""));
     assert!(transcript.contains("## Alice"));
     assert!(transcript.contains("Hello there"));
     assert_eq!(snapshot.recordings[0].speaker_labels[0].name, "Alice");
+}
+
+#[test]
+fn recording_title_rename_moves_artifact_folder_and_updates_transcript_headers() {
+    let database_path = test_database_path("title-rename");
+    let artifact_path = test_artifact_path("title-rename-artifacts");
+    let mut repository = AppRepository::open(&database_path).unwrap();
+    let mut capture_backend = FileAudioCaptureBackend::default();
+    let recording = NewRecording {
+        id: "recording-title".to_owned(),
+        title: "Meeting".to_owned(),
+        started_at: "1".to_owned(),
+        artifact_directory: artifact_path.display().to_string(),
+    };
+
+    capture_backend
+        .start(&recording.id, &repository.settings().unwrap())
+        .unwrap();
+    repository.create_recording(recording.clone()).unwrap();
+    let capture_result = capture_backend.stop(&recording.id, &artifact_path).unwrap();
+    repository
+        .finish_recording(
+            &recording.id,
+            "2".to_owned(),
+            1,
+            capture_result.errors,
+            &capture_result.artifacts,
+        )
+        .unwrap();
+    fs::write(
+        raw_transcript_path(&artifact_path),
+        "# Raw transcript - Meeting\n\nHello\n",
+    )
+    .unwrap();
+    fs::write(
+        diarized_transcript_path(&artifact_path),
+        "# Diarized transcript - Meeting\n\nHello\n",
+    )
+    .unwrap();
+
+    let recording = repository.recording_by_id(&recording.id).unwrap().unwrap();
+
+    rename_recording_outputs(&mut repository, &recording, "Weekly Planning").unwrap();
+
+    let snapshot = repository.snapshot().unwrap();
+    let recording = &snapshot.recordings[0];
+    let artifact_directory = Path::new(&recording.artifact_directory);
+
+    assert_eq!(recording.title, "Weekly Planning");
+    assert!(artifact_directory.ends_with("1970-01-01-0000-weekly-planning"));
+    assert!(!artifact_path.exists());
+    assert!(mixed_audio_path(artifact_directory).exists());
+    assert!(fs::read_to_string(raw_transcript_path(artifact_directory))
+        .unwrap()
+        .starts_with("# Raw transcript - Weekly Planning"));
+    assert!(
+        fs::read_to_string(diarized_transcript_path(artifact_directory))
+            .unwrap()
+            .starts_with("# Diarized transcript - Weekly Planning")
+    );
+    assert!(recording
+        .artifacts
+        .iter()
+        .all(|artifact| artifact.path.contains("1970-01-01-0000-weekly-planning")));
 }
 
 #[test]

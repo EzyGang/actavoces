@@ -8,6 +8,8 @@ use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
 
+use crate::artifacts::{diarization_path, diarized_transcript_path, meta_directory};
+
 pub(crate) use setup::prepare_sortformer_diarization;
 
 const SORTFORMER_MODEL_FILE: &str = "diar_streaming_sortformer_4spk-v2.1.onnx";
@@ -53,7 +55,7 @@ pub(crate) fn run_sortformer_diarization(
         ));
     }
 
-    fs::create_dir_all(output_directory).map_err(|error| error.to_string())?;
+    fs::create_dir_all(meta_directory(output_directory)).map_err(|error| error.to_string())?;
 
     prepare_sortformer_diarization(model_storage_directory, |_| {})?;
     let model_path = model_storage_directory.join(SORTFORMER_MODEL_FILE);
@@ -67,7 +69,7 @@ pub(crate) fn run_single_speaker_diarization(
     segments: &[TranscriptSegment],
     title: &str,
 ) -> Result<SortformerDiarizationOutput, String> {
-    fs::create_dir_all(output_directory).map_err(|error| error.to_string())?;
+    fs::create_dir_all(meta_directory(output_directory)).map_err(|error| error.to_string())?;
 
     write_diarization_output(
         output_directory,
@@ -83,8 +85,8 @@ fn write_diarization_output(
     turns: Vec<SpeakerTurn>,
     title: &str,
 ) -> Result<SortformerDiarizationOutput, String> {
-    let diarization_path = output_directory.join("diarization.json");
-    let transcript_path = output_directory.join("diarized-transcript.md");
+    let diarization_path = diarization_path(output_directory);
+    let transcript_path = diarized_transcript_path(output_directory);
 
     write_json(
         &diarization_path,

@@ -8,9 +8,14 @@ use std::sync::{Arc, Mutex};
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use serde::Serialize;
 
-use crate::artifacts::capture_artifacts_with_readiness;
+#[cfg(test)]
+use crate::artifacts::mixed_audio_path;
 #[cfg(test)]
 use crate::artifacts::write_test_wav_file;
+use crate::artifacts::{
+    capture_artifacts_with_readiness, job_log_path, meta_directory, metadata_path,
+    microphone_audio_path,
+};
 use crate::domain::types::*;
 pub(crate) trait AudioCaptureBackend {
     fn start(&mut self, recording_id: &str, settings: &AppSettings) -> Result<(), String>;
@@ -51,9 +56,10 @@ impl AudioCaptureBackend for FileAudioCaptureBackend {
             return Err("Capture backend does not have an active session".to_owned());
         }
 
-        fs::create_dir_all(artifact_directory).map_err(|error| error.to_string())?;
-        write_test_wav_file(&artifact_directory.join("recording.wav"), 440)?;
-        write_test_wav_file(&artifact_directory.join("microphone.wav"), 880)?;
+        fs::create_dir_all(meta_directory(artifact_directory))
+            .map_err(|error| error.to_string())?;
+        write_test_wav_file(&mixed_audio_path(artifact_directory), 440)?;
+        write_test_wav_file(&microphone_audio_path(artifact_directory), 880)?;
         write_capture_metadata(
             artifact_directory,
             "file",
@@ -63,7 +69,7 @@ impl AudioCaptureBackend for FileAudioCaptureBackend {
             ],
         )?;
         fs::write(
-            artifact_directory.join("job-log.jsonl"),
+            job_log_path(artifact_directory),
             "{\"stage\":\"recording\",\"status\":\"complete\",\"message\":\"capture stopped\"}\n",
         )
         .map_err(|error| error.to_string())?;
@@ -197,7 +203,8 @@ impl AudioCaptureBackend for NativeAudioCaptureBackend {
             .remove(recording_id)
             .ok_or_else(|| "Capture backend does not have an active session".to_owned())?;
 
-        fs::create_dir_all(artifact_directory).map_err(|error| error.to_string())?;
+        fs::create_dir_all(meta_directory(artifact_directory))
+            .map_err(|error| error.to_string())?;
 
         let mut errors = session.errors;
         let microphone = finalize_native_source(&session.microphone)?;
@@ -206,7 +213,7 @@ impl AudioCaptureBackend for NativeAudioCaptureBackend {
         append_stream_errors(&mut errors, &session.microphone);
         append_stream_errors(&mut errors, &session.system);
         if let Some(microphone) = microphone.as_ref() {
-            write_pcm_wav_file(&artifact_directory.join("microphone.wav"), microphone)?;
+            write_pcm_wav_file(&microphone_audio_path(artifact_directory), microphone)?;
         }
         write_mixed_recording(
             artifact_directory,
@@ -716,7 +723,7 @@ pub(crate) fn write_mixed_recording(
         return Err("No captured audio source is available for mixed recording".to_owned());
     };
 
-    write_pcm_wav_file(&artifact_directory.join(file_name), &source)
+    write_pcm_wav_file(&meta_directory(artifact_directory).join(file_name), &source)
 }
 
 pub(crate) fn mixed_recording_source(
@@ -850,7 +857,7 @@ pub(crate) fn write_job_log(path: &Path, errors: &[CaptureError]) -> Result<(), 
         .collect::<Vec<_>>()
         .join("\n");
 
-    fs::write(path.join("job-log.jsonl"), format!("{content}\n")).map_err(|error| error.to_string())
+    fs::write(job_log_path(path), format!("{content}\n")).map_err(|error| error.to_string())
 }
 
 pub(crate) fn write_capture_metadata(
@@ -864,7 +871,7 @@ pub(crate) fn write_capture_metadata(
     });
 
     fs::write(
-        artifact_directory.join("metadata.json"),
+        metadata_path(artifact_directory),
         serde_json::to_string_pretty(&metadata).map_err(|error| error.to_string())?,
     )
     .map_err(|error| error.to_string())

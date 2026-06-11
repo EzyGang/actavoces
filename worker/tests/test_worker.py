@@ -76,7 +76,7 @@ async def test_transcribe_run_writes_supplied_segments(tmp_path: Path) -> None:
     transcript = (tmp_path / 'raw-transcript.md').read_text()
     assert '# Raw transcript - Planning Call' in transcript
     assert 'Hello' in transcript
-    assert (tmp_path / 'raw-segments.json').exists()
+    assert (tmp_path / 'meta' / 'raw-segments.json').exists()
 
 
 async def test_transcribe_run_reports_missing_audio() -> None:
@@ -299,7 +299,7 @@ async def test_diarize_run_completes_exact_single_speaker(tmp_path: Path) -> Non
     transcript = (tmp_path / 'diarized-transcript.md').read_text()
     assert '# Diarized transcript - Planning Call' in transcript
     assert 'Speaker 1' in transcript
-    assert (tmp_path / 'diarization.json').exists()
+    assert (tmp_path / 'meta' / 'diarization.json').exists()
 
 
 async def test_diarize_run_reports_backend_specific_setup(tmp_path: Path) -> None:
@@ -464,7 +464,7 @@ async def test_summarize_writes_provider_summary(mocker: MockerFixture, tmp_path
     events = await handle(command)
 
     assert events[-1].event == 'summarize.complete'
-    assert 'Meeting notes' in (tmp_path / 'summary.md').read_text()
+    assert 'Meeting notes' in (tmp_path / 'meta' / 'summary.md').read_text()
 
 
 def test_build_summary_agent_uses_openai_compatible_provider() -> None:

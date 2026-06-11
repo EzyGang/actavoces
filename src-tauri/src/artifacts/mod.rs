@@ -3,6 +3,9 @@ use std::path::{Path, PathBuf};
 
 use crate::domain::types::*;
 use crate::utils::civil_datetime;
+
+const META_DIRECTORY: &str = "meta";
+
 pub(crate) fn recording_stages() -> Vec<PipelineStage> {
     vec![
         stage(PipelineStageId::Recording, PipelineStageStatus::Running, 10),
@@ -65,57 +68,47 @@ pub(crate) fn capture_artifacts_with_readiness(
         artifact(
             ArtifactKind::Audio,
             "Mixed WAV",
-            path.join("recording.wav"),
+            mixed_audio_path(path),
             mixed_ready,
         ),
         artifact(
             ArtifactKind::MicrophoneAudio,
             "Microphone WAV",
-            path.join("microphone.wav"),
+            microphone_audio_path(path),
             microphone_ready,
         ),
         artifact(
             ArtifactKind::RawTranscript,
             "Raw transcript",
-            path.join("raw-transcript.md"),
+            raw_transcript_path(path),
             false,
         ),
         artifact(
             ArtifactKind::Segments,
             "Raw segments",
-            path.join("raw-segments.json"),
+            raw_segments_path(path),
             false,
         ),
         artifact(
             ArtifactKind::Diarization,
             "Diarization turns",
-            path.join("diarization.json"),
+            diarization_path(path),
             false,
         ),
         artifact(
             ArtifactKind::DiarizedTranscript,
             "Diarized transcript",
-            path.join("diarized-transcript.md"),
+            diarized_transcript_path(path),
             false,
         ),
-        artifact(
-            ArtifactKind::Summary,
-            "Summary",
-            path.join("summary.md"),
-            false,
-        ),
+        artifact(ArtifactKind::Summary, "Summary", summary_path(path), false),
         artifact(
             ArtifactKind::Metadata,
             "Metadata",
-            path.join("metadata.json"),
+            metadata_path(path),
             true,
         ),
-        artifact(
-            ArtifactKind::JobLog,
-            "Job log",
-            path.join("job-log.jsonl"),
-            true,
-        ),
+        artifact(ArtifactKind::JobLog, "Job log", job_log_path(path), true),
     ]
 }
 
@@ -130,15 +123,82 @@ pub(crate) fn artifact(kind: ArtifactKind, label: &str, path: PathBuf, ready: bo
 
 pub(crate) fn artifact_directory(output_directory: &str, started_at: u64, title: &str) -> PathBuf {
     let date = civil_datetime(started_at);
-    let slug = slugify(title);
+    let slug = title_slug(title);
 
-    PathBuf::from(output_directory)
-        .join(format!("{:04}", date.year))
-        .join(format!("{:02}", date.month))
-        .join(format!(
-            "{:04}-{:02}-{:02}-{:02}{:02}{:02}-{slug}",
-            date.year, date.month, date.day, date.hour, date.minute, date.second,
-        ))
+    PathBuf::from(output_directory).join(format!(
+        "{:04}-{:02}-{:02}-{:02}{:02}-{slug}",
+        date.year, date.month, date.day, date.hour, date.minute,
+    ))
+}
+
+pub(crate) fn renamed_artifact_directory(
+    current_directory: &Path,
+    started_at: &str,
+    title: &str,
+) -> PathBuf {
+    let root = current_directory.parent().unwrap_or_else(|| Path::new("."));
+    let started_at = started_at.parse::<u64>().unwrap_or_default();
+
+    artifact_directory(&root.display().to_string(), started_at, title)
+}
+
+pub(crate) fn rename_artifact_directory(
+    current_directory: &Path,
+    target_directory: &Path,
+) -> Result<PathBuf, String> {
+    if current_directory == target_directory {
+        return Ok(current_directory.to_path_buf());
+    }
+
+    if let Some(parent) = target_directory.parent() {
+        fs::create_dir_all(parent).map_err(|error| error.to_string())?;
+    }
+
+    let target_directory = available_directory(target_directory);
+
+    fs::rename(current_directory, &target_directory).map_err(|error| error.to_string())?;
+
+    Ok(target_directory)
+}
+
+pub(crate) fn meta_directory(artifact_directory: &Path) -> PathBuf {
+    artifact_directory.join(META_DIRECTORY)
+}
+
+pub(crate) fn mixed_audio_path(artifact_directory: &Path) -> PathBuf {
+    meta_directory(artifact_directory).join("recording.wav")
+}
+
+pub(crate) fn microphone_audio_path(artifact_directory: &Path) -> PathBuf {
+    meta_directory(artifact_directory).join("microphone.wav")
+}
+
+pub(crate) fn raw_transcript_path(artifact_directory: &Path) -> PathBuf {
+    artifact_directory.join("raw-transcript.md")
+}
+
+pub(crate) fn raw_segments_path(artifact_directory: &Path) -> PathBuf {
+    meta_directory(artifact_directory).join("raw-segments.json")
+}
+
+pub(crate) fn diarization_path(artifact_directory: &Path) -> PathBuf {
+    meta_directory(artifact_directory).join("diarization.json")
+}
+
+pub(crate) fn diarized_transcript_path(artifact_directory: &Path) -> PathBuf {
+    artifact_directory.join("diarized-transcript.md")
+}
+
+pub(crate) fn summary_path(artifact_directory: &Path) -> PathBuf {
+    meta_directory(artifact_directory).join("summary.md")
+}
+
+pub(crate) fn metadata_path(artifact_directory: &Path) -> PathBuf {
+    meta_directory(artifact_directory).join("metadata.json")
+}
+
+pub(crate) fn job_log_path(artifact_directory: &Path) -> PathBuf {
+    meta_directory(artifact_directory).join("job-log.jsonl")
 }
 
 pub(crate) fn rewrite_raw_transcript_title(
@@ -146,7 +206,7 @@ pub(crate) fn rewrite_raw_transcript_title(
     title: &str,
 ) -> Result<(), String> {
     rewrite_markdown_title(
-        &artifact_directory.join("raw-transcript.md"),
+        &raw_transcript_path(artifact_directory),
         "Raw transcript",
         title,
     )
@@ -157,7 +217,7 @@ pub(crate) fn rewrite_diarized_transcript_title(
     title: &str,
 ) -> Result<(), String> {
     rewrite_markdown_title(
-        &artifact_directory.join("diarized-transcript.md"),
+        &diarized_transcript_path(artifact_directory),
         "Diarized transcript",
         title,
     )
@@ -178,6 +238,38 @@ pub(crate) fn slugify(value: &str) -> String {
     }
 
     slug.trim_matches('-').to_owned()
+}
+
+fn title_slug(value: &str) -> String {
+    match slugify(value) {
+        slug if slug.is_empty() => "untitled".to_owned(),
+        slug => slug,
+    }
+}
+
+fn available_directory(directory: &Path) -> PathBuf {
+    if !directory.exists() {
+        return directory.to_path_buf();
+    }
+
+    for suffix in 2.. {
+        let candidate = suffixed_directory(directory, suffix);
+
+        if !candidate.exists() {
+            return candidate;
+        }
+    }
+
+    unreachable!("unbounded directory suffix search must return")
+}
+
+fn suffixed_directory(directory: &Path, suffix: u32) -> PathBuf {
+    let name = directory
+        .file_name()
+        .and_then(|value| value.to_str())
+        .unwrap_or("recording");
+
+    directory.with_file_name(format!("{name}-{suffix}"))
 }
 
 fn rewrite_markdown_title(path: &Path, prefix: &str, title: &str) -> Result<(), String> {

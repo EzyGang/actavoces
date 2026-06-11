@@ -3,7 +3,7 @@ use std::path::{Path, PathBuf};
 
 use rusqlite::{params, Connection, OptionalExtension};
 
-use crate::artifacts::{recording_stages, stage_label, stage_message};
+use crate::artifacts::{diarization_path, recording_stages, stage_label, stage_message};
 use crate::capture::audio::capture_devices;
 use crate::domain::types::*;
 use crate::settings::{
@@ -1080,21 +1080,47 @@ impl AppRepository {
         Ok(())
     }
 
-    pub(crate) fn update_recording_title(
+    pub(crate) fn update_recording_title_and_artifact_directory(
         &mut self,
         recording_id: &str,
         title: &str,
+        current_directory: &Path,
+        artifact_directory: &Path,
     ) -> rusqlite::Result<()> {
-        self.connection.execute(
+        let artifacts = self.artifacts(recording_id)?;
+        let transaction = self.connection.transaction()?;
+
+        transaction.execute(
             "
             UPDATE recordings
-            SET title = ?1
-            WHERE id = ?2
+            SET title = ?1,
+                artifact_directory = ?2
+            WHERE id = ?3
             ",
-            params![title, recording_id],
+            params![
+                title,
+                artifact_directory.display().to_string(),
+                recording_id
+            ],
         )?;
 
-        Ok(())
+        for artifact in artifacts {
+            transaction.execute(
+                "
+                UPDATE recording_artifacts
+                SET path = ?1
+                WHERE recording_id = ?2
+                    AND kind = ?3
+                ",
+                params![
+                    renamed_artifact_path(&artifact.path, current_directory, artifact_directory),
+                    recording_id,
+                    enum_value(artifact.kind)?,
+                ],
+            )?;
+        }
+
+        transaction.commit()
     }
 
     pub(crate) fn append_event(
@@ -1377,7 +1403,7 @@ impl AppRepository {
 }
 
 fn speaker_labels(artifact_directory: &str) -> Vec<SpeakerLabel> {
-    let path = PathBuf::from(artifact_directory).join("diarization.json");
+    let path = diarization_path(&PathBuf::from(artifact_directory));
     let Ok(content) = fs::read_to_string(path) else {
         return Vec::new();
     };
@@ -1402,6 +1428,19 @@ fn speaker_labels(artifact_directory: &str) -> Vec<SpeakerLabel> {
     }
 
     labels
+}
+
+fn renamed_artifact_path(
+    path: &str,
+    current_directory: &Path,
+    artifact_directory: &Path,
+) -> String {
+    let path = PathBuf::from(path);
+
+    match path.strip_prefix(current_directory) {
+        Ok(relative_path) => artifact_directory.join(relative_path).display().to_string(),
+        Err(_) => path.display().to_string(),
+    }
 }
 
 fn secret_configured(value: &str) -> bool {

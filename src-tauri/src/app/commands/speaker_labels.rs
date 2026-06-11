@@ -1,6 +1,7 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
+use crate::artifacts::{diarization_path, diarized_transcript_path, raw_segments_path};
 use crate::domain::types::{Recording, SpeakerRenameInput};
 
 pub fn rewrite_speaker_label(
@@ -19,9 +20,9 @@ pub fn rewrite_speaker_label(
     }
 
     let artifact_directory = PathBuf::from(&recording.artifact_directory);
-    let diarization_path = artifact_directory.join("diarization.json");
-    let raw_segments_path = artifact_directory.join("raw-segments.json");
-    let transcript_path = artifact_directory.join("diarized-transcript.md");
+    let diarization_path = diarization_path(&artifact_directory);
+    let raw_segments_path = raw_segments_path(&artifact_directory);
+    let transcript_path = diarized_transcript_path(&artifact_directory);
     let mut diarization = read_structured_artifact::<DiarizationArtifact>(&diarization_path)?;
     let segments = read_structured_artifact::<SegmentsArtifact>(&raw_segments_path)?.segments;
     let mut changed = false;

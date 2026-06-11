@@ -16,6 +16,8 @@ pub use tray::{init_tray, sync_tray_recording_icon};
 #[cfg(test)]
 pub(crate) use pipeline::resume_pipeline_jobs;
 #[cfg(test)]
-pub(crate) use recordings::{start_recording_session, stop_recording_session};
+pub(crate) use recordings::{
+    rename_recording_outputs, start_recording_session, stop_recording_session,
+};
 #[cfg(test)]
 pub(crate) use speaker_labels::rewrite_speaker_label;
