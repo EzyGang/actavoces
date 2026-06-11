@@ -1,15 +1,12 @@
 use std::path::Path;
 
-use keyring_core::{Entry, Error as KeyringError};
-
 use crate::domain::types::*;
 use crate::utils::{default_model_storage_root, default_records_root, option_number_to_string};
 pub(crate) const DEFAULT_TITLE_PROMPT: &str = "Create a concise meeting title from the transcript.";
 pub(crate) const DEFAULT_SUMMARY_PROMPT: &str =
     "Summarize decisions, action items, risks, and unanswered questions.";
-pub(crate) const KEYCHAIN_SERVICE: &str = "com.actavoces.desktop";
-pub(crate) const SUMMARY_PROVIDER_API_KEY_ACCOUNT: &str = "summary-provider-api-key";
-pub(crate) const HUGGING_FACE_TOKEN_ACCOUNT: &str = "hugging-face-token";
+pub(crate) const SUMMARY_PROVIDER_API_KEY_SETTING: &str = "providerApiKey";
+pub(crate) const HUGGING_FACE_TOKEN_SETTING: &str = "huggingFaceToken";
 
 pub(crate) fn default_settings(database_path: &Path) -> AppSettings {
     AppSettings {
@@ -204,98 +201,4 @@ pub(crate) fn summary_provider_configured_for(
         && !provider_base_url.trim().is_empty()
         && !provider_model.trim().is_empty()
         && provider_api_key_configured
-}
-
-pub(crate) fn update_summary_provider_api_key(input: &AppSettingsUpdate) -> Result<bool, String> {
-    let provider_api_key = input.provider_api_key.as_deref().unwrap_or_default().trim();
-
-    if provider_api_key.is_empty() {
-        return Ok(summary_provider_api_key_configured());
-    }
-
-    summary_provider_entry()?
-        .set_password(provider_api_key)
-        .map_err(|error| format!("Unable to store provider API key: {error}"))?;
-
-    Ok(true)
-}
-
-pub(crate) fn clear_summary_provider_secret() -> Result<(), String> {
-    let entry = summary_provider_entry()?;
-
-    match entry.delete_credential() {
-        Ok(()) | Err(KeyringError::NoEntry) => Ok(()),
-        Err(error) => Err(format!("Unable to clear provider API key: {error}")),
-    }
-}
-
-pub(crate) fn summary_provider_api_key_configured() -> bool {
-    match read_summary_provider_api_key() {
-        Ok(Some(api_key)) => !api_key.trim().is_empty(),
-        Ok(None) | Err(_) => false,
-    }
-}
-
-pub(crate) fn read_summary_provider_api_key() -> Result<Option<String>, String> {
-    let entry = summary_provider_entry()?;
-
-    match entry.get_password() {
-        Ok(api_key) => Ok(Some(api_key)),
-        Err(KeyringError::NoEntry) => Ok(None),
-        Err(error) => Err(format!("Unable to read provider API key: {error}")),
-    }
-}
-
-pub(crate) fn summary_provider_entry() -> Result<Entry, String> {
-    keyring::use_native_store(false)
-        .map_err(|error| format!("Unable to access the native keychain: {error}"))?;
-    Entry::new(KEYCHAIN_SERVICE, SUMMARY_PROVIDER_API_KEY_ACCOUNT)
-        .map_err(|error| format!("Unable to open provider API key entry: {error}"))
-}
-
-pub(crate) fn update_hugging_face_token(token: Option<&str>) -> Result<bool, String> {
-    let token = token.unwrap_or_default().trim();
-
-    if token.is_empty() {
-        return Ok(hugging_face_token_configured());
-    }
-
-    hugging_face_entry()?
-        .set_password(token)
-        .map_err(|error| format!("Unable to store Hugging Face token: {error}"))?;
-
-    Ok(true)
-}
-
-pub(crate) fn clear_hugging_face_secret() -> Result<(), String> {
-    let entry = hugging_face_entry()?;
-
-    match entry.delete_credential() {
-        Ok(()) | Err(KeyringError::NoEntry) => Ok(()),
-        Err(error) => Err(format!("Unable to clear Hugging Face token: {error}")),
-    }
-}
-
-pub(crate) fn hugging_face_token_configured() -> bool {
-    match read_hugging_face_token() {
-        Ok(Some(token)) => !token.trim().is_empty(),
-        Ok(None) | Err(_) => false,
-    }
-}
-
-pub(crate) fn read_hugging_face_token() -> Result<Option<String>, String> {
-    let entry = hugging_face_entry()?;
-
-    match entry.get_password() {
-        Ok(token) => Ok(Some(token)),
-        Err(KeyringError::NoEntry) => Ok(None),
-        Err(error) => Err(format!("Unable to read Hugging Face token: {error}")),
-    }
-}
-
-pub(crate) fn hugging_face_entry() -> Result<Entry, String> {
-    keyring::use_native_store(false)
-        .map_err(|error| format!("Unable to access the native keychain: {error}"))?;
-    Entry::new(KEYCHAIN_SERVICE, HUGGING_FACE_TOKEN_ACCOUNT)
-        .map_err(|error| format!("Unable to open Hugging Face token entry: {error}"))
 }

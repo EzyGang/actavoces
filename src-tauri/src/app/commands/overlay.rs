@@ -1,4 +1,4 @@
-use tauri::{Manager, PhysicalPosition, PhysicalSize, WebviewUrl};
+use tauri::{LogicalSize, Manager, PhysicalPosition, PhysicalSize, Size, WebviewUrl};
 
 use crate::domain::types::{OverlayDisplayMode, OverlayPosition};
 
@@ -9,7 +9,7 @@ pub fn create_recording_overlay(app: &tauri::App) -> tauri::Result<()> {
         WebviewUrl::App("index.html".into()),
     )
     .title("ActaVoces recording")
-    .inner_size(260.0, 84.0)
+    .inner_size(380.0, 72.0)
     .position(24.0, 24.0)
     .decorations(false)
     .resizable(false)
@@ -45,9 +45,9 @@ fn size_recording_overlay(
     display_mode: OverlayDisplayMode,
 ) -> Result<(), String> {
     let size = match display_mode {
-        OverlayDisplayMode::Full => PhysicalSize::new(260, 84),
-        OverlayDisplayMode::Minimal => PhysicalSize::new(48, 48),
-        OverlayDisplayMode::None => PhysicalSize::new(260, 84),
+        OverlayDisplayMode::Full => Size::Logical(LogicalSize::new(380.0, 72.0)),
+        OverlayDisplayMode::Minimal => Size::Physical(PhysicalSize::new(64, 64)),
+        OverlayDisplayMode::None => Size::Logical(LogicalSize::new(380.0, 72.0)),
     };
 
     overlay.set_size(size).map_err(|error| error.to_string())

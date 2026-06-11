@@ -157,7 +157,7 @@ fn settings_changes_do_not_rewrite_existing_artifact_paths() {
     let mut repository = AppRepository::open(&database_path).unwrap();
     let update = settings_update(output_a.display().to_string());
 
-    repository.update_settings(update, false, false).unwrap();
+    repository.update_settings(update).unwrap();
 
     let settings = repository.settings().unwrap();
     let artifact_path = artifact_directory(&settings.output_directory, 1_717_938_012, "Meeting");
@@ -184,11 +184,7 @@ fn settings_changes_do_not_rewrite_existing_artifact_paths() {
         )
         .unwrap();
     repository
-        .update_settings(
-            settings_update(output_b.display().to_string()),
-            false,
-            false,
-        )
+        .update_settings(settings_update(output_b.display().to_string()))
         .unwrap();
 
     let snapshot = repository.snapshot().unwrap();
@@ -214,10 +210,66 @@ fn settings_update_creates_configured_storage_directories() {
     let _ = fs::remove_dir_all(&model_directory);
     update.model_storage_directory = model_directory.display().to_string();
 
-    repository.update_settings(update, false, false).unwrap();
+    repository.update_settings(update).unwrap();
 
     assert!(output_directory.exists());
     assert!(model_directory.exists());
+}
+
+#[test]
+fn settings_update_persists_overlay_display_mode() {
+    let database_path = test_database_path("overlay-display-mode-settings");
+    let mut repository = AppRepository::open(&database_path).unwrap();
+    let mut update = settings_update(
+        test_artifact_path("overlay-display-mode-records")
+            .display()
+            .to_string(),
+    );
+
+    update.overlay_display_mode = OverlayDisplayMode::Minimal;
+
+    repository.update_settings(update).unwrap();
+
+    let settings = repository.settings().unwrap();
+
+    assert_eq!(settings.overlay_display_mode, OverlayDisplayMode::Minimal);
+}
+
+#[test]
+fn settings_secrets_are_stored_in_database_settings() {
+    let database_path = test_database_path("settings-secrets");
+    let mut repository = AppRepository::open(&database_path).unwrap();
+    let mut update = settings_update(test_artifact_path("secret-records").display().to_string());
+
+    update.summary_enabled = true;
+    update.provider_model = "gpt-4o-mini".to_owned();
+    update.provider_api_key = Some("provider-secret".to_owned());
+    update.hugging_face_token = Some("hf-secret".to_owned());
+
+    repository.update_settings(update).unwrap();
+
+    let settings = repository.settings().unwrap();
+
+    assert!(settings.provider_api_key_configured);
+    assert!(settings.hugging_face_token_configured);
+    assert_eq!(
+        repository.read_summary_provider_api_key().unwrap(),
+        Some("provider-secret".to_owned())
+    );
+    assert_eq!(
+        repository.read_hugging_face_token().unwrap(),
+        Some("hf-secret".to_owned())
+    );
+
+    repository.clear_summary_provider_api_key().unwrap();
+    repository.clear_hugging_face_token().unwrap();
+
+    let settings = repository.settings().unwrap();
+
+    assert!(!settings.provider_api_key_configured);
+    assert!(!settings.hugging_face_token_configured);
+    assert_eq!(repository.read_summary_provider_api_key().unwrap(), None);
+    assert_eq!(repository.read_hugging_face_token().unwrap(), None);
 }
 
 #[test]
@@ -636,11 +688,9 @@ fn shortcut_lifecycle_uses_recording_start_stop_flow() {
     let mut capture_backend = FileAudioCaptureBackend::default();
 
     repository
-        .update_settings(
-            settings_update(test_artifact_path("shortcut-records").display().to_string()),
-            false,
-            false,
-        )
+        .update_settings(settings_update(
+            test_artifact_path("shortcut-records").display().to_string(),
+        ))
         .unwrap();
     start_recording_session(&mut repository, &mut capture_backend).unwrap();
 
@@ -656,6 +706,36 @@ fn shortcut_lifecycle_uses_recording_start_stop_flow() {
     assert!(stopped_snapshot.active_recording.is_none());
     assert!(!stopped_snapshot.desktop.overlay_visible);
     assert_eq!(stopped_snapshot.recordings.len(), 1);
+}
+
+#[test]
+fn startup_clears_stale_active_recording_state() {
+    let database_path = test_database_path("stale-active-recording");
+    let mut repository = AppRepository::open(&database_path).unwrap();
+    let mut capture_backend = FileAudioCaptureBackend::default();
+
+    repository
+        .update_settings(settings_update(
+            test_artifact_path("stale-active-records")
+                .display()
+                .to_string(),
+        ))
+        .unwrap();
+    start_recording_session(&mut repository, &mut capture_backend).unwrap();
+
+    repository.clear_stale_active_recordings().unwrap();
+
+    let snapshot = repository.snapshot().unwrap();
+    let recording_job = snapshot
+        .jobs
+        .iter()
+        .find(|job| job.stage == PipelineStageId::Recording)
+        .unwrap();
+
+    assert!(snapshot.active_recording.is_none());
+    assert!(!snapshot.desktop.overlay_visible);
+    assert_eq!(snapshot.recordings[0].status, RecordingStatus::Idle);
+    assert_eq!(recording_job.status, PipelineStageStatus::Failed);
 }
 
 #[test]

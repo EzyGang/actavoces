@@ -51,7 +51,10 @@ export const useSettings = ({ setError, setSnapshot }: UseSettingsInput) => {
     setError(null);
 
     try {
-      setSnapshot(await updateAppSettings(draft.value));
+      const snapshot = await updateAppSettings(draft.value);
+
+      setSnapshot(snapshot);
+      resetDraft(snapshot.settings);
     } catch (error) {
       setError(errorMessage(error, 'Unable to save settings'));
     } finally {
@@ -64,7 +67,10 @@ export const useSettings = ({ setError, setSnapshot }: UseSettingsInput) => {
     setError(null);
 
     try {
-      setSnapshot(await clearSummaryProviderApiKey());
+      const snapshot = await clearSummaryProviderApiKey();
+
+      setSnapshot(snapshot);
+      resetDraft(snapshot.settings);
     } catch (error) {
       setError(errorMessage(error, 'Unable to clear provider API key'));
     } finally {
@@ -77,7 +83,10 @@ export const useSettings = ({ setError, setSnapshot }: UseSettingsInput) => {
     setError(null);
 
     try {
-      setSnapshot(await clearHuggingFaceToken());
+      const snapshot = await clearHuggingFaceToken();
+
+      setSnapshot(snapshot);
+      resetDraft(snapshot.settings);
     } catch (error) {
       setError(errorMessage(error, 'Unable to clear Hugging Face token'));
     } finally {

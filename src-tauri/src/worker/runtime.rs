@@ -11,7 +11,6 @@ use serde::{Deserialize, Serialize};
 use tauri::{Emitter, Manager};
 
 use crate::domain::types::*;
-use crate::settings::{read_hugging_face_token, update_hugging_face_token};
 use crate::utils::unix_timestamp;
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub(crate) struct WorkerRuntimeState {
@@ -198,17 +197,17 @@ pub(crate) fn run_diarization_setup(
     bootstrap_worker(app, state)?;
     let paths = worker_runtime_paths(app)?;
     WORKER_RUNTIME_PATHS.get_or_init(|| paths.clone());
-    let hugging_face_token_configured =
-        update_hugging_face_token(input.hugging_face_token.as_deref())?;
-
-    {
+    let api_key = {
         let mut repository = state.repository()?;
         repository
-            .update_hugging_face_token_status(hugging_face_token_configured)
+            .update_hugging_face_token(input.hugging_face_token.as_deref())
             .map_err(|error| error.to_string())?;
-    }
+        repository
+            .read_hugging_face_token()
+            .map_err(|error| error.to_string())?
+    };
 
-    let Some(api_key) = read_hugging_face_token()? else {
+    let Some(api_key) = api_key else {
         return Err("Hugging Face token is required for speaker diarization".to_owned());
     };
 

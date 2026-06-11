@@ -10,7 +10,8 @@ import {
   renameSpeakerLabel,
   retryRecordingJobs,
   startRecording,
-  stopRecording
+  stopRecording,
+  updateAppSettings
 } from '../services/desktop/app.service';
 import { appErrorSignal, appSnapshotSignal } from '../stores/app.store';
 import { setActiveRoute } from '../stores/route.store';
@@ -173,6 +174,7 @@ describe('useApp hook', () => {
     vi.mocked(renameRecordingTitle).mockReset();
     vi.mocked(renameSpeakerLabel).mockReset();
     vi.mocked(bootstrapWorkerRuntime).mockReset();
+    vi.mocked(updateAppSettings).mockReset();
     vi.mocked(open).mockReset();
     resetSignals();
   });
@@ -474,6 +476,41 @@ describe('useApp hook', () => {
       value: 'Missing loopback',
       label: 'Missing loopback'
     });
+  });
+
+  it('saves the status window mode from settings', async () => {
+    vi.mocked(getAppSnapshot).mockResolvedValue(makeSnapshot());
+    vi.mocked(updateAppSettings).mockImplementation(async (input) =>
+      makeSnapshot({
+        settings: {
+          ...baseSettings,
+          overlayDisplayMode: input.overlayDisplayMode
+        }
+      })
+    );
+
+    const { result } = renderHook(() => useApp());
+
+    await waitFor(() => {
+      expect(result.current.settings.captureSelectFields[3].key).toBe('overlayDisplayMode');
+    });
+    await act(async () => {
+      result.current.settings.captureSelectFields[3].onChange({
+        currentTarget: {
+          value: 'minimal'
+        }
+      } as Event & { currentTarget: HTMLSelectElement });
+    });
+    await act(async () => {
+      await result.current.actions.saveSettings();
+    });
+
+    expect(updateAppSettings).toHaveBeenCalledWith(
+      expect.objectContaining({
+        overlayDisplayMode: 'minimal'
+      })
+    );
+    expect(result.current.settings.captureSelectFields[3].value).toBe('minimal');
   });
 
   it('selects folder settings through the native dialog', async () => {

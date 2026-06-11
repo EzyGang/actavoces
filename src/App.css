@@ -50,27 +50,25 @@
 }
 
 /* ============================================
-   DARK THEME (default) — Prime Intellect style
+   DARK THEME (default)
    ============================================ */
 
 :root {
   /* Page backgrounds — near-black, charcoal layers */
-  --bg-page: oklch(0% 0 0);
+  --bg-page: oklch(8% 0 0);
   --bg-card: oklch(14% 0 0);
-  --bg-input: oklch(20% 0 0);
-  --bg-hover: oklch(22% 0 0);
-  --bg-active: oklch(23% 0 0);
+  --bg-input: oklch(22% 0 0);
+  --bg-hover: oklch(25% 0 0);
+  --bg-active: oklch(28% 0 0);
 
-  /* Text colors — high-contrast white scale */
-  --text-primary: oklch(100% 0 0);
-  --text-secondary: oklch(100% 0 0 / 0.8);
+  --text-primary: oklch(98% 0 0);
+  --text-secondary: oklch(98% 0 0 / 0.8);
   --text-muted: oklch(65% 0 0);
 
-  /* Borders — subtle dark lines */
-  --border-base: oklch(26% 0 0);
+  --border-base: oklch(32% 0 0);
   --border-focus: oklch(65% 0.2 30);
 
-  /* Accent — lava / volcano palette */
+  /* Accent */
   --accent: oklch(65% 0.22 30);
   --accent-light: oklch(75% 0.15 40);
   --accent-dark: oklch(45% 0.15 25);
@@ -104,17 +102,17 @@
    ============================================ */
 
 html[data-theme="dark"] {
-  --bg-page: oklch(0% 0 0);
+  --bg-page: oklch(8% 0 0);
   --bg-card: oklch(14% 0 0);
-  --bg-input: oklch(20% 0 0);
-  --bg-hover: oklch(22% 0 0);
-  --bg-active: oklch(23% 0 0);
+  --bg-input: oklch(22% 0 0);
+  --bg-hover: oklch(25% 0 0);
+  --bg-active: oklch(28% 0 0);
 
-  --text-primary: oklch(100% 0 0);
-  --text-secondary: oklch(100% 0 0 / 0.8);
+  --text-primary: oklch(98% 0 0);
+  --text-secondary: oklch(98% 0 0 / 0.8);
   --text-muted: oklch(65% 0 0);
 
-  --border-base: oklch(26% 0 0);
+  --border-base: oklch(32% 0 0);
   --border-focus: oklch(65% 0.2 30);
 
   --accent: oklch(65% 0.22 30);

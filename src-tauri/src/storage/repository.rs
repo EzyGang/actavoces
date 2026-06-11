@@ -7,9 +7,9 @@ use crate::artifacts::{recording_stages, stage_label, stage_message};
 use crate::capture::audio::capture_devices;
 use crate::domain::types::*;
 use crate::settings::{
-    default_model_inventory, default_settings, hugging_face_token_configured, settings_pairs,
-    summary_provider_api_key_configured, summary_provider_configured_for, validate_settings,
-    DEFAULT_SUMMARY_PROMPT, DEFAULT_TITLE_PROMPT,
+    default_model_inventory, default_settings, settings_pairs, summary_provider_configured_for,
+    validate_settings, DEFAULT_SUMMARY_PROMPT, DEFAULT_TITLE_PROMPT, HUGGING_FACE_TOKEN_SETTING,
+    SUMMARY_PROVIDER_API_KEY_SETTING,
 };
 use crate::utils::{
     default_model_storage_root, default_records_root, empty_string_to_none,
@@ -209,10 +209,12 @@ impl AppRepository {
             "providerApiKeyConfigured",
             &settings.provider_api_key_configured.to_string(),
         )?;
+        self.upsert_setting(SUMMARY_PROVIDER_API_KEY_SETTING, "")?;
         self.upsert_setting(
             "huggingFaceTokenConfigured",
             &settings.hugging_face_token_configured.to_string(),
         )?;
+        self.upsert_setting(HUGGING_FACE_TOKEN_SETTING, "")?;
         self.upsert_setting(
             "diarizationSetupSkipped",
             &settings.diarization_setup_skipped.to_string(),
@@ -313,7 +315,10 @@ impl AppRepository {
         let summary_enabled = parse_bool(&get_value("summaryEnabled", "false"));
         let provider_base_url = get_value("providerBaseUrl", "https://api.openai.com/v1");
         let provider_model = get_value("providerModel", "");
-        let provider_api_key_configured = summary_provider_api_key_configured();
+        let provider_api_key_configured =
+            secret_configured(&get_value(SUMMARY_PROVIDER_API_KEY_SETTING, ""));
+        let hugging_face_token_configured =
+            secret_configured(&get_value(HUGGING_FACE_TOKEN_SETTING, ""));
         let summary_provider_configured = summary_provider_configured_for(
             summary_enabled,
             &provider_base_url,
@@ -357,7 +362,7 @@ impl AppRepository {
             exact_speakers: parse_optional_number(&get_value("exactSpeakers", "")),
             min_speakers: parse_optional_number(&get_value("minSpeakers", "")),
             max_speakers: parse_optional_number(&get_value("maxSpeakers", "")),
-            hugging_face_token_configured: hugging_face_token_configured(),
+            hugging_face_token_configured,
             diarization_setup_skipped: parse_bool(&get_value("diarizationSetupSkipped", "false")),
             diarization_runtime_ready: parse_bool(&get_value("diarizationRuntimeReady", "false")),
             summary_provider_configured,
@@ -370,13 +375,18 @@ impl AppRepository {
         })
     }
 
-    pub(crate) fn update_settings(
-        &mut self,
-        input: AppSettingsUpdate,
-        provider_api_key_configured: bool,
-        hugging_face_token_configured: bool,
-    ) -> rusqlite::Result<()> {
+    pub(crate) fn update_settings(&mut self, input: AppSettingsUpdate) -> rusqlite::Result<()> {
         let cuda_available = self.desktop_runtime_status()?.cuda_available;
+        let provider_api_key = self.updated_secret(
+            SUMMARY_PROVIDER_API_KEY_SETTING,
+            input.provider_api_key.as_deref(),
+        )?;
+        let hugging_face_token = self.updated_secret(
+            HUGGING_FACE_TOKEN_SETTING,
+            input.hugging_face_token.as_deref(),
+        )?;
+        let provider_api_key_configured = secret_configured(&provider_api_key);
+        let hugging_face_token_configured = secret_configured(&hugging_face_token);
 
         validate_settings(&input, provider_api_key_configured, cuda_available)?;
         ensure_configured_storage_directories(
@@ -407,6 +417,19 @@ impl AppRepository {
                 params![key, value],
             )?;
         }
+        for (key, value) in [
+            (SUMMARY_PROVIDER_API_KEY_SETTING, provider_api_key),
+            (HUGGING_FACE_TOKEN_SETTING, hugging_face_token),
+        ] {
+            transaction.execute(
+                "
+                INSERT INTO settings (key, value)
+                VALUES (?1, ?2)
+                ON CONFLICT(key) DO UPDATE SET value = excluded.value
+                ",
+                params![key, value],
+            )?;
+        }
 
         transaction.execute(
             "
@@ -424,6 +447,37 @@ impl AppRepository {
             ],
         )?;
         transaction.commit()
+    }
+
+    pub(crate) fn read_summary_provider_api_key(&self) -> rusqlite::Result<Option<String>> {
+        self.read_secret(SUMMARY_PROVIDER_API_KEY_SETTING)
+    }
+
+    pub(crate) fn read_hugging_face_token(&self) -> rusqlite::Result<Option<String>> {
+        self.read_secret(HUGGING_FACE_TOKEN_SETTING)
+    }
+
+    pub(crate) fn clear_summary_provider_api_key(&mut self) -> rusqlite::Result<()> {
+        self.set_setting(SUMMARY_PROVIDER_API_KEY_SETTING, "")?;
+        self.update_summary_provider_status(false)
+    }
+
+    pub(crate) fn clear_hugging_face_token(&mut self) -> rusqlite::Result<()> {
+        self.set_setting(HUGGING_FACE_TOKEN_SETTING, "")?;
+        self.update_hugging_face_token_status(false)
+    }
+
+    pub(crate) fn update_hugging_face_token(
+        &mut self,
+        token: Option<&str>,
+    ) -> rusqlite::Result<bool> {
+        let updated_token = self.updated_secret(HUGGING_FACE_TOKEN_SETTING, token)?;
+        let configured = secret_configured(&updated_token);
+
+        self.set_setting(HUGGING_FACE_TOKEN_SETTING, &updated_token)?;
+        self.update_hugging_face_token_status(configured)?;
+
+        Ok(configured)
     }
 
     pub(crate) fn ensure_current_storage_directories(&self) -> rusqlite::Result<()> {
@@ -653,6 +707,49 @@ impl AppRepository {
 
     pub(crate) fn active_recording(&self) -> rusqlite::Result<Option<Recording>> {
         self.recording_by_status(RecordingStatus::Recording)
+    }
+
+    pub(crate) fn clear_stale_active_recordings(&mut self) -> rusqlite::Result<()> {
+        let transaction = self.connection.transaction()?;
+        let ended_at = unix_timestamp().to_string();
+
+        transaction.execute(
+            "
+            UPDATE pipeline_jobs
+            SET status = ?1,
+                progress = 0,
+                message = ?2
+            WHERE stage = ?3
+                AND recording_id IN (
+                    SELECT id
+                    FROM recordings
+                    WHERE status = ?4
+                )
+            ",
+            params![
+                enum_value(PipelineStageStatus::Failed)?,
+                "Capture session was interrupted",
+                enum_value(PipelineStageId::Recording)?,
+                enum_value(RecordingStatus::Recording)?,
+            ],
+        )?;
+
+        transaction.execute(
+            "
+            UPDATE recordings
+            SET ended_at = COALESCE(ended_at, ?1),
+                duration_seconds = COALESCE(duration_seconds, 0),
+                status = ?2
+            WHERE status = ?3
+            ",
+            params![
+                ended_at,
+                enum_value(RecordingStatus::Idle)?,
+                enum_value(RecordingStatus::Recording)?,
+            ],
+        )?;
+
+        transaction.commit()
     }
 
     pub(crate) fn create_recording(&mut self, recording: NewRecording) -> rusqlite::Result<()> {
@@ -1100,6 +1197,26 @@ impl AppRepository {
             .map(|value| value.unwrap_or_else(|| fallback.to_owned()))
     }
 
+    pub(crate) fn read_secret(&self, key: &str) -> rusqlite::Result<Option<String>> {
+        let value = self.setting_value(key, "")?;
+
+        Ok(secret_configured(&value).then_some(value))
+    }
+
+    pub(crate) fn updated_secret(
+        &self,
+        key: &str,
+        input: Option<&str>,
+    ) -> rusqlite::Result<String> {
+        let input = input.unwrap_or_default().trim();
+
+        if input.is_empty() {
+            return self.setting_value(key, "");
+        }
+
+        Ok(input.to_owned())
+    }
+
     pub(crate) fn recordings(&self) -> rusqlite::Result<Vec<Recording>> {
         let mut statement = self.connection.prepare(
             "
@@ -1285,4 +1402,8 @@ fn speaker_labels(artifact_directory: &str) -> Vec<SpeakerLabel> {
     }
 
     labels
+}
+
+fn secret_configured(value: &str) -> bool {
+    !value.trim().is_empty()
 }

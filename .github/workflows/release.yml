@@ -37,37 +37,9 @@ jobs:
       - name: Compute release metadata
         id: release
         shell: bash
-        run: |
-          set -euo pipefail
-          version="$(node -p "require('./package.json').version")"
-          if [ -z "${version}" ]; then
-            echo "package.json version is empty" >&2
-            exit 1
-          fi
-
-          if [ "${{ inputs.release_type }}" = "alpha" ]; then
-            latest_alpha="$(git tag --list "v${version}-alpha.*" --sort=-v:refname | head -1 || true)"
-            if [ -z "${latest_alpha}" ]; then
-              alpha_num=1
-              previous_tag="$(git tag --list 'v*' --sort=-v:refname | grep -v -- '-alpha' | head -1 || true)"
-            else
-              alpha_num="$(echo "${latest_alpha}" | sed 's/.*-alpha\.//')"
-              alpha_num="$((alpha_num + 1))"
-              previous_tag="${latest_alpha}"
-            fi
-            tag="v${version}-alpha.${alpha_num}"
-            prerelease="true"
-          else
-            previous_tag="$(git tag --list 'v*' --sort=-v:refname | grep -v -- '-alpha' | head -1 || true)"
-            tag="v${version}"
-            prerelease="false"
-          fi
-
-          echo "version=${version}" >> "${GITHUB_OUTPUT}"
-          echo "tag=${tag}" >> "${GITHUB_OUTPUT}"
-          echo "name=${tag}" >> "${GITHUB_OUTPUT}"
-          echo "prerelease=${prerelease}" >> "${GITHUB_OUTPUT}"
-          echo "previous_tag=${previous_tag:-}" >> "${GITHUB_OUTPUT}"
+        env:
+          RELEASE_TYPE: ${{ inputs.release_type }}
+        run: bash .github/scripts/compute-release-metadata.sh
 
   build:
     name: Build ${{ matrix.name }}
@@ -147,173 +119,44 @@ jobs:
         run: pnpm install --frozen-lockfile
 
       - name: Stamp package version into Tauri config
-        shell: bash
         env:
+          RELEASE_VERSION: ${{ needs.version.outputs.version }}
           TAURI_UPDATER_PUBKEY: ${{ vars.TAURI_UPDATER_PUBKEY || secrets.TAURI_UPDATER_PUBKEY }}
-        run: |
-          node -e "
-            const fs = require('node:fs');
-            const configPath = 'src-tauri/tauri.conf.json';
-            const pubkey = process.env.TAURI_UPDATER_PUBKEY;
-            if (!pubkey) {
-              throw new Error('TAURI_UPDATER_PUBKEY must be configured as a GitHub variable or secret');
-            }
-            const config = JSON.parse(fs.readFileSync(configPath, 'utf8'));
-            config.version = '${{ needs.version.outputs.version }}';
-            config.bundle = config.bundle || {};
-            config.bundle.createUpdaterArtifacts = true;
-            config.plugins = config.plugins || {};
-            config.plugins.updater = {
-              pubkey,
-              endpoints: [
-                'https://github.com/${{ github.repository }}/releases/latest/download/latest.json'
-              ]
-            };
-            fs.writeFileSync(configPath, `${JSON.stringify(config, null, 2)}\n`);
-          "
+        run: node .github/scripts/stamp-tauri-config.js
 
       - name: Bundle latest uv runtime (Windows)
         if: runner.os == 'Windows'
         shell: pwsh
-        run: |
-          $ErrorActionPreference = 'Stop'
-
-          $assetName = '${{ matrix.uv-asset }}'
-          $assetUrl = "https://github.com/astral-sh/uv/releases/latest/download/$assetName"
-          $checksumUrl = "$assetUrl.sha256"
-          New-Item -ItemType Directory -Force -Path '.release/uv' | Out-Null
-          $archivePath = Join-Path '.release/uv' $assetName
-          $checksumPath = "$archivePath.sha256"
-
-          Invoke-WebRequest -Uri $assetUrl -OutFile $archivePath
-          Invoke-WebRequest -Uri $checksumUrl -OutFile $checksumPath
-
-          $checksumContent = Get-Content $checksumPath -Raw
-          $expectedHash = [regex]::Match($checksumContent, '[a-fA-F0-9]{64}').Value.ToLowerInvariant()
-          $actualHash = (Get-FileHash -Algorithm SHA256 $archivePath).Hash.ToLowerInvariant()
-
-          if ($expectedHash -ne $actualHash) {
-            throw "uv checksum mismatch for $assetName"
-          }
-
-          $extractPath = '.release/uv/extracted'
-          New-Item -ItemType Directory -Force -Path $extractPath | Out-Null
-          Expand-Archive -Path $archivePath -DestinationPath $extractPath -Force
-
-          $binaryName = '${{ matrix.uv-binary }}'
-          $binary = Get-ChildItem -Path $extractPath -Recurse -File |
-            Where-Object { $_.Name -eq $binaryName } |
-            Select-Object -First 1
-
-          if ($null -eq $binary) {
-            throw "Unable to find extracted uv binary: $binaryName"
-          }
-
-          $runtimePath = 'src-tauri/resources/runtime/uv'
-          New-Item -ItemType Directory -Force -Path $runtimePath | Out-Null
-          Copy-Item -Path $binary.FullName -Destination (Join-Path $runtimePath $binaryName) -Force
-
-          & (Join-Path $runtimePath $binaryName) --version
+        env:
+          UV_ASSET: ${{ matrix.uv-asset }}
+          UV_BINARY: ${{ matrix.uv-binary }}
+        run: ./.github/scripts/bundle-uv.ps1
 
       - name: Bundle latest uv runtime (macOS/Linux)
         if: runner.os != 'Windows'
         shell: bash
-        run: |
-          set -euo pipefail
-
-          asset_name='${{ matrix.uv-asset }}'
-          binary_name='${{ matrix.uv-binary }}'
-          asset_url="https://github.com/astral-sh/uv/releases/latest/download/${asset_name}"
-          checksum_url="${asset_url}.sha256"
-          archive_path=".release/uv/${asset_name}"
-          checksum_path="${archive_path}.sha256"
-          extract_path=".release/uv/extracted"
-          runtime_path="src-tauri/resources/runtime/uv"
-
-          mkdir -p ".release/uv" "${extract_path}" "${runtime_path}"
-          curl -fsSL "${asset_url}" -o "${archive_path}"
-          curl -fsSL "${checksum_url}" -o "${checksum_path}"
-
-          expected_hash="$(grep -Eo '[a-fA-F0-9]{64}' "${checksum_path}" | head -n 1 | tr 'A-F' 'a-f')"
-          if command -v sha256sum >/dev/null 2>&1; then
-            actual_hash="$(sha256sum "${archive_path}" | awk '{print $1}')"
-          else
-            actual_hash="$(shasum -a 256 "${archive_path}" | awk '{print $1}')"
-          fi
-
-          if [ "${expected_hash}" != "${actual_hash}" ]; then
-            echo "uv checksum mismatch for ${asset_name}" >&2
-            exit 1
-          fi
-
-          tar -xzf "${archive_path}" -C "${extract_path}"
-          binary_path="$(find "${extract_path}" -type f -name "${binary_name}" | head -n 1)"
-
-          if [ -z "${binary_path}" ]; then
-            echo "Unable to find extracted uv binary: ${binary_name}" >&2
-            exit 1
-          fi
-
-          cp "${binary_path}" "${runtime_path}/${binary_name}"
-          chmod +x "${runtime_path}/${binary_name}"
-          "${runtime_path}/${binary_name}" --version
+        env:
+          UV_ASSET: ${{ matrix.uv-asset }}
+          UV_BINARY: ${{ matrix.uv-binary }}
+        run: bash .github/scripts/bundle-uv.sh
 
       - name: Bundle latest FFmpeg runtime (Windows)
         if: runner.os == 'Windows'
         shell: pwsh
-        run: |
-          $ErrorActionPreference = 'Stop'
-
-          $assetName = '${{ matrix.ffmpeg-asset }}'
-          $binaryName = '${{ matrix.ffmpeg-binary }}'
-          $assetUrl = "https://github.com/Tyrrrz/FFmpegBin/releases/latest/download/$assetName"
-          $releasePath = '.release/ffmpeg'
-          $archivePath = Join-Path $releasePath $assetName
-          $extractPath = Join-Path $releasePath 'extracted'
-          $runtimePath = Join-Path 'src-tauri/resources/runtime/ffmpeg' '${{ matrix.rust-target }}'
-
-          New-Item -ItemType Directory -Force -Path $releasePath, $extractPath, $runtimePath | Out-Null
-          Invoke-WebRequest -Uri $assetUrl -OutFile $archivePath
-
-          Expand-Archive -Path $archivePath -DestinationPath $extractPath -Force
-          $binary = Get-ChildItem -Path $extractPath -Recurse -File |
-            Where-Object { $_.Name -eq $binaryName } |
-            Select-Object -First 1
-
-          if ($null -eq $binary) {
-            throw "Unable to find extracted FFmpeg binary: $binaryName"
-          }
-
-          Copy-Item -Path $binary.FullName -Destination (Join-Path $runtimePath $binaryName) -Force
-          & (Join-Path $runtimePath $binaryName) -version
+        env:
+          FFMPEG_ASSET: ${{ matrix.ffmpeg-asset }}
+          FFMPEG_BINARY: ${{ matrix.ffmpeg-binary }}
+          RUST_TARGET: ${{ matrix.rust-target }}
+        run: ./.github/scripts/bundle-ffmpeg.ps1
 
       - name: Bundle latest FFmpeg runtime (macOS/Linux)
         if: runner.os != 'Windows'
         shell: bash
-        run: |
-          set -euo pipefail
-
-          asset_name='${{ matrix.ffmpeg-asset }}'
-          binary_name='${{ matrix.ffmpeg-binary }}'
-          asset_url="https://github.com/Tyrrrz/FFmpegBin/releases/latest/download/${asset_name}"
-          archive_path=".release/ffmpeg/${asset_name}"
-          extract_path=".release/ffmpeg/extracted"
-          runtime_path="src-tauri/resources/runtime/ffmpeg/${{ matrix.rust-target }}"
-
-          mkdir -p ".release/ffmpeg" "${extract_path}" "${runtime_path}"
-          curl -fsSL "${asset_url}" -o "${archive_path}"
-
-          unzip -q "${archive_path}" -d "${extract_path}"
-          binary_path="$(find "${extract_path}" -type f -name "${binary_name}" | head -n 1)"
-
-          if [ -z "${binary_path}" ]; then
-            echo "Unable to find extracted FFmpeg binary: ${binary_name}" >&2
-            exit 1
-          fi
-
-          cp "${binary_path}" "${runtime_path}/${binary_name}"
-          chmod +x "${runtime_path}/${binary_name}"
-          "${runtime_path}/${binary_name}" -version
+        env:
+          FFMPEG_ASSET: ${{ matrix.ffmpeg-asset }}
+          FFMPEG_BINARY: ${{ matrix.ffmpeg-binary }}
+          RUST_TARGET: ${{ matrix.rust-target }}
+        run: bash .github/scripts/bundle-ffmpeg.sh
 
       - name: Build Tauri bundle
         env:
@@ -322,55 +165,10 @@ jobs:
         run: pnpm tauri build --target ${{ matrix.rust-target }}
 
       - name: Write updater manifest
-        shell: bash
         env:
           UPDATER_PLATFORM: ${{ matrix.updater-platform }}
           RUST_TARGET: ${{ matrix.rust-target }}
-        run: |
-          node - <<'NODE'
-          const fs = require('node:fs');
-          const path = require('node:path');
-          const platform = process.env.UPDATER_PLATFORM;
-          const target = process.env.RUST_TARGET;
-          const bundleRoot = path.join('src-tauri', 'target', target, 'release', 'bundle');
-          const walk = (directory) => {
-            if (!fs.existsSync(directory)) {
-              return [];
-            }
-            const files = [];
-            for (const entry of fs.readdirSync(directory, { withFileTypes: true })) {
-              const entryPath = path.join(directory, entry.name);
-              if (entry.isDirectory()) {
-                files.push(...walk(entryPath));
-              } else {
-                files.push(entryPath);
-              }
-            }
-            return files;
-          };
-          const files = walk(bundleRoot).filter((filePath) => !filePath.endsWith('.sig'));
-          const byPreference = (candidates) => {
-            const artifact = candidates.find((filePath) => fs.existsSync(`${filePath}.sig`));
-            if (!artifact) {
-              throw new Error(`No signed updater artifact found for ${platform}`);
-            }
-            return artifact;
-          };
-          const artifact = platform.startsWith('darwin-')
-            ? byPreference(files.filter((filePath) => filePath.endsWith('.app.tar.gz')))
-            : platform === 'linux-x86_64'
-              ? byPreference(files.filter((filePath) => filePath.endsWith('.AppImage')))
-              : byPreference([
-                  ...files.filter((filePath) => filePath.endsWith('.msi')),
-                  ...files.filter((filePath) => filePath.endsWith('.exe')),
-                ]);
-          const manifest = {
-            platform,
-            assetName: path.basename(artifact),
-            signature: fs.readFileSync(`${artifact}.sig`, 'utf8').trim(),
-          };
-          fs.writeFileSync(`updater-${platform}.json`, `${JSON.stringify(manifest, null, 2)}\n`);
-          NODE
+        run: node .github/scripts/write-updater-manifest.js
 
       - name: Upload bundle artifacts
         uses: actions/upload-artifact@v7

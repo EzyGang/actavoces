@@ -1,11 +1,11 @@
 ---
 name: base-ui
-description: Reference for using @base-ui/react unstyled components within the Vulcanum frontend. Covers import conventions, Preact compat, Tailwind v4 + OKLCH design token styling, compound component wrappers, and state management rules. Use it when in need of designing or creating a new component for the app or refactoring existing ones
+description: Reference for using @base-ui/react unstyled components within the frontend. Covers import conventions, Preact compat, Tailwind v4 + OKLCH design token styling, compound component wrappers, and state management rules. Use it when in need of designing or creating a new component for the app or refactoring existing ones
 ---
 
-# Base UI (Vulcanum Component Library Skill)
+# Base UI (Component Library Skill)
 
-Vulcanum uses **@base-ui/react@1.5.0** as its unstyled component foundation. The frontend is **Preact 10** (via `@preact/preset-vite` + `preact/compat` aliases for React compatibility) and **Tailwind CSS v4** with **OKLCH** design tokens.
+App uses **@base-ui/react@1.5.0** as its unstyled component foundation. The frontend is **Preact 10** (via `@preact/preset-vite` + `preact/compat` aliases for React compatibility) and **Tailwind CSS v4** with **OKLCH** design tokens.
 
 This skill is the single reference for creating or modifying shared UI components.
 
@@ -15,7 +15,7 @@ The codebase is split into **two distinct zones**:
 
 | Zone                         | Path                        | Responsibility                                                                                                                                                      | Import rule                                                                               |
 | ---------------------------- | --------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------- |
-| **Shared UI primitives**     | `src/components/shared/ui/` | The **only** place that imports from `@base-ui/react`. Wraps every unstyled primitive with Vulcanum design tokens, focus rings, sizing, and accessibility defaults. | ✅ `@base-ui/react/*` allowed here ONLY.                                                  |
+| **Shared UI primitives**     | `src/components/shared/ui/` | The **only** place that imports from `@base-ui/react`. Wraps every unstyled primitive with this app's design tokens, focus rings, sizing, and accessibility defaults. | ✅ `@base-ui/react/*` allowed here ONLY.                                                  |
 | **Feature / app components** | `src/components/<feature>/` | Composes **shared UI primitives** into domain-specific views.                                                                                                       | ❌ Never import `@base-ui/react/*` directly. Always consume from `components/shared/ui/`. |
 
 ### Enforcement
@@ -106,7 +106,7 @@ Light theme tokens are available automatically when `html[data-theme="light"]` i
 
 ## 5. Wrapper Component Pattern
 
-Every unstyled Base UI component used in Vulcanum **must** be wrapped in a styled view inside `src/components/shared/ui/ComponentName.view.tsx`. This guarantees a single import for feature code, a single place for design tokens, and consistent overrides.
+Every unstyled Base UI component used in the app **must** be wrapped in a styled view inside `src/components/shared/ui/ComponentName.view.tsx`. This guarantees a single import for feature code, a single place for design tokens, and consistent overrides.
 
 ### File naming
 
@@ -328,7 +328,7 @@ export const DeleteConfirm = (): JSX.Element => (
 
 All Base UI components below may be wrapped in `components/shared/ui/` when a feature needs them. Do not import Base UI directly in feature code. Always consume through a wrapper.
 
-| Base UI Component | Vulcanum Wrapper Path                       | Notes                                                                  |
+| Base UI Component | Wrapper Path                       | Notes                                                                  |
 | ----------------- | ------------------------------------------- | ---------------------------------------------------------------------- |
 | `Button`          | `components/shared/ui/Button.view.tsx`      | Primary CTA, secondary, Ghost                                          |
 | `Input`           | `components/shared/ui/Input.view.tsx`       | Text inputs with project focus/error states                            |

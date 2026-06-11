@@ -1,6 +1,8 @@
 use std::fs;
 use std::path::PathBuf;
 
+use tauri::Manager;
+
 use crate::artifacts::{
     artifact_directory, rewrite_diarized_transcript_title, rewrite_raw_transcript_title,
 };
@@ -38,14 +40,18 @@ pub fn start_recording(
 }
 
 #[tauri::command]
-pub fn stop_recording(
-    app: tauri::AppHandle,
-    state: tauri::State<'_, ActavocesState>,
-) -> Result<AppSnapshot, String> {
-    let mut repository = state.repository()?;
-    let mut capture_backend = state.capture_backend.lock().map_err(lock_error)?;
-    stop_recording_session(&mut repository, &mut *capture_backend)?;
-    let snapshot = repository.snapshot().map_err(|error| error.to_string())?;
+pub async fn stop_recording(app: tauri::AppHandle) -> Result<AppSnapshot, String> {
+    let app_for_stop = app.clone();
+    let snapshot = tauri::async_runtime::spawn_blocking(move || -> Result<AppSnapshot, String> {
+        let state = app_for_stop.state::<ActavocesState>();
+        let mut repository = state.repository()?;
+        let mut capture_backend = state.capture_backend.lock().map_err(lock_error)?;
+
+        stop_recording_session(&mut repository, &mut *capture_backend)?;
+        repository.snapshot().map_err(|error| error.to_string())
+    })
+    .await
+    .map_err(|error| format!("Recording stop task failed: {error}"))??;
 
     sync_recording_overlay(
         &app,
@@ -167,11 +173,8 @@ pub fn rename_speaker_label(
 }
 
 #[tauri::command]
-pub fn toggle_recording_from_shortcut(
-    app: tauri::AppHandle,
-    state: tauri::State<'_, ActavocesState>,
-) -> Result<AppSnapshot, String> {
-    toggle_recording_lifecycle(&app, &state)
+pub async fn toggle_recording_from_shortcut(app: tauri::AppHandle) -> Result<AppSnapshot, String> {
+    toggle_recording_lifecycle_background(app).await
 }
 
 pub fn start_recording_session(
@@ -256,34 +259,39 @@ pub fn stop_recording_session(
         .map_err(|error| error.to_string())
 }
 
-pub fn toggle_recording_lifecycle(
-    app: &tauri::AppHandle,
-    state: &ActavocesState,
+pub async fn toggle_recording_lifecycle_background(
+    app: tauri::AppHandle,
 ) -> Result<AppSnapshot, String> {
-    let mut repository = state.repository()?;
-    let mut capture_backend = state.capture_backend.lock().map_err(lock_error)?;
+    let app_for_toggle = app.clone();
+    let snapshot = tauri::async_runtime::spawn_blocking(move || -> Result<AppSnapshot, String> {
+        let state = app_for_toggle.state::<ActavocesState>();
+        let mut repository = state.repository()?;
+        let mut capture_backend = state.capture_backend.lock().map_err(lock_error)?;
 
-    match repository
-        .active_recording()
-        .map_err(|error| error.to_string())?
-        .is_some()
-    {
-        true => stop_recording_session(&mut repository, &mut *capture_backend)?,
-        false => start_recording_session(&mut repository, &mut *capture_backend)?,
-    }
+        match repository
+            .active_recording()
+            .map_err(|error| error.to_string())?
+            .is_some()
+        {
+            true => stop_recording_session(&mut repository, &mut *capture_backend)?,
+            false => start_recording_session(&mut repository, &mut *capture_backend)?,
+        }
 
-    let snapshot = repository.snapshot().map_err(|error| error.to_string())?;
+        repository.snapshot().map_err(|error| error.to_string())
+    })
+    .await
+    .map_err(|error| format!("Recording toggle task failed: {error}"))??;
 
     sync_recording_overlay(
-        app,
+        &app,
         snapshot.active_recording.is_some(),
         snapshot.settings.overlay_position,
         snapshot.settings.overlay_display_mode,
     )?;
-    sync_tray_recording_icon(app, snapshot.active_recording.is_some());
-    emit_snapshot_update(app, &snapshot);
+    sync_tray_recording_icon(&app, snapshot.active_recording.is_some());
+    emit_snapshot_update(&app, &snapshot);
     if snapshot.active_recording.is_none() {
-        spawn_pipeline_processing(app.clone());
+        spawn_pipeline_processing(app);
     }
 
     Ok(snapshot)

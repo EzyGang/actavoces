@@ -6,15 +6,11 @@ use tauri_plugin_global_shortcut::{GlobalShortcutExt, ShortcutState};
 
 use crate::diarization::prepare_sortformer_diarization;
 use crate::domain::types::*;
-use crate::settings::{
-    clear_hugging_face_secret, clear_summary_provider_secret, update_hugging_face_token,
-    update_summary_provider_api_key,
-};
 use crate::worker::runtime::run_diarization_setup;
 
 use super::overlay::sync_recording_overlay;
 use super::pipeline::{emit_snapshot_update, spawn_pipeline_processing};
-use super::recordings::toggle_recording_lifecycle;
+use super::recordings::toggle_recording_lifecycle_background;
 
 #[tauri::command]
 pub async fn update_app_settings(
@@ -27,18 +23,11 @@ pub async fn update_app_settings(
     let app_for_settings = app.clone();
 
     tauri::async_runtime::spawn_blocking(move || {
-        let provider_api_key_configured = update_summary_provider_api_key(&input)?;
-        let hugging_face_token_configured =
-            update_hugging_face_token(input.hugging_face_token.as_deref())?;
         let state = app_for_settings.state::<ActavocesState>();
         let mut repository = state.repository()?;
 
         repository
-            .update_settings(
-                input,
-                provider_api_key_configured,
-                hugging_face_token_configured,
-            )
+            .update_settings(input)
             .map_err(|error| error.to_string())
     })
     .await
@@ -97,12 +86,10 @@ fn spawn_sortformer_diarization_setup(app: tauri::AppHandle, model_storage_direc
 pub fn clear_summary_provider_api_key(
     state: tauri::State<'_, ActavocesState>,
 ) -> Result<AppSnapshot, String> {
-    clear_summary_provider_secret()?;
-
     let mut repository = state.repository()?;
 
     repository
-        .update_summary_provider_status(false)
+        .clear_summary_provider_api_key()
         .map_err(|error| error.to_string())?;
     repository.snapshot().map_err(|error| error.to_string())
 }
@@ -111,12 +98,10 @@ pub fn clear_summary_provider_api_key(
 pub fn clear_hugging_face_token(
     state: tauri::State<'_, ActavocesState>,
 ) -> Result<AppSnapshot, String> {
-    clear_hugging_face_secret()?;
-
     let mut repository = state.repository()?;
 
     repository
-        .update_hugging_face_token_status(false)
+        .clear_hugging_face_token()
         .map_err(|error| error.to_string())?;
     repository.snapshot().map_err(|error| error.to_string())
 }
@@ -204,14 +189,16 @@ pub fn register_global_hotkey(app: &tauri::AppHandle, hotkey: &str) -> DesktopRu
                 return;
             }
 
-            let state = app.state::<ActavocesState>();
+            let app = app.clone();
 
-            match toggle_recording_lifecycle(app, &state) {
-                Ok(_) => (),
-                Err(error) => {
-                    let _ = app.emit("app-error", error);
+            tauri::async_runtime::spawn(async move {
+                match toggle_recording_lifecycle_background(app.clone()).await {
+                    Ok(_) => (),
+                    Err(error) => {
+                        let _ = app.emit("app-error", error);
+                    }
                 }
-            }
+            });
         });
 
     match registration {

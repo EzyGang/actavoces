@@ -18,9 +18,15 @@ export const useApp = () => {
     appErrorSignal.value = message;
   };
   let resetSettingsDraft = (_settings: AppSnapshot['settings']) => {};
+  let canResetSettingsDraft = () => true;
   const setSnapshot = (snapshot: AppSnapshot) => {
+    const shouldResetSettingsDraft = canResetSettingsDraft();
+
     appSnapshotSignal.value = snapshot;
-    resetSettingsDraft(snapshot.settings);
+
+    if (shouldResetSettingsDraft) {
+      resetSettingsDraft(snapshot.settings);
+    }
   };
 
   const settings = useSettings({
@@ -28,6 +34,8 @@ export const useApp = () => {
     setSnapshot
   });
   resetSettingsDraft = settings.resetDraft;
+  canResetSettingsDraft = () =>
+    !settings.hasUnsavedSettings.value && !settings.savingSettings.value;
 
   const recordings = useRecordings({
     loading,

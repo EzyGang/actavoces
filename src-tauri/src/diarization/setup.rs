@@ -1,21 +1,16 @@
-use std::fs;
-use std::io::{self, Read, Write};
-use std::path::{Path, PathBuf};
-use std::sync::OnceLock;
+mod runtime;
 
-use zip::ZipArchive;
+use std::fs;
+use std::io::{Read, Write};
+use std::path::{Path, PathBuf};
 
 use crate::diarization::SORTFORMER_MODEL_FILE;
 use crate::domain::types::{SortformerSetupProgress, SortformerSetupStatus};
 
+use self::runtime::ensure_onnxruntime;
+
 const SORTFORMER_MODEL_URL: &str =
     "https://huggingface.co/altunenes/parakeet-rs/resolve/main/diar_streaming_sortformer_4spk-v2.1.onnx";
-const ORT_RUNTIME_DIRECTORY: &str = "onnxruntime-1.24.2";
-const ORT_RUNTIME_ARCHIVE_FILE: &str = "onnxruntime-win-x64-1.24.2.zip";
-const ORT_RUNTIME_URL: &str =
-    "https://github.com/microsoft/onnxruntime/releases/download/v1.24.2/onnxruntime-win-x64-1.24.2.zip";
-
-static ORT_RUNTIME_READY: OnceLock<()> = OnceLock::new();
 
 pub(crate) fn prepare_sortformer_diarization<F>(
     model_storage_directory: &Path,
@@ -77,93 +72,7 @@ where
     Ok(model_path)
 }
 
-fn ensure_onnxruntime<F>(
-    model_storage_directory: &Path,
-    report_progress: &mut F,
-) -> Result<(), String>
-where
-    F: FnMut(SortformerSetupProgress),
-{
-    if ORT_RUNTIME_READY.get().is_some() {
-        report_progress(sortformer_progress(
-            SortformerSetupStatus::Downloading,
-            "ONNX Runtime already loaded",
-            Some(95),
-            None,
-        ));
-        return Ok(());
-    }
-
-    let runtime_path = ensure_onnxruntime_library(model_storage_directory, report_progress)?;
-
-    ort::init_from(&runtime_path)
-        .map_err(|error| format!("Unable to load ONNX Runtime: {error}"))?
-        .commit();
-    let _ = ORT_RUNTIME_READY.set(());
-
-    Ok(())
-}
-
-#[cfg(target_os = "windows")]
-fn ensure_onnxruntime_library<F>(
-    model_storage_directory: &Path,
-    report_progress: &mut F,
-) -> Result<PathBuf, String>
-where
-    F: FnMut(SortformerSetupProgress),
-{
-    fs::create_dir_all(model_storage_directory).map_err(|error| error.to_string())?;
-    let runtime_directory = model_storage_directory.join(ORT_RUNTIME_DIRECTORY);
-    let runtime_path = runtime_directory.join("onnxruntime.dll");
-
-    if runtime_path.exists() {
-        report_progress(sortformer_progress(
-            SortformerSetupStatus::Downloading,
-            "ONNX Runtime already downloaded",
-            Some(95),
-            None,
-        ));
-        return Ok(runtime_path);
-    }
-
-    fs::create_dir_all(&runtime_directory).map_err(|error| error.to_string())?;
-    let archive_path = model_storage_directory.join(ORT_RUNTIME_ARCHIVE_FILE);
-
-    download_file(
-        ORT_RUNTIME_URL,
-        &archive_path,
-        "ONNX Runtime",
-        "Downloading ONNX Runtime",
-        50,
-        90,
-        report_progress,
-    )?;
-    report_progress(sortformer_progress(
-        SortformerSetupStatus::Downloading,
-        "Extracting ONNX Runtime",
-        Some(92),
-        None,
-    ));
-    extract_onnxruntime_dlls(&archive_path, &runtime_directory)?;
-
-    Ok(runtime_path)
-}
-
-#[cfg(not(target_os = "windows"))]
-fn ensure_onnxruntime_library<F>(
-    _model_storage_directory: &Path,
-    _report_progress: &mut F,
-) -> Result<PathBuf, String>
-where
-    F: FnMut(SortformerSetupProgress),
-{
-    Err(
-        "Sortformer diarization currently downloads ONNX Runtime automatically only on Windows"
-            .to_owned(),
-    )
-}
-
-fn download_file<F>(
+pub(super) fn download_file<F>(
     url: &str,
     path: &Path,
     label: &str,
@@ -235,45 +144,7 @@ where
     fs::rename(&download_path, path).map_err(|error| error.to_string())
 }
 
-fn extract_onnxruntime_dlls(
-    archive_path: &Path,
-    destination_directory: &Path,
-) -> Result<(), String> {
-    let archive = fs::File::open(archive_path).map_err(|error| error.to_string())?;
-    let mut archive = ZipArchive::new(archive).map_err(|error| error.to_string())?;
-    let mut found_runtime = false;
-
-    for index in 0..archive.len() {
-        let mut file = archive.by_index(index).map_err(|error| error.to_string())?;
-        let normalized_name = file.name().replace('\\', "/");
-
-        if !normalized_name.contains("/lib/") || !normalized_name.ends_with(".dll") {
-            continue;
-        }
-
-        let Some(file_name) = Path::new(&normalized_name).file_name() else {
-            continue;
-        };
-        let destination_path = destination_directory.join(file_name);
-        let mut output = fs::File::create(destination_path).map_err(|error| error.to_string())?;
-        io::copy(&mut file, &mut output).map_err(|error| error.to_string())?;
-
-        if file_name.to_string_lossy() == "onnxruntime.dll" {
-            found_runtime = true;
-        }
-    }
-
-    if found_runtime {
-        return Ok(());
-    }
-
-    Err(format!(
-        "Unable to find onnxruntime.dll in {}",
-        archive_path.display()
-    ))
-}
-
-fn sortformer_progress(
+pub(super) fn sortformer_progress(
     status: SortformerSetupStatus,
     step: &str,
     progress: Option<u8>,

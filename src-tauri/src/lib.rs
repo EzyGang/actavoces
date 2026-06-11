@@ -171,7 +171,12 @@ async fn initialize_app_state(handle: tauri::AppHandle) -> Result<(), String> {
 fn initialize_repository(
     database_path: std::path::PathBuf,
 ) -> Result<(AppRepository, AppSettings), String> {
-    let repository = AppRepository::open(&database_path).map_err(|error| error.to_string())?;
+    let mut repository = AppRepository::open(&database_path).map_err(|error| error.to_string())?;
+
+    repository
+        .clear_stale_active_recordings()
+        .map_err(|error| error.to_string())?;
+
     let settings = repository.settings().map_err(|error| error.to_string())?;
 
     repository

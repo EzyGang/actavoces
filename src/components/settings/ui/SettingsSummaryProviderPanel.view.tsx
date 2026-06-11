@@ -36,7 +36,7 @@ export const SettingsSummaryProviderPanel = ({ app }: SettingsPanelProps): JSX.E
         <span class='text-text-muted'>API key status</span>
         <span>
           {app.data.snapshot.value.settings.providerApiKeyConfigured
-            ? 'Saved in keychain'
+            ? 'Saved in local database'
             : 'Missing'}
         </span>
       </div>

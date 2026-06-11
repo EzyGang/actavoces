@@ -9,7 +9,6 @@ use crate::diarization::{
     run_single_speaker_diarization, run_sortformer_diarization, TranscriptSegment,
 };
 use crate::domain::types::*;
-use crate::settings::{read_hugging_face_token, read_summary_provider_api_key};
 use crate::storage::repository::AppRepository;
 use crate::utils::{pipeline_job_id, read_json_file};
 use crate::worker::runtime::run_worker_command;
@@ -133,7 +132,10 @@ where
                     let diarization_api_key = if exact_one_speaker_diarization(&settings) {
                         String::new()
                     } else {
-                        match read_hugging_face_token()? {
+                        match repository
+                            .read_hugging_face_token()
+                            .map_err(|error| error.to_string())?
+                        {
                             Some(token) => token,
                             None => {
                                 mark_stage_needs_setup(
@@ -178,7 +180,10 @@ where
                 continue;
             }
 
-            let Some(api_key) = read_summary_provider_api_key()? else {
+            let Some(api_key) = repository
+                .read_summary_provider_api_key()
+                .map_err(|error| error.to_string())?
+            else {
                 mark_stage_needs_setup(
                     repository,
                     &recording.id,

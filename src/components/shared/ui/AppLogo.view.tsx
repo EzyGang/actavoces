@@ -9,7 +9,7 @@ interface AppLogoProps {
 export const AppLogo = ({ class: classProp }: AppLogoProps): JSX.Element => (
   <img
     alt='ActaVoces'
-    class={clsx('block border border-border-base bg-text-primary object-cover', classProp)}
+    class={clsx('block border border-border-base object-cover', classProp)}
     src={logoUrl}
   />
 );

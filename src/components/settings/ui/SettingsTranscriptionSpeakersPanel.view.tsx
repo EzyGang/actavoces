@@ -87,7 +87,7 @@ export const SettingsTranscriptionSpeakersPanel = ({ app }: SettingsPanelProps):
           <span class='text-text-muted'>Hugging Face token status</span>
           <span>
             {app.data.snapshot.value.settings.huggingFaceTokenConfigured
-              ? 'Saved in keychain'
+              ? 'Saved in local database'
               : 'Missing'}
           </span>
         </div>

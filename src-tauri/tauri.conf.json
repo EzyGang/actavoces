@@ -46,7 +46,7 @@
   },
   "plugins": {
     "updater": {
-      "pubkey": "ACTAVOCES_UPDATER_PUBLIC_KEY_IS_SET_BY_RELEASE_WORKFLOW",
+      "pubkey": "PUBLIC_KEY_IS_SET_BY_RELEASE_WORKFLOW",
       "endpoints": ["https://github.com/EzyGang/actavoces/releases/latest/download/latest.json"]
     }
   }
