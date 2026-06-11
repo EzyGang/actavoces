@@ -1,4 +1,4 @@
-export type RecordingStatus = 'idle' | 'recording' | 'processing';
+export type RecordingStatus = 'idle' | 'recording' | 'processing' | 'complete';
 
 export type PipelineStageId =
   | 'recording'
@@ -97,6 +97,8 @@ export interface AppSettings {
   databasePath: string;
   hotkey: string;
   overlayPosition: 'topLeft' | 'topRight' | 'bottomLeft' | 'bottomRight';
+  overlayDisplayMode: 'full' | 'minimal' | 'none';
+  closeToTray: boolean;
   launchAtLogin: boolean;
   microphoneDevice: string;
   systemAudioSource: string;
@@ -105,7 +107,7 @@ export interface AppSettings {
   transcriptionLanguage: string;
   computeType: string;
   modelStorageDirectory: string;
-  diarizationBackend: 'pyannote';
+  diarizationBackend: 'pyannote' | 'sortformer';
   speakerCountMode: 'automatic' | 'exact' | 'range';
   exactSpeakers: number | null;
   minSpeakers: number | null;
@@ -153,6 +155,15 @@ export type WorkerSetupStatus = 'missing' | 'installing' | 'ready' | 'failed';
 export interface WorkerSetupProgress {
   status: WorkerSetupStatus;
   step: string;
+  error: string | null;
+}
+
+export type SortformerSetupStatus = 'downloading' | 'ready' | 'failed';
+
+export interface SortformerSetupProgress {
+  status: SortformerSetupStatus;
+  step: string;
+  progress: number | null;
   error: string | null;
 }
 

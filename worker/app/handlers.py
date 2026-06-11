@@ -122,7 +122,10 @@ async def handle_transcribe(command: WorkerCommand) -> list[WorkerEvent]:
 
     payload.output_directory.mkdir(parents=True, exist_ok=True)
     write_json(payload.output_directory / 'raw-segments.json', {'segments': segment_payloads(segments=result.segments)})
-    write_text(payload.output_directory / 'raw-transcript.md', render_raw_transcript(segments=result.segments))
+    write_text(
+        payload.output_directory / 'raw-transcript.md',
+        render_raw_transcript(segments=result.segments, title=payload.title),
+    )
 
     return [
         command_event(command=command, name='transcribe.progress', payload={'progress': 100}),
@@ -180,7 +183,7 @@ async def handle_diarize(command: WorkerCommand) -> list[WorkerEvent]:
     write_json(payload.output_directory / 'diarization.json', {'turns': turn_payloads(turns=turns)})
     write_text(
         payload.output_directory / 'diarized-transcript.md',
-        render_diarized_transcript(segments=payload.segments, turns=turns),
+        render_diarized_transcript(segments=payload.segments, turns=turns, title=payload.title),
     )
 
     return [

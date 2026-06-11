@@ -1,7 +1,9 @@
 use std::fs;
 use std::path::PathBuf;
 
-use crate::artifacts::artifact_directory;
+use crate::artifacts::{
+    artifact_directory, rewrite_diarized_transcript_title, rewrite_raw_transcript_title,
+};
 use crate::capture::audio::AudioCaptureBackend;
 use crate::domain::types::*;
 use crate::storage::repository::{AppRepository, NewRecording};
@@ -10,6 +12,7 @@ use crate::utils::{lock_error, unix_timestamp};
 use super::overlay::sync_recording_overlay;
 use super::pipeline::{emit_snapshot_update, spawn_pipeline_processing};
 use super::speaker_labels::rewrite_speaker_label;
+use super::tray::sync_tray_recording_icon;
 
 #[tauri::command]
 pub fn start_recording(
@@ -26,7 +29,9 @@ pub fn start_recording(
         &app,
         snapshot.active_recording.is_some(),
         snapshot.settings.overlay_position,
+        snapshot.settings.overlay_display_mode,
     )?;
+    sync_tray_recording_icon(&app, true);
     emit_snapshot_update(&app, &snapshot);
 
     Ok(snapshot)
@@ -46,8 +51,11 @@ pub fn stop_recording(
         &app,
         snapshot.active_recording.is_some(),
         snapshot.settings.overlay_position,
+        snapshot.settings.overlay_display_mode,
     )?;
+    sync_tray_recording_icon(&app, false);
     emit_snapshot_update(&app, &snapshot);
+    spawn_pipeline_processing(app);
 
     Ok(snapshot)
 }
@@ -94,9 +102,43 @@ pub fn retry_recording_jobs(
         &app,
         snapshot.active_recording.is_some(),
         snapshot.settings.overlay_position,
+        snapshot.settings.overlay_display_mode,
     )?;
     emit_snapshot_update(&app, &snapshot);
     spawn_pipeline_processing(app);
+
+    Ok(snapshot)
+}
+
+#[tauri::command]
+pub fn rename_recording_title(
+    app: tauri::AppHandle,
+    input: RecordingRenameInput,
+    state: tauri::State<'_, ActavocesState>,
+) -> Result<AppSnapshot, String> {
+    let title = input.title.trim();
+
+    if title.is_empty() {
+        return Err("Recording title cannot be empty".to_owned());
+    }
+
+    let mut repository = state.repository()?;
+
+    let recording = repository
+        .recording_by_id(&input.recording_id)
+        .map_err(|error| error.to_string())?
+        .ok_or_else(|| "Recording not found".to_owned())?;
+
+    repository
+        .update_recording_title(&input.recording_id, title)
+        .map_err(|error| error.to_string())?;
+    let artifact_directory = PathBuf::from(recording.artifact_directory);
+
+    rewrite_raw_transcript_title(&artifact_directory, title)?;
+    rewrite_diarized_transcript_title(&artifact_directory, title)?;
+    let snapshot = repository.snapshot().map_err(|error| error.to_string())?;
+
+    emit_snapshot_update(&app, &snapshot);
 
     Ok(snapshot)
 }
@@ -236,7 +278,9 @@ pub fn toggle_recording_lifecycle(
         app,
         snapshot.active_recording.is_some(),
         snapshot.settings.overlay_position,
+        snapshot.settings.overlay_display_mode,
     )?;
+    sync_tray_recording_icon(app, snapshot.active_recording.is_some());
     emit_snapshot_update(app, &snapshot);
     if snapshot.active_recording.is_none() {
         spawn_pipeline_processing(app.clone());

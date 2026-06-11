@@ -1,9 +1,21 @@
 import { useSignal } from '@preact/signals';
-import { stopRecording } from '../../../services/desktop/app.service';
+import { listen } from '@tauri-apps/api/event';
+import { useEffect } from 'preact/hooks';
+import { getAppSnapshot, stopRecording } from '../../../services/desktop/app.service';
 import { appErrorSignal } from '../../../stores/app.store';
+import type { AppSettings, AppSnapshot } from '../../../types/desktop';
+
+const initialDisplayMode = (): AppSettings['overlayDisplayMode'] => {
+  if (typeof window !== 'undefined' && window.innerWidth <= 80) {
+    return 'minimal';
+  }
+
+  return 'full';
+};
 
 export const useRecordingOverlay = () => {
   const stopping = useSignal(false);
+  const displayMode = useSignal<AppSettings['overlayDisplayMode']>(initialDisplayMode());
 
   const handleStopRecording = async () => {
     stopping.value = true;
@@ -17,8 +29,35 @@ export const useRecordingOverlay = () => {
     }
   };
 
+  useEffect(() => {
+    if (!('__TAURI_INTERNALS__' in window)) {
+      return;
+    }
+
+    void getAppSnapshot()
+      .then((snapshot) => {
+        displayMode.value =
+          snapshot.settings.overlayDisplayMode === 'minimal' || window.innerWidth <= 80
+            ? 'minimal'
+            : snapshot.settings.overlayDisplayMode;
+      })
+      .catch(() => undefined);
+
+    const snapshotListener = listen<AppSnapshot>('app-snapshot-updated', (event) => {
+      displayMode.value =
+        event.payload.settings.overlayDisplayMode === 'minimal' || window.innerWidth <= 80
+          ? 'minimal'
+          : event.payload.settings.overlayDisplayMode;
+    });
+
+    return () => {
+      void snapshotListener.then((unlisten) => unlisten());
+    };
+  }, []);
+
   return {
     status: {
+      displayMode,
       stopping
     },
     actions: {

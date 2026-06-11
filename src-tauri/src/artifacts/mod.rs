@@ -1,4 +1,3 @@
-#[cfg(test)]
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -53,7 +52,7 @@ pub(crate) fn stage_message(stage: PipelineStageId, status: PipelineStageStatus)
             "Local transcription setup required"
         }
         (PipelineStageId::Alignment, PipelineStageStatus::Skipped) => {
-            "No separate alignment pass is needed yet; transcript timings are used by diarization."
+            "Skipped because transcript timestamps are already available; no separate alignment pass is needed."
         }
         (PipelineStageId::Summary, PipelineStageStatus::Skipped) => {
             "Summary generation is disabled"
@@ -147,6 +146,28 @@ pub(crate) fn artifact_directory(output_directory: &str, started_at: u64, title:
         ))
 }
 
+pub(crate) fn rewrite_raw_transcript_title(
+    artifact_directory: &Path,
+    title: &str,
+) -> Result<(), String> {
+    rewrite_markdown_title(
+        &artifact_directory.join("raw-transcript.md"),
+        "Raw transcript",
+        title,
+    )
+}
+
+pub(crate) fn rewrite_diarized_transcript_title(
+    artifact_directory: &Path,
+    title: &str,
+) -> Result<(), String> {
+    rewrite_markdown_title(
+        &artifact_directory.join("diarized-transcript.md"),
+        "Diarized transcript",
+        title,
+    )
+}
+
 pub(crate) fn slugify(value: &str) -> String {
     let mut slug = String::new();
 
@@ -162,6 +183,25 @@ pub(crate) fn slugify(value: &str) -> String {
     }
 
     slug.trim_matches('-').to_owned()
+}
+
+fn rewrite_markdown_title(path: &Path, prefix: &str, title: &str) -> Result<(), String> {
+    if !path.exists() {
+        return Ok(());
+    }
+
+    let content = fs::read_to_string(path).map_err(|error| error.to_string())?;
+    let title = title.trim();
+    let heading = match title.is_empty() {
+        true => format!("# {prefix}"),
+        false => format!("# {prefix} - {title}"),
+    };
+    let rest = content
+        .find('\n')
+        .map(|index| &content[index + 1..])
+        .unwrap_or("");
+
+    fs::write(path, format!("{heading}\n{rest}")).map_err(|error| error.to_string())
 }
 
 #[cfg(test)]

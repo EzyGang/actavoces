@@ -36,6 +36,12 @@ export const AppSidebar = ({ app }: AppSidebarProps): JSX.Element => (
                       Processing
                     </span>
                   ) : null}
+                  {pipelineStatus.status === 'pending' ? (
+                    <span class='inline-flex items-center gap-2 text-text-muted text-xs'>
+                      <span class='h-2 w-2 animate-pulse bg-text-muted' />
+                      Queued
+                    </span>
+                  ) : null}
                 </div>
                 <span class='font-mono text-text-muted text-xs'>
                   {app.data.formatTimestamp(recording.startedAt)}
@@ -62,58 +68,6 @@ export const AppSidebar = ({ app }: AppSidebarProps): JSX.Element => (
           Records will appear after capture stops.
         </div>
       )}
-    </section>
-
-    <section class='flex flex-col gap-4'>
-      <div class='flex items-center justify-between gap-3'>
-        <h2 class='font-semibold text-xl'>Runtime</h2>
-        <Button
-          class='h-9 px-3'
-          disabled={app.status.loading.value}
-          onClick={app.actions.checkWorker}
-          variant='ghost'
-        >
-          Check worker
-        </Button>
-      </div>
-      <div class='flex flex-col gap-3 text-sm'>
-        <div class='flex justify-between gap-4 border-border-base border-b pb-3'>
-          <span class='text-text-muted'>Capture</span>
-          <span>File backend</span>
-        </div>
-        <div class='flex justify-between gap-4 border-border-base border-b pb-3'>
-          <span class='text-text-muted'>Worker</span>
-          <span>
-            {app.data.snapshot.value.desktop.workerHealthOk
-              ? 'Healthy'
-              : app.data.snapshot.value.desktop.workerRunning
-                ? 'Running'
-                : 'Stopped'}
-          </span>
-        </div>
-        <div class='flex justify-between gap-4 border-border-base border-b pb-3'>
-          <span class='text-text-muted'>Overlay</span>
-          <span>{app.data.snapshot.value.desktop.overlayVisible ? 'Visible' : 'Hidden'}</span>
-        </div>
-        <div class='flex justify-between gap-4 border-border-base border-b pb-3'>
-          <span class='text-text-muted'>Hotkey</span>
-          <span>{app.data.snapshot.value.desktop.hotkeyRegistered ? 'Registered' : 'Pending'}</span>
-        </div>
-        {app.data.snapshot.value.desktop.hotkeyError ? (
-          <div class='border border-warning-border bg-warning-bg p-3 text-warning text-xs'>
-            {app.data.snapshot.value.desktop.hotkeyError}
-          </div>
-        ) : null}
-        {app.data.snapshot.value.desktop.workerError ? (
-          <div class='border border-warning-border bg-warning-bg p-3 text-warning text-xs'>
-            {app.data.snapshot.value.desktop.workerError}
-          </div>
-        ) : null}
-        <div class='flex justify-between gap-4'>
-          <span class='text-text-muted'>Database</span>
-          <span>SQLite</span>
-        </div>
-      </div>
     </section>
   </aside>
 );

@@ -27,8 +27,8 @@ except ImportError:
 
 
 ctranslate2_module: Any = ctranslate2
-INITIAL_MODELS = ['small.en', 'medium.en', 'large-v3', 'distil-large-v3']
-DEFAULT_MODEL = 'small.en'
+INITIAL_MODELS = ['medium', 'small', 'large-v3', 'distil-large-v3']
+DEFAULT_MODEL = 'medium'
 type ModelInstallResult = NeedsSetupResult | FailedResult | ModelInstallCompleteResult
 type TranscriptionResult = NeedsSetupResult | FailedResult | TranscriptionCompleteResult
 

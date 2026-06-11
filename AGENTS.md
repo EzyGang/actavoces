@@ -422,6 +422,15 @@ src-tauri/src/app/
 - Use `cargo fmt`.
 - Run Rust checks after backend changes.
 
+### SQLite Migrations
+
+- Keep SQLite schema changes additive, idempotent, and non-destructive by default.
+- Prefer defensive setup operations: `CREATE TABLE IF NOT EXISTS`, column-existence checks before `ALTER TABLE ADD COLUMN`, `INSERT OR IGNORE` defaults, and read-time fallbacks for settings.
+- Treat `schema_migrations` as informational unless a proper ordered migration runner is introduced. Do not assume versioned migration history exists.
+- Do not drop tables, drop columns, rewrite existing data destructively, or use reset-style migrations without explicit user approval.
+- If a replacement schema is needed, create new tables alongside old tables, copy/transform data safely, and keep older data available unless removal is explicitly requested.
+- Settings are stored as key-value rows; new settings should usually be added with defaults plus safe fallback parsing for existing databases.
+
 ### Rust Style
 
 - Put trait bounds in `where` clauses.
@@ -430,6 +439,7 @@ src-tauri/src/app/
 - Avoid `if let ... else`; prefer `match` when both branches matter.
 - Use full logging macro paths if logging is introduced.
 - Prefer `.to_owned()` for `&str` to `String`.
+- Max file size is 350 lines.
 - Keep imports grouped in this order: std, external crates, current crate.
 - Use one `use` per crate group and let `cargo fmt` handle ordering.
 

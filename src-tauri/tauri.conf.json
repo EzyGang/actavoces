@@ -15,8 +15,10 @@
         "title": "ActaVoces",
         "width": 1200,
         "height": 780,
-        "minWidth": 960,
-        "minHeight": 680
+        "label": "main",
+        "minWidth": 1200,
+        "minHeight": 720,
+        "visible": false
       }
     ],
     "security": {
@@ -45,9 +47,7 @@
   "plugins": {
     "updater": {
       "pubkey": "ACTAVOCES_UPDATER_PUBLIC_KEY_IS_SET_BY_RELEASE_WORKFLOW",
-      "endpoints": [
-        "https://github.com/EzyGang/actavoces/releases/latest/download/latest.json"
-      ]
+      "endpoints": ["https://github.com/EzyGang/actavoces/releases/latest/download/latest.json"]
     }
   }
 }

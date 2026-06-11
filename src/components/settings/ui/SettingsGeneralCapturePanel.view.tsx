@@ -32,7 +32,9 @@ export const SettingsGeneralCapturePanel = ({ app }: SettingsPanelProps): JSX.El
           onClick={app.settings.hotkeyField.onCapture}
           type='button'
         >
-          {app.settings.hotkeyField.recording ? 'Press shortcut' : app.settings.hotkeyField.value}
+          {app.settings.hotkeyField.recording
+            ? 'Press shortcut'
+            : app.settings.hotkeyField.displayValue}
         </button>
       </label>
       {app.settings.captureSelectFields.map((field) => (
@@ -44,8 +46,8 @@ export const SettingsGeneralCapturePanel = ({ app }: SettingsPanelProps): JSX.El
             value={field.value}
           >
             {field.options.map((option) => (
-              <option key={option} value={option}>
-                {option}
+              <option key={option.value} value={option.value}>
+                {option.label}
               </option>
             ))}
           </select>
@@ -64,6 +66,15 @@ export const SettingsGeneralCapturePanel = ({ app }: SettingsPanelProps): JSX.El
         </label>
       ))}
     </div>
+    <label class='flex items-center gap-3 text-sm'>
+      <input
+        checked={app.settings.toggles.closeToTray.checked}
+        class='h-4 w-4'
+        onInput={app.settings.toggles.closeToTray.onInput}
+        type='checkbox'
+      />
+      <span>Close to tray</span>
+    </label>
     <label class='flex items-center gap-3 text-sm'>
       <input
         checked={app.settings.toggles.launchAtLogin.checked}

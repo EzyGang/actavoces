@@ -60,6 +60,7 @@ async def test_transcribe_run_writes_supplied_segments(tmp_path: Path) -> None:
         payload={
             'audio_path': str(audio_path),
             'output_directory': str(tmp_path),
+            'title': 'Planning Call',
             'segments': [{'start': 0, 'end': 3, 'text': ' Hello '}],
         },
     )
@@ -67,7 +68,9 @@ async def test_transcribe_run_writes_supplied_segments(tmp_path: Path) -> None:
     events = await handle(command)
 
     assert events[-1].event == 'transcribe.complete'
-    assert 'Hello' in (tmp_path / 'raw-transcript.md').read_text()
+    transcript = (tmp_path / 'raw-transcript.md').read_text()
+    assert '# Raw transcript - Planning Call' in transcript
+    assert 'Hello' in transcript
     assert (tmp_path / 'raw-segments.json').exists()
 
 
@@ -121,7 +124,7 @@ def test_faster_whisper_adapter_returns_segments_from_model() -> None:
 
     result = run_faster_whisper(
         audio_path=Path('recording.wav'),
-        model_name='small.en',
+        model_name='medium',
         language='en',
         compute_type='int8',
         model_storage_directory=Path('/tmp/models'),
@@ -150,7 +153,7 @@ def test_faster_whisper_cuda_fallback_uses_cpu_when_cuda_libraries_are_missing()
 
     result = run_faster_whisper(
         audio_path=Path('recording.wav'),
-        model_name='small.en',
+        model_name='medium',
         language='en',
         compute_type='cuda',
         model_storage_directory=None,
@@ -182,7 +185,7 @@ def test_faster_whisper_auto_fallback_uses_cpu_when_cuda_libraries_are_missing()
 
     result = run_faster_whisper(
         audio_path=Path('recording.wav'),
-        model_name='small.en',
+        model_name='medium',
         language='en',
         compute_type='auto',
         model_storage_directory=None,
@@ -221,15 +224,15 @@ def test_cuda_status_requires_nvidia_libraries(mocker: MockerFixture) -> None:
 
 
 def test_model_installed_detects_expected_storage_names(tmp_path: Path) -> None:
-    (tmp_path / 'faster-whisper-medium.en').mkdir()
+    (tmp_path / 'faster-whisper-medium').mkdir()
 
-    assert model_installed('medium.en', tmp_path)
+    assert model_installed('medium', tmp_path)
 
 
 async def test_models_install_reports_setup_when_faster_whisper_is_missing(mocker: MockerFixture) -> None:
     mocker.patch('app.models.faster_whisper_model_factory', None)
 
-    events = await handle(WorkerCommand(id='5', name='models.install', payload={'model': 'small.en'}))
+    events = await handle(WorkerCommand(id='5', name='models.install', payload={'model': 'medium'}))
 
     assert events[0].event == 'models.install.needs_setup'
     assert events[0].payload['dependency'] == 'faster-whisper'
@@ -243,15 +246,15 @@ def test_model_install_preloads_faster_whisper_model(tmp_path: Path) -> None:
             calls.append((model_name, kwargs))
 
     result = install_faster_whisper_model(
-        model_name='small.en',
+        model_name='medium',
         compute_type='int8',
         model_storage_directory=tmp_path,
         model_factory=FakeModel,
     )
 
     assert result.status == 'complete'
-    assert result.payload['model'] == 'small.en'
-    assert calls == [('small.en', {'compute_type': 'int8', 'download_root': str(tmp_path)})]
+    assert result.payload['model'] == 'medium'
+    assert calls == [('medium', {'compute_type': 'int8', 'download_root': str(tmp_path)})]
 
 
 def test_diarized_transcript_rendering_uses_turns_and_segments() -> None:
@@ -261,8 +264,10 @@ def test_diarized_transcript_rendering_uses_turns_and_segments() -> None:
             {'start': 2, 'end': 4, 'text': 'there'},
         ],
         turns=[{'speaker': 'Speaker 1', 'start': 0, 'end': 4}],
+        title='Planning Call',
     )
 
+    assert '# Diarized transcript - Planning Call' in transcript
     assert '## Speaker 1' in transcript
     assert 'Hello there' in transcript
 
@@ -276,6 +281,7 @@ async def test_diarize_run_completes_exact_single_speaker(tmp_path: Path) -> Non
                 'output_directory': str(tmp_path),
                 'speaker_count_mode': 'exact',
                 'exact_speakers': 1,
+                'title': 'Planning Call',
                 'segments': [
                     {'start': 1, 'end': 3, 'text': 'Hello'},
                     {'start': 3, 'end': 8, 'text': 'there'},
@@ -285,7 +291,9 @@ async def test_diarize_run_completes_exact_single_speaker(tmp_path: Path) -> Non
     )
 
     assert events[-1].event == 'diarize.complete'
-    assert 'Speaker 1' in (tmp_path / 'diarized-transcript.md').read_text()
+    transcript = (tmp_path / 'diarized-transcript.md').read_text()
+    assert '# Diarized transcript - Planning Call' in transcript
+    assert 'Speaker 1' in transcript
     assert (tmp_path / 'diarization.json').exists()
 
 
@@ -431,6 +439,7 @@ def test_build_summary_agent_uses_openai_compatible_provider() -> None:
 
 
 def test_raw_transcript_formatting_includes_timestamps() -> None:
-    transcript = render_raw_transcript([{'start': 61, 'end': 62, 'text': 'Done'}])
+    transcript = render_raw_transcript([{'start': 61, 'end': 62, 'text': 'Done'}], title='Retro')
 
+    assert '# Raw transcript - Retro' in transcript
     assert '[01:01 - 01:02] Done' in transcript

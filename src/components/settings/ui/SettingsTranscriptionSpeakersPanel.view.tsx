@@ -20,8 +20,8 @@ export const SettingsTranscriptionSpeakersPanel = ({ app }: SettingsPanelProps):
             value={field.value}
           >
             {field.options.map((option) => (
-              <option key={option} value={option}>
-                {option}
+              <option key={option.value} value={option.value}>
+                {option.label}
               </option>
             ))}
           </select>
@@ -29,8 +29,8 @@ export const SettingsTranscriptionSpeakersPanel = ({ app }: SettingsPanelProps):
             <span
               class={
                 field.hint.tone === 'warning'
-                  ? 'flex flex-col gap-1 border border-warning-border bg-warning-bg p-3 text-warning text-xs'
-                  : 'flex flex-col gap-1 border border-border-base bg-bg-input p-3 text-text-muted text-xs'
+                  ? 'flex flex-1 flex-col gap-1 border border-warning-border bg-warning-bg p-3 text-warning text-xs'
+                  : 'flex flex-1 flex-col gap-1 border border-border-base bg-bg-input p-3 text-text-muted text-xs'
               }
             >
               {field.hint.title ? <span class='font-semibold'>{field.hint.title}</span> : null}

@@ -1,5 +1,6 @@
 import type { JSX } from 'preact';
 import type { useApp } from '../../app-shell/hooks/useApp.hook';
+import { AppLogo } from '../../shared/ui/AppLogo.view';
 import { Button } from '../../shared/ui/Button.view';
 
 interface SetupRouteProps {
@@ -10,9 +11,7 @@ export const SetupRoute = ({ app }: SetupRouteProps): JSX.Element => (
   <main class='flex min-h-screen items-center justify-center bg-bg-page p-6 text-text-primary'>
     <section class='flex w-full max-w-xl flex-col gap-6 border border-border-base bg-bg-card p-6'>
       <div class='flex items-center gap-4'>
-        <div class='flex h-11 w-11 items-center justify-center border border-text-primary bg-text-primary font-semibold text-bg-page text-sm'>
-          AV
-        </div>
+        <AppLogo class='h-11 w-11' />
         <div class='flex flex-col gap-1'>
           <span class='font-semibold text-sm uppercase tracking-wider'>ActaVoces</span>
           <span class='font-mono text-text-muted text-[11px] uppercase tracking-wider'>

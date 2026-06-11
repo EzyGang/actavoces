@@ -3,6 +3,7 @@ import type { JSX } from 'preact';
 import {
   deleteRecording,
   openLocalPath,
+  renameRecordingTitle,
   renameSpeakerLabel,
   retryRecordingJobs,
   startRecording,
@@ -29,6 +30,15 @@ interface SpeakerLabelRow {
   onCancelRename: () => void;
 }
 
+interface TitleRenameRow {
+  isRenaming: boolean;
+  value: string;
+  onStart: () => void;
+  onInput: JSX.InputEventHandler<HTMLInputElement>;
+  onSubmit: JSX.GenericEventHandler<HTMLFormElement>;
+  onCancel: () => void;
+}
+
 interface UseRecordingsInput {
   loading: Signal<boolean>;
   setError: (message: string | null) => void;
@@ -36,6 +46,8 @@ interface UseRecordingsInput {
 }
 
 export const useRecordings = ({ loading, setError, setSnapshot }: UseRecordingsInput) => {
+  const titleRenameTarget = useSignal<string | null>(null);
+  const titleRenameDraft = useSignal('');
   const speakerRenameTarget = useSignal<{ recordingId: string; speaker: string } | null>(null);
   const speakerRenameDraft = useSignal('');
 
@@ -120,6 +132,36 @@ export const useRecordings = ({ loading, setError, setSnapshot }: UseRecordingsI
     }
   };
 
+  const renameTitle = async (recording: Recording) => {
+    const title = titleRenameDraft.value.trim();
+
+    if (title.length === 0) {
+      setError('Recording title cannot be empty');
+
+      return;
+    }
+
+    if (title === recording.title.trim()) {
+      titleRenameTarget.value = null;
+      titleRenameDraft.value = '';
+
+      return;
+    }
+
+    loading.value = true;
+    setError(null);
+
+    try {
+      setSnapshot(await renameRecordingTitle(recording.id, title));
+      titleRenameTarget.value = null;
+      titleRenameDraft.value = '';
+    } catch (error) {
+      setError(errorMessage(error, 'Unable to rename recording'));
+    } finally {
+      loading.value = false;
+    }
+  };
+
   const renameSpeaker = async (recording: Recording, speaker: string) => {
     const replacement = speakerRenameDraft.value.trim();
 
@@ -165,18 +207,36 @@ export const useRecordings = ({ loading, setError, setSnapshot }: UseRecordingsI
   const latestRecordingPipelineStatus = useComputed(() =>
     latestRecording.value ? recordingPipelineStatus(latestRecording.value) : null
   );
+  const latestRecordingActions = useComputed(() => {
+    if (!latestRecording.value) {
+      return null;
+    }
+
+    const recording = latestRecording.value;
+
+    return {
+      canRetry: canRetryRecording(recording),
+      onRetry: () => {
+        void retry(recording);
+      }
+    };
+  });
 
   return {
     latestRecording,
+    latestRecordingActions,
     recordingRows: recordingRows({
+      titleRenameTarget,
+      titleRenameDraft,
       speakerRenameTarget,
       speakerRenameDraft,
       openPath,
       retry,
       remove,
+      renameTitle,
       renameSpeaker
     }),
-    groupedJobRows: groupedJobRows(retry),
+    groupedJobRows: groupedJobRows(openPath, retry),
     recentRecordingRows: recentRecordingRows(openPath, retry),
     activeJobs,
     latestRecordingProgress,
@@ -191,22 +251,48 @@ export const useRecordings = ({ loading, setError, setSnapshot }: UseRecordingsI
 };
 
 const recordingRows = ({
+  titleRenameTarget,
+  titleRenameDraft,
   speakerRenameTarget,
   speakerRenameDraft,
   openPath,
   retry,
   remove,
+  renameTitle,
   renameSpeaker
 }: {
+  titleRenameTarget: Signal<string | null>;
+  titleRenameDraft: Signal<string>;
   speakerRenameTarget: Signal<{ recordingId: string; speaker: string } | null>;
   speakerRenameDraft: Signal<string>;
   openPath: (path: string) => Promise<void>;
   retry: (recording: Recording) => Promise<void>;
   remove: (recording: Recording) => Promise<void>;
+  renameTitle: (recording: Recording) => Promise<void>;
   renameSpeaker: (recording: Recording, speaker: string) => Promise<void>;
 }) =>
   useComputed(() =>
     appSnapshotSignal.value.recordings.map((recording) => {
+      const isTitleRenaming = titleRenameTarget.value === recording.id;
+      const titleRow: TitleRenameRow = {
+        isRenaming: isTitleRenaming,
+        value: isTitleRenaming ? titleRenameDraft.value : recording.title,
+        onStart: () => {
+          titleRenameTarget.value = recording.id;
+          titleRenameDraft.value = recording.title;
+        },
+        onInput: (event) => {
+          titleRenameDraft.value = event.currentTarget.value;
+        },
+        onSubmit: (event) => {
+          event.preventDefault();
+          void renameTitle(recording);
+        },
+        onCancel: () => {
+          titleRenameTarget.value = null;
+          titleRenameDraft.value = '';
+        }
+      };
       const speakerRows: SpeakerLabelRow[] = recording.speakerLabels.map((speaker) => {
         const isRenaming =
           speakerRenameTarget.value?.recordingId === recording.id &&
@@ -240,6 +326,7 @@ const recordingRows = ({
       return {
         recording,
         canRetry: canRetryRecording(recording),
+        titleRow,
         speakerRows,
         onOpenFolder: () => {
           void openPath(recording.artifactDirectory);
@@ -273,7 +360,10 @@ const recentRecordingRows = (
     }))
   );
 
-const groupedJobRows = (retry: (recording: Recording) => Promise<void>) =>
+const groupedJobRows = (
+  openPath: (path: string) => Promise<void>,
+  retry: (recording: Recording) => Promise<void>
+) =>
   useComputed(() =>
     appSnapshotSignal.value.recordings
       .map((recording) => ({
@@ -282,6 +372,9 @@ const groupedJobRows = (retry: (recording: Recording) => Promise<void>) =>
         pipelineStatus: recordingPipelineStatus(recording),
         canRetry: canRetryRecording(recording),
         jobs: appSnapshotSignal.value.jobs.filter((job) => job.recordingId === recording.id),
+        onOpenFolder: () => {
+          void openPath(recording.artifactDirectory);
+        },
         onRetry: () => {
           void retry(recording);
         }

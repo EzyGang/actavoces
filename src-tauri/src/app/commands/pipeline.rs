@@ -1,8 +1,13 @@
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use tauri::{Emitter, Manager};
 
-use crate::artifacts::{artifact, stage_label};
+use crate::artifacts::{
+    artifact, rewrite_diarized_transcript_title, rewrite_raw_transcript_title, stage_label,
+};
+use crate::diarization::{
+    run_single_speaker_diarization, run_sortformer_diarization, TranscriptSegment,
+};
 use crate::domain::types::*;
 use crate::settings::{read_hugging_face_token, read_summary_provider_api_key};
 use crate::storage::repository::AppRepository;
@@ -56,7 +61,12 @@ pub fn run_pipeline_processing(
 ) -> Result<(), String> {
     let mut repository = state.repository()?;
 
-    resume_pipeline_jobs(&mut repository, run_worker_command)?;
+    resume_pipeline_jobs(&mut repository, run_worker_command, |repository| {
+        let snapshot = repository.snapshot().map_err(|error| error.to_string())?;
+        emit_snapshot_update(app, &snapshot);
+
+        Ok(())
+    })?;
     let snapshot = repository.snapshot().map_err(|error| error.to_string())?;
     emit_snapshot_update(app, &snapshot);
 
@@ -76,6 +86,7 @@ pub fn resume_pending_jobs(
         &app,
         snapshot.active_recording.is_some(),
         snapshot.settings.overlay_position,
+        snapshot.settings.overlay_display_mode,
     )?;
 
     Ok(snapshot)
@@ -84,6 +95,7 @@ pub fn resume_pending_jobs(
 pub fn resume_pipeline_jobs<F>(
     repository: &mut AppRepository,
     mut run_worker: F,
+    mut on_update: impl FnMut(&mut AppRepository) -> Result<(), String>,
 ) -> Result<(), String>
 where
     F: FnMut(&str, serde_json::Value) -> Result<Vec<WorkerEvent>, String>,
@@ -104,47 +116,65 @@ where
                 transcription_payload(&recording, &settings),
                 "transcribe.run",
                 &mut run_worker,
+                &mut on_update,
             )?;
         }
 
         if stage_is_complete(repository, &recording.id, PipelineStageId::Transcription)? {
             complete_alignment_stage(repository, &recording.id)?;
+            on_update(repository)?;
         }
 
         if stage_is_complete(repository, &recording.id, PipelineStageId::Transcription)?
             && should_run_stage(repository, &recording.id, PipelineStageId::Diarization)?
         {
-            let diarization_api_key = if exact_one_speaker_diarization(&settings) {
-                String::new()
-            } else {
-                match settings.diarization_backend {
-                    DiarizationBackend::Pyannote => match read_hugging_face_token()? {
-                        Some(token) => token,
-                        None => {
-                            mark_stage_needs_setup(
-                                repository,
-                                &recording.id,
-                                PipelineStageId::Diarization,
-                                "Hugging Face token is required for speaker diarization",
-                            )?;
-                            continue;
+            match settings.diarization_backend {
+                DiarizationBackend::Pyannote => {
+                    let diarization_api_key = if exact_one_speaker_diarization(&settings) {
+                        String::new()
+                    } else {
+                        match read_hugging_face_token()? {
+                            Some(token) => token,
+                            None => {
+                                mark_stage_needs_setup(
+                                    repository,
+                                    &recording.id,
+                                    PipelineStageId::Diarization,
+                                    "Hugging Face token is required for speaker diarization",
+                                )?;
+                                on_update(repository)?;
+                                continue;
+                            }
                         }
-                    },
+                    };
+                    run_pipeline_stage(
+                        repository,
+                        &recording,
+                        PipelineStageId::Diarization,
+                        diarization_payload(&recording, &settings, diarization_api_key),
+                        "diarize.run",
+                        &mut run_worker,
+                        &mut on_update,
+                    )?;
                 }
-            };
-            run_pipeline_stage(
-                repository,
-                &recording,
-                PipelineStageId::Diarization,
-                diarization_payload(&recording, &settings, diarization_api_key),
-                "diarize.run",
-                &mut run_worker,
-            )?;
+                DiarizationBackend::Sortformer => {
+                    run_sortformer_pipeline_stage(
+                        repository,
+                        &recording,
+                        &settings,
+                        &mut on_update,
+                    )?;
+                }
+            }
         }
 
         if should_run_stage(repository, &recording.id, PipelineStageId::Summary)? {
             if !settings.summary_enabled {
                 complete_disabled_summary_stage(repository, &recording.id)?;
+                repository
+                    .complete_recording_if_pipeline_done(&recording.id)
+                    .map_err(|error| error.to_string())?;
+                on_update(repository)?;
                 continue;
             }
 
@@ -155,6 +185,7 @@ where
                     PipelineStageId::Summary,
                     "Summary provider API key is required",
                 )?;
+                on_update(repository)?;
                 continue;
             };
 
@@ -165,11 +196,108 @@ where
                 summary_payload(&recording, &settings, api_key),
                 "summarize.run",
                 &mut run_worker,
+                &mut on_update,
             )?;
         }
+
+        repository
+            .complete_recording_if_pipeline_done(&recording.id)
+            .map_err(|error| error.to_string())?;
+        on_update(repository)?;
     }
 
     Ok(())
+}
+
+fn run_sortformer_pipeline_stage(
+    repository: &mut AppRepository,
+    recording: &Recording,
+    settings: &AppSettings,
+    on_update: &mut impl FnMut(&mut AppRepository) -> Result<(), String>,
+) -> Result<(), String> {
+    let stage = PipelineStageId::Diarization;
+    let job_id = pipeline_job_id(&recording.id, stage)?;
+    let artifact_directory = PathBuf::from(&recording.artifact_directory);
+    let segments = read_transcript_segments(&artifact_directory);
+
+    repository
+        .update_job(
+            &job_id,
+            PipelineStageStatus::Running,
+            5,
+            "Sortformer diarization started",
+        )
+        .and_then(|()| {
+            repository.append_event(
+                &recording.id,
+                stage,
+                PipelineStageStatus::Running,
+                "Sortformer diarization started",
+            )
+        })
+        .map_err(|error| error.to_string())?;
+    on_update(repository)?;
+
+    let output =
+        match run_local_diarization(&artifact_directory, settings, &segments, &recording.title) {
+            Ok(output) => output,
+            Err(error) => {
+                mark_stage_failed(repository, &recording.id, stage, &error)?;
+                on_update(repository)?;
+
+                return Ok(());
+            }
+        };
+
+    repository
+        .upsert_artifact(
+            &recording.id,
+            &artifact(
+                ArtifactKind::Diarization,
+                "Diarization turns",
+                output.diarization_path,
+                true,
+            ),
+        )
+        .and_then(|()| {
+            repository.upsert_artifact(
+                &recording.id,
+                &artifact(
+                    ArtifactKind::DiarizedTranscript,
+                    "Diarized transcript",
+                    output.transcript_path,
+                    true,
+                ),
+            )
+        })
+        .map_err(|error| error.to_string())?;
+
+    mark_stage_complete(
+        repository,
+        &recording.id,
+        stage,
+        "Sortformer diarization complete",
+    )?;
+    on_update(repository)
+}
+
+fn run_local_diarization(
+    artifact_directory: &Path,
+    settings: &AppSettings,
+    segments: &[TranscriptSegment],
+    title: &str,
+) -> Result<crate::diarization::SortformerDiarizationOutput, String> {
+    if exact_one_speaker_diarization(settings) {
+        return run_single_speaker_diarization(artifact_directory, segments, title);
+    }
+
+    run_sortformer_diarization(
+        &artifact_directory.join("recording.wav"),
+        artifact_directory,
+        &PathBuf::from(&settings.model_storage_directory),
+        segments,
+        title,
+    )
 }
 
 fn run_pipeline_stage<F>(
@@ -179,6 +307,7 @@ fn run_pipeline_stage<F>(
     payload: serde_json::Value,
     command_name: &str,
     run_worker: &mut F,
+    on_update: &mut impl FnMut(&mut AppRepository) -> Result<(), String>,
 ) -> Result<(), String>
 where
     F: FnMut(&str, serde_json::Value) -> Result<Vec<WorkerEvent>, String>,
@@ -201,17 +330,20 @@ where
             )
         })
         .map_err(|error| error.to_string())?;
+    on_update(repository)?;
 
     let events = match run_worker(command_name, payload) {
         Ok(events) => events,
         Err(error) => {
             mark_stage_failed(repository, &recording.id, stage, &error)?;
+            on_update(repository)?;
 
             return Ok(());
         }
     };
 
-    apply_worker_events(repository, recording, stage, &events)
+    apply_worker_events(repository, recording, stage, &events)?;
+    on_update(repository)
 }
 
 fn apply_worker_events(
@@ -331,6 +463,14 @@ fn apply_complete_event(
                     repository
                         .update_recording_title(&recording.id, title.trim())
                         .map_err(|error| error.to_string())?;
+                    rewrite_raw_transcript_title(
+                        &PathBuf::from(&recording.artifact_directory),
+                        title.trim(),
+                    )?;
+                    rewrite_diarized_transcript_title(
+                        &PathBuf::from(&recording.artifact_directory),
+                        title.trim(),
+                    )?;
                 }
             }
         }
@@ -382,7 +522,7 @@ fn complete_alignment_stage(
         repository,
         recording_id,
         PipelineStageId::Alignment,
-        "No separate alignment pass is needed yet; transcript timings are used by diarization.",
+        "Skipped because transcript timestamps are already available; no separate alignment pass is needed.",
     )
 }
 
@@ -526,6 +666,7 @@ fn transcription_payload(recording: &Recording, settings: &AppSettings) -> serde
     serde_json::json!({
         "audioPath": artifact_directory.join("recording.wav"),
         "outputDirectory": artifact_directory,
+        "title": recording.title,
         "model": settings.whisper_model,
         "language": settings.transcription_language,
         "computeType": settings.compute_type,
@@ -547,6 +688,7 @@ fn diarization_payload(
         "audioPath": artifact_directory.join("recording.wav"),
         "outputDirectory": artifact_directory,
         "segments": segments,
+        "title": recording.title,
         "backend": settings.diarization_backend,
         "apiKey": api_key,
         "speakerCountMode": settings.speaker_count_mode,
@@ -554,6 +696,13 @@ fn diarization_payload(
         "minSpeakers": settings.min_speakers,
         "maxSpeakers": settings.max_speakers,
     })
+}
+
+fn read_transcript_segments(artifact_directory: &Path) -> Vec<TranscriptSegment> {
+    read_json_file(artifact_directory.join("raw-segments.json"))
+        .and_then(|value| value.get("segments").cloned())
+        .and_then(|value| serde_json::from_value(value).ok())
+        .unwrap_or_default()
 }
 
 fn exact_one_speaker_diarization(settings: &AppSettings) -> bool {

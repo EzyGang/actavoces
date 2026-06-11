@@ -3,8 +3,10 @@ import { act, renderHook, waitFor } from '@testing-library/preact';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { useApp } from '../components/app-shell/hooks/useApp.hook';
 import {
+  bootstrapWorkerRuntime,
   getAppSnapshot,
   openLocalPath,
+  renameRecordingTitle,
   renameSpeakerLabel,
   retryRecordingJobs,
   startRecording,
@@ -40,6 +42,7 @@ vi.mock('../services/desktop/app.service', () => ({
   installTranscriptionModel: vi.fn(),
   openLocalPath: vi.fn(),
   refreshModelInventory: vi.fn(),
+  renameRecordingTitle: vi.fn(),
   renameSpeakerLabel: vi.fn(),
   retryRecordingJobs: vi.fn(),
   setupDiarizationRuntime: vi.fn(),
@@ -56,15 +59,17 @@ const baseSettings: AppSettings = {
   databasePath: '/tmp/actavoces/actavoces.sqlite',
   hotkey: 'CommandOrControl+Shift+Space',
   overlayPosition: 'topLeft',
+  overlayDisplayMode: 'full',
+  closeToTray: true,
   launchAtLogin: false,
   microphoneDevice: 'Default microphone',
   systemAudioSource: 'Default system output',
   sampleRate: 48000,
-  whisperModel: 'small.en',
+  whisperModel: 'medium',
   transcriptionLanguage: 'auto',
   computeType: 'auto',
   modelStorageDirectory: '/tmp/actavoces/models',
-  diarizationBackend: 'pyannote',
+  diarizationBackend: 'sortformer',
   speakerCountMode: 'automatic',
   exactSpeakers: null,
   minSpeakers: null,
@@ -155,6 +160,7 @@ const resetSignals = () => {
   appSnapshotSignal.value = makeSnapshot();
   appErrorSignal.value = null;
   setActiveRoute('dashboard');
+  Reflect.deleteProperty(window, '__TAURI_INTERNALS__');
 };
 
 describe('useApp hook', () => {
@@ -164,7 +170,9 @@ describe('useApp hook', () => {
     vi.mocked(startRecording).mockReset();
     vi.mocked(stopRecording).mockReset();
     vi.mocked(retryRecordingJobs).mockReset();
+    vi.mocked(renameRecordingTitle).mockReset();
     vi.mocked(renameSpeakerLabel).mockReset();
+    vi.mocked(bootstrapWorkerRuntime).mockReset();
     vi.mocked(open).mockReset();
     resetSignals();
   });
@@ -193,6 +201,80 @@ describe('useApp hook', () => {
 
     await waitFor(() => {
       expect(result.current.status.error.value).toBe('backend offline');
+    });
+  });
+
+  it('loads a snapshot in Tauri when the startup snapshot event was missed', async () => {
+    Object.defineProperty(window, '__TAURI_INTERNALS__', {
+      configurable: true,
+      value: {}
+    });
+    appSnapshotSignal.value = makeSnapshot({
+      desktop: {
+        ...makeSnapshot().desktop,
+        workerSetupStatus: 'missing',
+        workerSetupStep: '',
+        workerSetupError: null
+      },
+      settings: {
+        ...baseSettings,
+        databasePath: ''
+      }
+    });
+    const bootstrapSnapshot = makeSnapshot();
+
+    vi.mocked(getAppSnapshot).mockResolvedValue(
+      makeSnapshot({
+        desktop: {
+          ...makeSnapshot().desktop,
+          workerSetupStatus: 'missing',
+          workerSetupStep: 'Preparing local worker runtime',
+          workerSetupError: null
+        }
+      })
+    );
+    vi.mocked(bootstrapWorkerRuntime).mockResolvedValue(bootstrapSnapshot);
+
+    const { result } = renderHook(() => useApp());
+
+    await waitFor(() => {
+      expect(bootstrapWorkerRuntime).toHaveBeenCalled();
+    });
+
+    expect(result.current.data.snapshot.value.desktop.workerSetupStatus).toBe('ready');
+    expect(result.current.data.setupProgress.value.status).toBe('ready');
+  });
+
+  it('retries the Tauri snapshot while the backend is still starting', async () => {
+    Object.defineProperty(window, '__TAURI_INTERNALS__', {
+      configurable: true,
+      value: {}
+    });
+    appSnapshotSignal.value = makeSnapshot({
+      desktop: {
+        ...makeSnapshot().desktop,
+        workerSetupStatus: 'missing',
+        workerSetupStep: '',
+        workerSetupError: null
+      },
+      settings: {
+        ...baseSettings,
+        databasePath: ''
+      }
+    });
+
+    vi.mocked(getAppSnapshot)
+      .mockRejectedValueOnce(new Error('ActaVoces is still starting'))
+      .mockResolvedValue(makeSnapshot());
+    vi.mocked(bootstrapWorkerRuntime).mockResolvedValue(makeSnapshot());
+
+    renderHook(() => useApp());
+
+    await waitFor(() => {
+      expect(getAppSnapshot).toHaveBeenCalledTimes(2);
+    });
+    await waitFor(() => {
+      expect(bootstrapWorkerRuntime).toHaveBeenCalled();
     });
   });
 
@@ -318,16 +400,54 @@ describe('useApp hook', () => {
     expect(openLocalPath).toHaveBeenCalledWith(recording.artifactDirectory);
   });
 
+  it('opens a recording folder from the jobs group action', async () => {
+    const recording = makeRecording('recording-1');
+
+    vi.mocked(getAppSnapshot).mockResolvedValue(
+      makeSnapshot({
+        recordings: [recording],
+        jobs: [
+          {
+            id: 'job-1',
+            recordingId: recording.id,
+            stage: 'transcription',
+            status: 'pending',
+            progress: 0,
+            message: 'Queued'
+          }
+        ]
+      })
+    );
+    vi.mocked(openLocalPath).mockResolvedValue(undefined);
+
+    const { result } = renderHook(() => useApp());
+
+    await waitFor(() => {
+      expect(result.current.data.groupedJobRows.value).toHaveLength(1);
+    });
+    await act(async () => {
+      result.current.data.groupedJobRows.value[0].onOpenFolder();
+    });
+
+    expect(openLocalPath).toHaveBeenCalledWith(recording.artifactDirectory);
+  });
+
   it('exposes capture device selectors from the snapshot', async () => {
     vi.mocked(getAppSnapshot).mockResolvedValue(makeSnapshot());
 
     const { result } = renderHook(() => useApp());
 
     await waitFor(() => {
-      expect(result.current.settings.captureSelectFields[0].options).toContain('Studio mic');
+      expect(result.current.settings.captureSelectFields[0].options).toContainEqual({
+        value: 'Studio mic',
+        label: 'Studio mic'
+      });
     });
 
-    expect(result.current.settings.captureSelectFields[1].options).toContain('MacBook Speakers');
+    expect(result.current.settings.captureSelectFields[1].options).toContainEqual({
+      value: 'MacBook Speakers',
+      label: 'MacBook Speakers'
+    });
   });
 
   it('preserves configured capture devices missing from current enumeration', async () => {
@@ -344,12 +464,16 @@ describe('useApp hook', () => {
     const { result } = renderHook(() => useApp());
 
     await waitFor(() => {
-      expect(result.current.settings.captureSelectFields[0].options[0]).toBe(
-        'Disconnected microphone'
-      );
+      expect(result.current.settings.captureSelectFields[0].options[0]).toEqual({
+        value: 'Disconnected microphone',
+        label: 'Disconnected microphone'
+      });
     });
 
-    expect(result.current.settings.captureSelectFields[1].options[0]).toBe('Missing loopback');
+    expect(result.current.settings.captureSelectFields[1].options[0]).toEqual({
+      value: 'Missing loopback',
+      label: 'Missing loopback'
+    });
   });
 
   it('selects folder settings through the native dialog', async () => {
@@ -534,6 +658,91 @@ describe('useApp hook', () => {
 
     expect(retryRecordingJobs).toHaveBeenCalledWith('recording-1');
     expect(result.current.data.snapshot.value.recordings[0].stages[0].status).toBe('running');
+  });
+
+  it('retries failed jobs from the latest recording action', async () => {
+    const recording = {
+      ...makeRecording('recording-1'),
+      stages: [
+        {
+          id: 'transcription' as const,
+          label: 'Raw transcript',
+          status: 'failed' as const,
+          progress: 0,
+          message: 'Worker missing'
+        }
+      ]
+    };
+
+    vi.mocked(getAppSnapshot).mockResolvedValue(makeSnapshot({ recordings: [recording] }));
+    vi.mocked(retryRecordingJobs).mockResolvedValue(
+      makeSnapshot({
+        recordings: [
+          {
+            ...recording,
+            stages: [
+              {
+                id: 'transcription',
+                label: 'Raw transcript',
+                status: 'pending',
+                progress: 0,
+                message: 'Retry queued'
+              }
+            ]
+          }
+        ]
+      })
+    );
+
+    const { result } = renderHook(() => useApp());
+
+    await waitFor(() => {
+      expect(result.current.data.latestRecordingActions.value?.canRetry).toBe(true);
+    });
+    await act(async () => {
+      result.current.data.latestRecordingActions.value?.onRetry();
+    });
+
+    expect(retryRecordingJobs).toHaveBeenCalledWith('recording-1');
+    expect(result.current.data.snapshot.value.recordings[0].stages[0].message).toBe('Retry queued');
+  });
+
+  it('renames recording titles from recording rows', async () => {
+    const recording = makeRecording('recording-1');
+
+    vi.mocked(getAppSnapshot).mockResolvedValue(makeSnapshot({ recordings: [recording] }));
+    vi.mocked(renameRecordingTitle).mockResolvedValue(
+      makeSnapshot({
+        recordings: [
+          {
+            ...recording,
+            title: 'Weekly planning'
+          }
+        ]
+      })
+    );
+
+    const { result } = renderHook(() => useApp());
+
+    await waitFor(() => {
+      expect(result.current.data.recordingRows.value[0].recording.title).toBe(
+        'Recording recording-1'
+      );
+    });
+    await act(async () => {
+      const title = result.current.data.recordingRows.value[0].titleRow;
+
+      title.onStart();
+      title.onInput({
+        currentTarget: { value: 'Weekly planning' }
+      } as Parameters<typeof title.onInput>[0]);
+      title.onSubmit({
+        preventDefault: vi.fn()
+      } as unknown as Parameters<typeof title.onSubmit>[0]);
+    });
+
+    expect(renameRecordingTitle).toHaveBeenCalledWith('recording-1', 'Weekly planning');
+    expect(result.current.data.snapshot.value.recordings[0].title).toBe('Weekly planning');
   });
 
   it('renames speakers from recording rows', async () => {

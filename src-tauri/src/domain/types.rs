@@ -80,6 +80,23 @@ pub struct WorkerSetupProgress {
     pub(crate) error: Option<String>,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum SortformerSetupStatus {
+    Downloading,
+    Ready,
+    Failed,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SortformerSetupProgress {
+    pub(crate) status: SortformerSetupStatus,
+    pub(crate) step: String,
+    pub(crate) progress: Option<u8>,
+    pub(crate) error: Option<String>,
+}
+
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct WorkerEvent {
@@ -134,6 +151,7 @@ pub enum RecordingStatus {
     Idle,
     Recording,
     Processing,
+    Complete,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -223,6 +241,8 @@ pub struct AppSettings {
     pub(crate) database_path: String,
     pub(crate) hotkey: String,
     pub(crate) overlay_position: OverlayPosition,
+    pub(crate) overlay_display_mode: OverlayDisplayMode,
+    pub(crate) close_to_tray: bool,
     pub(crate) launch_at_login: bool,
     pub(crate) microphone_device: String,
     pub(crate) system_audio_source: String,
@@ -254,6 +274,8 @@ pub struct AppSettingsUpdate {
     pub(crate) output_directory: String,
     pub(crate) hotkey: String,
     pub(crate) overlay_position: OverlayPosition,
+    pub(crate) overlay_display_mode: OverlayDisplayMode,
+    pub(crate) close_to_tray: bool,
     pub(crate) launch_at_login: bool,
     pub(crate) microphone_device: String,
     pub(crate) system_audio_source: String,
@@ -298,6 +320,14 @@ pub enum OverlayPosition {
     BottomRight,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum OverlayDisplayMode {
+    Full,
+    Minimal,
+    None,
+}
+
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct OpenPathInput {
@@ -315,6 +345,13 @@ pub struct RecordingDeleteInput {
 #[serde(rename_all = "camelCase")]
 pub struct RecordingRetryInput {
     pub(crate) recording_id: String,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RecordingRenameInput {
+    pub(crate) recording_id: String,
+    pub(crate) title: String,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
@@ -335,6 +372,7 @@ pub struct SpeakerRenameInput {
 #[serde(rename_all = "camelCase")]
 pub enum DiarizationBackend {
     Pyannote,
+    Sortformer,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]

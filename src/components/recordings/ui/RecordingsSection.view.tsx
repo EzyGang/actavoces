@@ -18,14 +18,54 @@ export const RecordingsSection = ({ app }: RecordingsSectionProps): JSX.Element 
     {app.data.recordingRows.value.length > 0 ? (
       <div class='grid gap-3'>
         {app.data.recordingRows.value.map(
-          ({ recording, canRetry, onDelete, onOpenFolder, speakerRows, onRetry }) => (
+          ({ recording, canRetry, onDelete, onOpenFolder, speakerRows, titleRow, onRetry }) => (
             <article
               class='grid gap-4 border border-border-base bg-bg-card p-4 lg:grid-cols-[minmax(0,1fr)_180px]'
               key={recording.id}
             >
               <div class='flex flex-col gap-2'>
                 <div class='flex items-center gap-3'>
-                  <h2 class='font-semibold text-base'>{recording.title}</h2>
+                  {titleRow.isRenaming ? (
+                    <form
+                      class='flex min-w-0 flex-1 items-center gap-2'
+                      onSubmit={titleRow.onSubmit}
+                    >
+                      <input
+                        aria-label='Recording title'
+                        autofocus
+                        class='h-9 min-w-0 flex-1 border border-border-focus bg-bg-input px-2 font-semibold text-base text-text-primary outline-none'
+                        disabled={app.status.loading.value}
+                        onInput={titleRow.onInput}
+                        value={titleRow.value}
+                      />
+                      <Button
+                        class='h-9 px-3'
+                        disabled={app.status.loading.value}
+                        type='submit'
+                        variant='primary'
+                      >
+                        Save
+                      </Button>
+                      <Button
+                        class='h-9 px-3'
+                        disabled={app.status.loading.value}
+                        onClick={titleRow.onCancel}
+                        variant='ghost'
+                      >
+                        Cancel
+                      </Button>
+                    </form>
+                  ) : (
+                    <button
+                      class='min-w-0 truncate text-left font-semibold text-base text-text-primary hover:text-accent-light'
+                      disabled={app.status.loading.value}
+                      onClick={titleRow.onStart}
+                      title='Rename recording'
+                      type='button'
+                    >
+                      {recording.title}
+                    </button>
+                  )}
                   <StatusBadge label={recording.status} status={recording.status} />
                 </div>
                 <span class='font-mono text-text-muted text-xs'>

@@ -92,7 +92,8 @@ class TranscribePayload(AppBaseModel):
     audio_path: Path
     output_directory: Path
     segments: list[Segment] | None = None
-    model: str = 'small.en'
+    title: str = ''
+    model: str = 'medium'
     language: str | None = None
     compute_type: str = 'auto'
     model_storage_directory: Path | None = None
@@ -103,6 +104,7 @@ class DiarizePayload(AppBaseModel):
     output_directory: Path
     segments: list[Segment] = Field(default_factory=list)
     turns: list[SpeakerTurn] = Field(default_factory=list)
+    title: str = ''
     speaker_count_mode: str = 'automatic'
     exact_speakers: Any = None
     min_speakers: Any = None
@@ -116,7 +118,7 @@ class DiarizationCheckPayload(AppBaseModel):
 
 
 class ModelsPayload(AppBaseModel):
-    model: str = 'small.en'
+    model: str = 'medium'
     compute_type: str = 'auto'
     model_storage_directory: Path | None = None
 

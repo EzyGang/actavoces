@@ -12,8 +12,8 @@ use crate::capture::audio::{
 };
 use crate::domain::types::{
     AppSettingsUpdate, ArtifactKind, CaptureDeviceInfo, DesktopRuntimeStatus, DiarizationBackend,
-    ModelInventoryItem, OverlayPosition, PipelineStageId, PipelineStageStatus, RecordingStatus,
-    SpeakerCountMode, SpeakerRenameInput, WorkerEvent, WorkerSetupStatus,
+    ModelInventoryItem, OverlayDisplayMode, OverlayPosition, PipelineStageId, PipelineStageStatus,
+    RecordingStatus, SpeakerCountMode, SpeakerRenameInput, WorkerEvent, WorkerSetupStatus,
 };
 use crate::settings::default_settings;
 use crate::storage::repository::{AppRepository, NewRecording};
@@ -102,11 +102,11 @@ fn repository_seeds_and_updates_model_inventory() {
 
     assert!(initial_models
         .iter()
-        .any(|model| model.name == "medium.en" && model.setup_required));
+        .any(|model| model.name == "medium" && model.setup_required));
 
     repository
         .replace_model_inventory(&[ModelInventoryItem {
-            name: "medium.en".to_owned(),
+            name: "medium".to_owned(),
             installed: true,
             setup_required: false,
             dependency: "faster-whisper".to_owned(),
@@ -118,7 +118,7 @@ fn repository_seeds_and_updates_model_inventory() {
     assert!(snapshot
         .models
         .iter()
-        .any(|model| model.name == "medium.en" && model.installed && !model.setup_required));
+        .any(|model| model.name == "medium" && model.installed && !model.setup_required));
 }
 
 #[test]
@@ -128,7 +128,7 @@ fn model_status_events_parse_worker_inventory() {
         serde_json::json!({
             "models": [
                 {
-                    "name": "small.en",
+                    "name": "medium",
                     "installed": true,
                     "setupRequired": false,
                     "dependency": "faster-whisper",
@@ -141,7 +141,7 @@ fn model_status_events_parse_worker_inventory() {
     assert_eq!(
         models,
         vec![ModelInventoryItem {
-            name: "small.en".to_owned(),
+            name: "medium".to_owned(),
             installed: true,
             setup_required: false,
             dependency: "faster-whisper".to_owned(),
@@ -476,66 +476,81 @@ fn resume_pipeline_runs_worker_events_and_persists_artifacts() {
         )
         .unwrap();
     repository.set_setting("exactSpeakers", "1").unwrap();
+    let mut observed_transcription_running = false;
 
-    resume_pipeline_jobs(&mut repository, |command, payload| {
-        let output_directory = std::path::PathBuf::from(
-            payload
-                .get("outputDirectory")
-                .and_then(serde_json::Value::as_str)
-                .unwrap(),
-        );
+    resume_pipeline_jobs(
+        &mut repository,
+        |command, payload| {
+            let output_directory = std::path::PathBuf::from(
+                payload
+                    .get("outputDirectory")
+                    .and_then(serde_json::Value::as_str)
+                    .unwrap(),
+            );
 
-        match command {
-            "transcribe.run" => {
-                fs::write(
-                    output_directory.join("raw-segments.json"),
-                    "{\"segments\":[{\"start\":0,\"end\":1,\"text\":\"Hello\"}]}\n",
-                )
-                .unwrap();
-                fs::write(
-                    output_directory.join("raw-transcript.md"),
-                    "# Raw\n\nHello\n",
-                )
-                .unwrap();
+            match command {
+                "transcribe.run" => {
+                    fs::write(
+                        output_directory.join("raw-segments.json"),
+                        "{\"segments\":[{\"start\":0,\"end\":1,\"text\":\"Hello\"}]}\n",
+                    )
+                    .unwrap();
+                    fs::write(
+                        output_directory.join("raw-transcript.md"),
+                        "# Raw\n\nHello\n",
+                    )
+                    .unwrap();
 
-                Ok(vec![worker_event(
-                    "transcribe.complete",
-                    serde_json::json!({
-                        "segmentsPath": output_directory.join("raw-segments.json"),
-                        "transcriptPath": output_directory.join("raw-transcript.md"),
-                    }),
-                )])
+                    Ok(vec![worker_event(
+                        "transcribe.complete",
+                        serde_json::json!({
+                            "segmentsPath": output_directory.join("raw-segments.json"),
+                            "transcriptPath": output_directory.join("raw-transcript.md"),
+                        }),
+                    )])
+                }
+                "diarize.run" => {
+                    fs::write(
+                        output_directory.join("diarization.json"),
+                        "{\"turns\":[{\"speaker\":\"Speaker 1\",\"start\":0,\"end\":1}]}\n",
+                    )
+                    .unwrap();
+                    fs::write(
+                        output_directory.join("diarized-transcript.md"),
+                        "# Diarized\n\nHello\n",
+                    )
+                    .unwrap();
+
+                    Ok(vec![worker_event(
+                        "diarize.complete",
+                        serde_json::json!({
+                            "diarizationPath": output_directory.join("diarization.json"),
+                            "transcriptPath": output_directory.join("diarized-transcript.md"),
+                        }),
+                    )])
+                }
+                other => Err(format!("unexpected worker command: {other}")),
             }
-            "diarize.run" => {
-                fs::write(
-                    output_directory.join("diarization.json"),
-                    "{\"turns\":[{\"speaker\":\"Speaker 1\",\"start\":0,\"end\":1}]}\n",
-                )
+        },
+        |repository| {
+            let job = repository
+                .job_for_recording_stage(&recording.id, PipelineStageId::Transcription)
                 .unwrap();
-                fs::write(
-                    output_directory.join("diarized-transcript.md"),
-                    "# Diarized\n\nHello\n",
-                )
-                .unwrap();
+            observed_transcription_running =
+                observed_transcription_running || job.status == PipelineStageStatus::Running;
 
-                Ok(vec![worker_event(
-                    "diarize.complete",
-                    serde_json::json!({
-                        "diarizationPath": output_directory.join("diarization.json"),
-                        "transcriptPath": output_directory.join("diarized-transcript.md"),
-                    }),
-                )])
-            }
-            other => Err(format!("unexpected worker command: {other}")),
-        }
-    })
+            Ok(())
+        },
+    )
     .unwrap();
     let snapshot = repository.snapshot().unwrap();
     let recording = &snapshot.recordings[0];
 
+    assert_eq!(recording.status, RecordingStatus::Complete);
     assert!(recording.stages.iter().any(|stage| {
         stage.id == PipelineStageId::Transcription && stage.status == PipelineStageStatus::Complete
     }));
+    assert!(observed_transcription_running);
     let diarization_stage = recording
         .stages
         .iter()
@@ -724,11 +739,13 @@ fn settings_update(output_directory: String) -> AppSettingsUpdate {
         output_directory,
         hotkey: "CommandOrControl+Shift+Space".to_owned(),
         overlay_position: OverlayPosition::TopLeft,
+        overlay_display_mode: OverlayDisplayMode::Full,
+        close_to_tray: true,
         launch_at_login: false,
         microphone_device: "Default microphone".to_owned(),
         system_audio_source: "Default system output".to_owned(),
         sample_rate: 48_000,
-        whisper_model: "small.en".to_owned(),
+        whisper_model: "medium".to_owned(),
         transcription_language: "auto".to_owned(),
         compute_type: "auto".to_owned(),
         model_storage_directory: test_artifact_path("models").display().to_string(),

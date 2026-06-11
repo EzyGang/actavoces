@@ -1,5 +1,5 @@
 import type { AppRoute } from '../../../stores/route.store';
-import type { WorkerSetupProgress } from '../../../types/desktop';
+import type { AppSnapshot, WorkerSetupProgress } from '../../../types/desktop';
 
 export const routeLabel: Record<AppRoute, string> = {
   dashboard: 'Dashboard',
@@ -14,7 +14,18 @@ export const initialSetupProgress: WorkerSetupProgress = {
   error: null
 };
 
+export const setupProgressFromSnapshot = (snapshot: AppSnapshot): WorkerSetupProgress => ({
+  status: snapshot.desktop.workerSetupStatus,
+  step: snapshot.desktop.workerSetupStep || initialSetupProgress.step,
+  error: snapshot.desktop.workerSetupError
+});
+
 export const isTauriRuntime = () => '__TAURI_INTERNALS__' in window;
+
+export const startupDelay = (milliseconds: number) =>
+  new Promise((resolve) => {
+    window.setTimeout(resolve, milliseconds);
+  });
 
 export const errorMessage = (error: unknown, fallback: string): string => {
   if (error instanceof Error) {

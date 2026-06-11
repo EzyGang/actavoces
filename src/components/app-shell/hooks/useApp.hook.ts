@@ -3,6 +3,7 @@ import { appErrorSignal, appSnapshotSignal } from '../../../stores/app.store';
 import { activeRouteSignal } from '../../../stores/route.store';
 import type { AppSnapshot } from '../../../types/desktop';
 import { formatDuration, formatTimestamp } from '../../../utils/format';
+import { displayHotkey } from '../../../utils/hotkey';
 import { useRecordings } from '../../recordings/hooks/useRecordings.hook';
 import { useSettings } from '../../settings/hooks/useSettings.hook';
 import { useUpdates } from '../../updates/hooks/useUpdates.hook';
@@ -55,6 +56,7 @@ export const useApp = () => {
     data: {
       snapshot: appSnapshotSignal,
       latestRecording: recordings.latestRecording,
+      latestRecordingActions: recordings.latestRecordingActions,
       recordingRows: recordings.recordingRows,
       groupedJobRows: recordings.groupedJobRows,
       recentRecordingRows: recordings.recentRecordingRows,
@@ -64,9 +66,11 @@ export const useApp = () => {
       selectedModel: workerRuntime.selectedModel,
       settingsValidationErrors: settings.validationErrors,
       routeLabel,
+      displayHotkey,
       formatDuration,
       formatTimestamp,
       setupProgress: runtime.setupProgress,
+      sortformerProgress: runtime.sortformerProgress,
       updateStatus: updates.updateStatus,
       updateAvailable: updates.updateAvailable
     },

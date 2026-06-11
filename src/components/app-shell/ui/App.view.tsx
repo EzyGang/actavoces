@@ -4,10 +4,13 @@ import { JobsRoute } from '../../jobs/ui/JobsRoute.view';
 import { RecordingsSection } from '../../recordings/ui/RecordingsSection.view';
 import { SettingsRoute } from '../../settings/ui/SettingsRoute.view';
 import { SetupRoute } from '../../setup/ui/SetupRoute.view';
+import { AppLogo } from '../../shared/ui/AppLogo.view';
 import { Button } from '../../shared/ui/Button.view';
 import { StatusBadge } from '../../shared/ui/StatusBadge.view';
 import type { useApp } from '../hooks/useApp.hook';
 import { AppSidebar } from './AppSidebar.view';
+import { SortformerSetupToast } from './SortformerSetupToast.view';
+import { UnsavedSettingsToast } from './UnsavedSettingsToast.view';
 
 interface AppViewProps {
   app: ReturnType<typeof useApp>;
@@ -19,9 +22,7 @@ export const AppView = ({ app }: AppViewProps): JSX.Element =>
       <section class='grid min-h-screen grid-rows-[64px_minmax(0,1fr)]'>
         <header class='flex items-center justify-between border-border-base border-b bg-bg-page px-5'>
           <div class='flex items-center gap-4'>
-            <div class='flex h-10 w-10 items-center justify-center border border-text-primary bg-text-primary font-semibold text-bg-page text-sm'>
-              AV
-            </div>
+            <AppLogo class='h-10 w-10' />
             <div class='flex flex-col gap-0.5'>
               <span class='font-semibold text-sm uppercase tracking-wider'>ActaVoces</span>
               <span class='font-mono text-text-muted text-[11px] uppercase tracking-wider'>
@@ -30,13 +31,13 @@ export const AppView = ({ app }: AppViewProps): JSX.Element =>
             </div>
           </div>
 
-          <div class='flex items-center gap-3'>
-            <div class='hidden max-w-56 items-center gap-2 border border-border-base bg-bg-card px-3 py-2 sm:flex'>
+          <div class='flex min-w-0 items-center gap-3'>
+            <div class='hidden shrink-0 items-center gap-2 border border-border-base bg-bg-card px-3 py-2 sm:flex'>
               <span class='font-mono text-text-muted text-[11px] uppercase tracking-wider'>
                 Hotkey
               </span>
-              <span class='truncate font-mono text-xs'>
-                {app.data.snapshot.value.settings.hotkey}
+              <span class='whitespace-nowrap font-mono text-xs'>
+                {app.data.displayHotkey(app.data.snapshot.value.settings.hotkey)}
               </span>
             </div>
             <StatusBadge
@@ -101,6 +102,18 @@ export const AppView = ({ app }: AppViewProps): JSX.Element =>
             <span class='h-2.5 w-2.5 bg-error' />
             <span class='font-mono text-xs uppercase tracking-wider'>ActaVoces is recording</span>
           </div>
+        ) : null}
+
+        {app.data.sortformerProgress.value ? (
+          <SortformerSetupToast progress={app.data.sortformerProgress.value} />
+        ) : null}
+
+        {app.status.hasUnsavedSettings.value ? (
+          <UnsavedSettingsToast
+            offset={app.data.sortformerProgress.value !== null}
+            onSave={app.actions.saveSettings}
+            saving={app.status.savingSettings.value}
+          />
         ) : null}
       </section>
     </main>

@@ -1,6 +1,6 @@
-use tauri::{Manager, PhysicalPosition, WebviewUrl};
+use tauri::{Manager, PhysicalPosition, PhysicalSize, WebviewUrl};
 
-use crate::domain::types::OverlayPosition;
+use crate::domain::types::{OverlayDisplayMode, OverlayPosition};
 
 pub fn create_recording_overlay(app: &tauri::App) -> tauri::Result<()> {
     tauri::WebviewWindowBuilder::new(
@@ -25,18 +25,32 @@ pub fn sync_recording_overlay(
     app: &tauri::AppHandle,
     visible: bool,
     position: OverlayPosition,
+    display_mode: OverlayDisplayMode,
 ) -> Result<(), String> {
     let Some(overlay) = app.get_webview_window("recording-overlay") else {
         return Ok(());
     };
 
-    if visible {
-        position_recording_overlay(&overlay, position)?;
-        overlay.show().map_err(|error| error.to_string())?;
-        return Ok(());
+    if !visible || display_mode == OverlayDisplayMode::None {
+        return overlay.hide().map_err(|error| error.to_string());
     }
 
-    overlay.hide().map_err(|error| error.to_string())
+    size_recording_overlay(&overlay, display_mode)?;
+    position_recording_overlay(&overlay, position)?;
+    overlay.show().map_err(|error| error.to_string())
+}
+
+fn size_recording_overlay(
+    overlay: &tauri::WebviewWindow,
+    display_mode: OverlayDisplayMode,
+) -> Result<(), String> {
+    let size = match display_mode {
+        OverlayDisplayMode::Full => PhysicalSize::new(260, 84),
+        OverlayDisplayMode::Minimal => PhysicalSize::new(48, 48),
+        OverlayDisplayMode::None => PhysicalSize::new(260, 84),
+    };
+
+    overlay.set_size(size).map_err(|error| error.to_string())
 }
 
 fn position_recording_overlay(

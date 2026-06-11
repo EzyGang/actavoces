@@ -1,7 +1,10 @@
+use std::path::PathBuf;
+
 use tauri::{Emitter, Manager};
 use tauri_plugin_autostart::ManagerExt as AutostartManagerExt;
 use tauri_plugin_global_shortcut::{GlobalShortcutExt, ShortcutState};
 
+use crate::diarization::prepare_sortformer_diarization;
 use crate::domain::types::*;
 use crate::settings::{
     clear_hugging_face_secret, clear_summary_provider_secret, update_hugging_face_token,
@@ -14,17 +17,20 @@ use super::pipeline::{emit_snapshot_update, spawn_pipeline_processing};
 use super::recordings::toggle_recording_lifecycle;
 
 #[tauri::command]
-pub fn update_app_settings(
+pub async fn update_app_settings(
     app: tauri::AppHandle,
     input: AppSettingsUpdate,
-    state: tauri::State<'_, ActavocesState>,
 ) -> Result<AppSnapshot, String> {
-    let provider_api_key_configured = update_summary_provider_api_key(&input)?;
-    let hugging_face_token_configured =
-        update_hugging_face_token(input.hugging_face_token.as_deref())?;
     let launch_at_login = input.launch_at_login;
+    let prepare_sortformer = input.diarization_backend == DiarizationBackend::Sortformer;
+    let model_storage_directory = input.model_storage_directory.clone();
+    let app_for_settings = app.clone();
 
-    {
+    tauri::async_runtime::spawn_blocking(move || {
+        let provider_api_key_configured = update_summary_provider_api_key(&input)?;
+        let hugging_face_token_configured =
+            update_hugging_face_token(input.hugging_face_token.as_deref())?;
+        let state = app_for_settings.state::<ActavocesState>();
         let mut repository = state.repository()?;
 
         repository
@@ -33,24 +39,58 @@ pub fn update_app_settings(
                 provider_api_key_configured,
                 hugging_face_token_configured,
             )
-            .map_err(|error| error.to_string())?;
-    }
+            .map_err(|error| error.to_string())
+    })
+    .await
+    .map_err(|error| format!("Settings update task failed: {error}"))??;
 
-    refresh_global_hotkey(&app, &state)?;
+    refresh_global_hotkey(&app)?;
     sync_launch_at_login(&app, launch_at_login)?;
 
-    let repository = state.repository()?;
-    let snapshot = repository.snapshot().map_err(|error| error.to_string())?;
+    let snapshot = {
+        let state = app.state::<ActavocesState>();
+        let repository = state.repository()?;
+
+        repository.snapshot().map_err(|error| error.to_string())?
+    };
 
     sync_recording_overlay(
         &app,
         snapshot.active_recording.is_some(),
         snapshot.settings.overlay_position,
+        snapshot.settings.overlay_display_mode,
     )?;
     emit_snapshot_update(&app, &snapshot);
+    if prepare_sortformer {
+        spawn_sortformer_diarization_setup(app.clone(), model_storage_directory);
+    }
     spawn_pipeline_processing(app);
 
     Ok(snapshot)
+}
+
+fn spawn_sortformer_diarization_setup(app: tauri::AppHandle, model_storage_directory: String) {
+    tauri::async_runtime::spawn_blocking(move || {
+        let model_storage_directory = PathBuf::from(model_storage_directory);
+        let result = prepare_sortformer_diarization(&model_storage_directory, |progress| {
+            let _ = app.emit("sortformer-diarization-progress", progress);
+        });
+
+        match result {
+            Ok(()) => (),
+            Err(error) => {
+                let _ = app.emit(
+                    "sortformer-diarization-progress",
+                    SortformerSetupProgress {
+                        status: SortformerSetupStatus::Failed,
+                        step: "Sortformer voice attribution setup failed".to_owned(),
+                        progress: None,
+                        error: Some(error),
+                    },
+                );
+            }
+        }
+    });
 }
 
 #[tauri::command]
@@ -110,10 +150,8 @@ pub fn skip_diarization_setup(
     repository.snapshot().map_err(|error| error.to_string())
 }
 
-pub fn refresh_global_hotkey(
-    app: &tauri::AppHandle,
-    state: &tauri::State<'_, ActavocesState>,
-) -> Result<(), String> {
+pub fn refresh_global_hotkey(app: &tauri::AppHandle) -> Result<(), String> {
+    let state = app.state::<ActavocesState>();
     let hotkey = {
         let repository = state.repository()?;
 

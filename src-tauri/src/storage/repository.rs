@@ -168,6 +168,11 @@ impl AppRepository {
         self.upsert_setting("databasePath", &settings.database_path)?;
         self.upsert_setting("hotkey", &settings.hotkey)?;
         self.upsert_setting("overlayPosition", &json_string(&settings.overlay_position)?)?;
+        self.upsert_setting(
+            "overlayDisplayMode",
+            &json_string(&settings.overlay_display_mode)?,
+        )?;
+        self.upsert_setting("closeToTray", &settings.close_to_tray.to_string())?;
         self.upsert_setting("launchAtLogin", &settings.launch_at_login.to_string())?;
         self.upsert_setting("microphoneDevice", &settings.microphone_device)?;
         self.upsert_setting("systemAudioSource", &settings.system_audio_source)?;
@@ -255,9 +260,9 @@ impl AppRepository {
         self.connection.execute(
             "
             UPDATE settings
-            SET value = 'small.en'
+            SET value = 'medium'
             WHERE key = 'whisperModel'
-                AND value = 'medium.en'
+                AND value IN ('small.en', 'medium.en')
             ",
             [],
         )?;
@@ -322,11 +327,17 @@ impl AppRepository {
             hotkey: get_value("hotkey", "CommandOrControl+Shift+Space"),
             overlay_position: serde_json::from_str(&get_value("overlayPosition", "\"topLeft\""))
                 .unwrap_or(OverlayPosition::TopLeft),
+            overlay_display_mode: serde_json::from_str(&get_value(
+                "overlayDisplayMode",
+                "\"full\"",
+            ))
+            .unwrap_or(OverlayDisplayMode::Full),
+            close_to_tray: parse_bool(&get_value("closeToTray", "true")),
             launch_at_login: parse_bool(&get_value("launchAtLogin", "false")),
             microphone_device: get_value("microphoneDevice", "Default microphone"),
             system_audio_source: get_value("systemAudioSource", "Default system output"),
             sample_rate: get_value("sampleRate", "48000").parse().unwrap_or(48_000),
-            whisper_model: get_value("whisperModel", "small.en"),
+            whisper_model: get_value("whisperModel", "medium"),
             transcription_language: get_value("transcriptionLanguage", "auto"),
             compute_type: get_value("computeType", "auto"),
             model_storage_directory: get_value(
@@ -335,9 +346,9 @@ impl AppRepository {
             ),
             diarization_backend: serde_json::from_str(&get_value(
                 "diarizationBackend",
-                "\"pyannote\"",
+                "\"sortformer\"",
             ))
-            .unwrap_or(DiarizationBackend::Pyannote),
+            .unwrap_or(DiarizationBackend::Sortformer),
             speaker_count_mode: serde_json::from_str(&get_value(
                 "speakerCountMode",
                 "\"automatic\"",
@@ -817,13 +828,27 @@ impl AppRepository {
             rusqlite::Error::InvalidParameterName("Recording not found".to_owned())
         })?;
 
-        if recording.status != RecordingStatus::Processing {
+        if !matches!(
+            recording.status,
+            RecordingStatus::Processing | RecordingStatus::Complete
+        ) {
             return Err(rusqlite::Error::InvalidParameterName(
                 "Only processed recordings can retry jobs".to_owned(),
             ));
         }
 
-        self.connection.execute(
+        let transaction = self.connection.transaction()?;
+
+        transaction.execute(
+            "
+            UPDATE recordings
+            SET status = ?1
+            WHERE id = ?2
+            ",
+            params![enum_value(RecordingStatus::Processing)?, recording_id],
+        )?;
+
+        transaction.execute(
             "
             UPDATE pipeline_jobs
             SET status = ?1,
@@ -843,6 +868,7 @@ impl AppRepository {
                 enum_value(PipelineStageId::Recording)?,
             ],
         )?;
+        transaction.commit()?;
 
         self.append_event(
             recording_id,
@@ -868,6 +894,46 @@ impl AppRepository {
             WHERE id = ?4
             ",
             params![enum_value(status)?, progress, message, job_id],
+        )?;
+
+        Ok(())
+    }
+
+    pub(crate) fn complete_recording_if_pipeline_done(
+        &mut self,
+        recording_id: &str,
+    ) -> rusqlite::Result<()> {
+        let unfinished_jobs = self.connection.query_row(
+            "
+            SELECT COUNT(*)
+            FROM pipeline_jobs
+            WHERE recording_id = ?1
+                AND status NOT IN (?2, ?3)
+            ",
+            params![
+                recording_id,
+                enum_value(PipelineStageStatus::Complete)?,
+                enum_value(PipelineStageStatus::Skipped)?,
+            ],
+            |row| row.get::<_, u32>(0),
+        )?;
+
+        if unfinished_jobs > 0 {
+            return Ok(());
+        }
+
+        self.connection.execute(
+            "
+            UPDATE recordings
+            SET status = ?1
+            WHERE id = ?2
+                AND status = ?3
+            ",
+            params![
+                enum_value(RecordingStatus::Complete)?,
+                recording_id,
+                enum_value(RecordingStatus::Processing)?,
+            ],
         )?;
 
         Ok(())
@@ -966,7 +1032,8 @@ impl AppRepository {
         let capture_devices = capture_devices();
         let mut desktop = self.desktop_runtime_status()?;
 
-        desktop.overlay_visible = active_recording.is_some();
+        desktop.overlay_visible =
+            active_recording.is_some() && settings.overlay_display_mode != OverlayDisplayMode::None;
 
         Ok(AppSnapshot {
             active_recording,

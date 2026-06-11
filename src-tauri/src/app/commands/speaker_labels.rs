@@ -42,7 +42,7 @@ pub fn rewrite_speaker_label(
     fs::write(&diarization_path, format!("{content}\n")).map_err(|error| error.to_string())?;
     fs::write(
         &transcript_path,
-        render_diarized_transcript(&segments, &diarization.turns),
+        render_diarized_transcript(&segments, &diarization.turns, &recording.title),
     )
     .map_err(|error| error.to_string())
 }
@@ -89,19 +89,39 @@ where
 fn render_diarized_transcript(
     segments: &[TranscriptSegment],
     turns: &[SpeakerTurnArtifact],
+    title: &str,
 ) -> String {
-    let mut lines = vec!["# Diarized transcript".to_owned(), String::new()];
+    let mut lines = vec![diarized_transcript_heading(title), String::new()];
+    let mut groups: Vec<DiarizedTextGroup> = Vec::new();
 
-    for turn in turns {
-        let text = segment_texts_in_turn(segments, turn.start, turn.end).join(" ");
+    for segment in segments {
+        let speaker = best_speaker_for_segment(segment, turns)
+            .unwrap_or("Unknown speaker")
+            .to_owned();
 
-        lines.push(format!("## {}", turn.speaker));
+        match groups.last_mut() {
+            Some(group) if group.speaker == speaker => {
+                group.end = segment.end;
+                group.texts.push(segment.text.trim().to_owned());
+            }
+            _ => groups.push(DiarizedTextGroup {
+                speaker,
+                start: segment.start,
+                end: segment.end,
+                texts: vec![segment.text.trim().to_owned()],
+            }),
+        }
+    }
+
+    for group in groups {
+        lines.push(format!("## {}", group.speaker));
         lines.push(String::new());
         lines.push(
             format!(
-                "[{} - {}] {text}",
-                format_artifact_timestamp(turn.start),
-                format_artifact_timestamp(turn.end)
+                "[{} - {}] {}",
+                format_artifact_timestamp(group.start),
+                format_artifact_timestamp(group.end),
+                group.texts.join(" ")
             )
             .trim()
             .to_owned(),
@@ -112,16 +132,52 @@ fn render_diarized_transcript(
     lines.join("\n")
 }
 
-fn segment_texts_in_turn(segments: &[TranscriptSegment], start: f64, end: f64) -> Vec<String> {
-    let mut texts = Vec::new();
+fn diarized_transcript_heading(title: &str) -> String {
+    match title.trim() {
+        "" => "# Diarized transcript".to_owned(),
+        title => format!("# Diarized transcript - {title}"),
+    }
+}
 
-    for segment in segments {
-        if segment.start >= start && segment.end <= end {
-            texts.push(segment.text.trim().to_owned());
-        }
+#[derive(Clone, Debug, PartialEq)]
+struct DiarizedTextGroup {
+    speaker: String,
+    start: f64,
+    end: f64,
+    texts: Vec<String>,
+}
+
+fn best_speaker_for_segment<'a>(
+    segment: &TranscriptSegment,
+    turns: &'a [SpeakerTurnArtifact],
+) -> Option<&'a str> {
+    let segment_midpoint = (segment.start + segment.end) / 2.0;
+
+    turns
+        .iter()
+        .max_by(|left, right| {
+            let left_score = speaker_turn_score(segment, segment_midpoint, left);
+            let right_score = speaker_turn_score(segment, segment_midpoint, right);
+
+            left_score.total_cmp(&right_score)
+        })
+        .map(|turn| turn.speaker.as_str())
+}
+
+fn speaker_turn_score(
+    segment: &TranscriptSegment,
+    segment_midpoint: f64,
+    turn: &SpeakerTurnArtifact,
+) -> f64 {
+    let overlap = segment.end.min(turn.end) - segment.start.max(turn.start);
+
+    if overlap > 0.0 {
+        return overlap;
     }
 
-    texts
+    let turn_midpoint = (turn.start + turn.end) / 2.0;
+
+    -((segment_midpoint - turn_midpoint).abs())
 }
 
 fn format_artifact_timestamp(value: f64) -> String {

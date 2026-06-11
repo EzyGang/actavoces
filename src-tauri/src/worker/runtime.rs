@@ -139,14 +139,14 @@ pub(crate) fn run_worker_bootstrap(
         app,
         state,
         WorkerSetupStatus::Installing,
-        "Installing small.en model",
+        "Installing medium model",
         None,
     )?;
     let install_events = run_worker_command_with_paths(
         &paths,
         "models.install",
         serde_json::json!({
-            "model": "small.en",
+            "model": "medium",
             "computeType": bootstrap_compute_type,
             "modelStorageDirectory": settings.model_storage_directory,
         }),
@@ -311,7 +311,7 @@ pub(crate) fn worker_bootstrap_is_ready(paths: &WorkerRuntimePaths, source_hash:
                 && manifest.uv_ready
                 && manifest.synced
                 && manifest.health_ok
-                && manifest.default_model == "small.en"
+                && manifest.default_model == "medium"
                 && manifest.default_model_installed
         }
         None => false,
@@ -697,7 +697,7 @@ pub(crate) fn write_worker_bootstrap_manifest(
         uv_ready: true,
         synced: true,
         health_ok: true,
-        default_model: "small.en".to_owned(),
+        default_model: "medium".to_owned(),
         default_model_installed: true,
     };
     let content = serde_json::to_string_pretty(&manifest)

@@ -17,15 +17,17 @@ pub(crate) fn default_settings(database_path: &Path) -> AppSettings {
         database_path: database_path.display().to_string(),
         hotkey: "CommandOrControl+Shift+Space".to_owned(),
         overlay_position: OverlayPosition::TopLeft,
+        overlay_display_mode: OverlayDisplayMode::Full,
+        close_to_tray: true,
         launch_at_login: false,
         microphone_device: "Default microphone".to_owned(),
         system_audio_source: "Default system output".to_owned(),
         sample_rate: 48_000,
-        whisper_model: "small.en".to_owned(),
+        whisper_model: "medium".to_owned(),
         transcription_language: "auto".to_owned(),
         compute_type: "auto".to_owned(),
         model_storage_directory: default_model_storage_root(),
-        diarization_backend: DiarizationBackend::Pyannote,
+        diarization_backend: DiarizationBackend::Sortformer,
         speaker_count_mode: SpeakerCountMode::Automatic,
         exact_speakers: None,
         min_speakers: None,
@@ -44,7 +46,7 @@ pub(crate) fn default_settings(database_path: &Path) -> AppSettings {
 }
 
 pub(crate) fn default_model_inventory() -> Vec<ModelInventoryItem> {
-    ["small.en", "medium.en", "large-v3", "distil-large-v3"]
+    ["small", "medium", "large-v3", "distil-large-v3"]
         .iter()
         .map(|model| ModelInventoryItem {
             name: (*model).to_owned(),
@@ -68,6 +70,11 @@ pub(crate) fn settings_pairs(
             "overlayPosition",
             serde_json::to_string(&input.overlay_position).unwrap_or_default(),
         ),
+        (
+            "overlayDisplayMode",
+            serde_json::to_string(&input.overlay_display_mode).unwrap_or_default(),
+        ),
+        ("closeToTray", input.close_to_tray.to_string()),
         ("launchAtLogin", input.launch_at_login.to_string()),
         ("microphoneDevice", input.microphone_device.clone()),
         ("systemAudioSource", input.system_audio_source.clone()),

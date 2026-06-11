@@ -7,6 +7,7 @@
     "core:default",
     "dialog:default",
     "opener:default",
+    "core:window:allow-show",
     "process:default",
     "updater:default"
   ]

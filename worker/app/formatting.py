@@ -8,8 +8,12 @@ type SegmentInput = Segment | dict[str, Any]
 type SpeakerTurnInput = SpeakerTurn | dict[str, Any]
 
 
-def render_raw_transcript(segments: Sequence[SegmentInput]) -> str:
-    lines = ['# Raw transcript', '']
+def render_raw_transcript(segments: Sequence[SegmentInput], title: str = '') -> str:
+    heading = 'Raw transcript'
+    if title.strip():
+        heading = f'{heading} - {title.strip()}'
+
+    lines = [f'# {heading}', '']
 
     for segment in normalize_segments(segments=segments):
         text = segment.text.strip()
@@ -20,8 +24,16 @@ def render_raw_transcript(segments: Sequence[SegmentInput]) -> str:
     return '\n'.join(lines)
 
 
-def render_diarized_transcript(segments: Sequence[SegmentInput], turns: Sequence[SpeakerTurnInput]) -> str:
-    lines = ['# Diarized transcript', '']
+def render_diarized_transcript(
+    segments: Sequence[SegmentInput],
+    turns: Sequence[SpeakerTurnInput],
+    title: str = '',
+) -> str:
+    heading = 'Diarized transcript'
+    if title.strip():
+        heading = f'{heading} - {title.strip()}'
+
+    lines = [f'# {heading}', '']
     normalized_segments = normalize_segments(segments=segments)
 
     for turn in normalize_turns(turns=turns):

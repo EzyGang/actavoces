@@ -19,6 +19,7 @@ export interface SettingsFolderField {
 export interface SettingsHotkeyField {
   label: string;
   value: string;
+  displayValue: string;
   recording: boolean;
   onCapture: () => void;
 }
@@ -41,9 +42,14 @@ export interface SettingsSelectField {
   key: keyof AppSettingsUpdate;
   label: string;
   value: string;
-  options: string[];
+  options: SettingsSelectOption[];
   onChange: JSX.GenericEventHandler<HTMLSelectElement>;
   hint?: SettingsFieldHint;
+}
+
+export interface SettingsSelectOption {
+  value: string;
+  label: string;
 }
 
 interface SettingsFieldHint {
@@ -62,6 +68,8 @@ export const buildSettingsUpdate = (settings: AppSettings): AppSettingsUpdate =>
   outputDirectory: settings.outputDirectory,
   hotkey: settings.hotkey,
   overlayPosition: settings.overlayPosition,
+  overlayDisplayMode: settings.overlayDisplayMode,
+  closeToTray: settings.closeToTray,
   launchAtLogin: settings.launchAtLogin,
   microphoneDevice: settings.microphoneDevice,
   systemAudioSource: settings.systemAudioSource,
@@ -91,11 +99,23 @@ export const settingsDraftChanged = (draft: AppSettingsUpdate, settings: AppSett
 export const captureDeviceOptions = (
   devices: CaptureDeviceInfo[],
   selectedValue: string
-): string[] => {
-  const options = devices.map((device) => device.name);
+): SettingsSelectOption[] => {
+  const options = devices.map((device) => ({
+    value: device.name,
+    label: device.name
+  }));
 
-  if (selectedValue.trim().length > 0 && !options.includes(selectedValue)) {
-    return [selectedValue, ...options];
+  if (
+    selectedValue.trim().length > 0 &&
+    !options.some((option) => option.value === selectedValue)
+  ) {
+    return [
+      {
+        value: selectedValue,
+        label: selectedValue
+      },
+      ...options
+    ];
   }
 
   return options;

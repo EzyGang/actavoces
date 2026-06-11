@@ -3,6 +3,7 @@ import { open } from '@tauri-apps/plugin-dialog';
 import type { JSX } from 'preact';
 import { appSnapshotSignal } from '../../../stores/app.store';
 import type { AppSettingsUpdate } from '../../../types/desktop';
+import { displayHotkey } from '../../../utils/hotkey';
 import {
   captureDeviceOptions,
   type SettingsFolderField,
@@ -125,6 +126,7 @@ const hotkeyField = (
 ): SettingsHotkeyField => ({
   label: 'Global hotkey',
   value: draft.value.hotkey,
+  displayValue: displayHotkey(draft.value.hotkey),
   recording: recordingHotkey.value,
   onCapture: () => {
     recordingHotkey.value = true;
@@ -182,10 +184,26 @@ const captureSelectFields = (
   },
   {
     key: 'overlayPosition',
-    label: 'Overlay position',
+    label: 'Status window position',
     value: draft.value.overlayPosition,
-    options: ['topLeft', 'topRight', 'bottomLeft', 'bottomRight'],
+    options: [
+      { value: 'topLeft', label: 'Top left' },
+      { value: 'topRight', label: 'Top right' },
+      { value: 'bottomLeft', label: 'Bottom left' },
+      { value: 'bottomRight', label: 'Bottom right' }
+    ],
     onChange: onChange('overlayPosition')
+  },
+  {
+    key: 'overlayDisplayMode',
+    label: 'Status window',
+    value: draft.value.overlayDisplayMode,
+    options: [
+      { value: 'full', label: 'Full' },
+      { value: 'minimal', label: 'Minimal' },
+      { value: 'none', label: 'None' }
+    ],
+    onChange: onChange('overlayDisplayMode')
   }
 ];
 
@@ -239,6 +257,15 @@ const textareaFields = (
 ];
 
 const toggles = (draft: Signal<AppSettingsUpdate>) => ({
+  closeToTray: {
+    checked: draft.value.closeToTray,
+    onInput: ((event) => {
+      draft.value = {
+        ...draft.value,
+        closeToTray: event.currentTarget.checked
+      };
+    }) satisfies JSX.InputEventHandler<HTMLInputElement>
+  },
   launchAtLogin: {
     checked: draft.value.launchAtLogin,
     onInput: ((event) => {

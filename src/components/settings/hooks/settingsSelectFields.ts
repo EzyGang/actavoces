@@ -12,37 +12,69 @@ export const selectFields = (
     key: 'whisperModel',
     label: 'Whisper model',
     value: draft.value.whisperModel,
-    options: ['small.en', 'medium.en', 'large-v3', 'distil-large-v3'],
+    options: [
+      { value: 'medium', label: 'medium' },
+      { value: 'small', label: 'small' },
+      { value: 'large-v3', label: 'large-v3' },
+      { value: 'distil-large-v3', label: 'distil-large-v3' }
+    ],
     onChange: onChange('whisperModel')
   },
   {
     key: 'transcriptionLanguage',
     label: 'Language',
     value: draft.value.transcriptionLanguage,
-    options: ['auto', 'en', 'ru', 'uk', 'es'],
+    options: [
+      { value: 'auto', label: 'Automatic' },
+      { value: 'en', label: 'English' },
+      { value: 'ru', label: 'Russian' },
+      { value: 'uk', label: 'Ukrainian' },
+      { value: 'es', label: 'Spanish' }
+    ],
     onChange: onChange('transcriptionLanguage')
   },
   computeTypeField(draft, onChange),
   {
     key: 'diarizationBackend',
-    label: 'Diarization backend',
+    label: 'Diarization backend (speaker labels)',
     value: draft.value.diarizationBackend,
-    options: ['pyannote'],
+    options: [
+      { value: 'sortformer', label: 'Sortformer' },
+      { value: 'pyannote', label: 'pyannote' }
+    ],
     onChange: onChange('diarizationBackend'),
-    hint: {
-      tone: 'muted',
-      title: 'Local pyannote speaker diarization.',
-      text: 'Requires pyannote.audio, bundled or system ffmpeg, accepted Hugging Face model terms, and a Hugging Face access token. pyannoteAI cloud API support is not implemented.'
-    }
+    hint: diarizationHint(draft.value.diarizationBackend)
   },
   {
     key: 'speakerCountMode',
     label: 'Speaker count',
     value: draft.value.speakerCountMode,
-    options: ['automatic', 'exact', 'range'],
+    options: [
+      { value: 'automatic', label: 'Automatic' },
+      { value: 'exact', label: 'Exact' },
+      { value: 'range', label: 'Range' }
+    ],
     onChange: onChange('speakerCountMode')
   }
 ];
+
+const diarizationHint = (
+  backend: AppSettingsUpdate['diarizationBackend']
+): SettingsSelectField['hint'] => {
+  if (backend === 'sortformer') {
+    return {
+      tone: 'muted',
+      title: 'Local Sortformer voice attribution.',
+      text: 'Adds speaker labels by detecting who spoke when. The ONNX model and ONNX Runtime download automatically on first use; no Hugging Face token or Python diarization runtime is required. Speaker count is automatic unless exact one speaker is selected.'
+    };
+  }
+
+  return {
+    tone: 'warning',
+    title: 'Local pyannote voice attribution.',
+    text: 'Adds speaker labels by detecting who spoke when. Requires pyannote.audio, accepted Hugging Face model terms, and a Hugging Face access token. pyannoteAI cloud API support is not implemented.'
+  };
+};
 
 const computeTypeField = (
   draft: Signal<AppSettingsUpdate>,
@@ -51,7 +83,12 @@ const computeTypeField = (
   key: 'computeType',
   label: 'Compute type',
   value: draft.value.computeType,
-  options: ['auto', 'cpu', 'cuda', 'metal'],
+  options: [
+    { value: 'auto', label: 'Automatic' },
+    { value: 'cpu', label: 'CPU' },
+    { value: 'cuda', label: 'CUDA' },
+    { value: 'metal', label: 'Metal' }
+  ],
   onChange: onChange('computeType'),
   hint: {
     tone: 'warning',

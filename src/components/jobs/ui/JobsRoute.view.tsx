@@ -16,7 +16,7 @@ export const JobsRoute = ({ app }: JobsRouteProps): JSX.Element => (
     {app.data.groupedJobRows.value.length > 0 ? (
       <div class='grid gap-4'>
         {app.data.groupedJobRows.value.map(
-          ({ recording, progress, pipelineStatus, canRetry, jobs, onRetry }) => (
+          ({ recording, progress, pipelineStatus, canRetry, jobs, onOpenFolder, onRetry }) => (
             <article
               class='flex flex-col gap-4 border border-border-base bg-bg-card p-4'
               key={recording.id}
@@ -43,16 +43,32 @@ export const JobsRoute = ({ app }: JobsRouteProps): JSX.Element => (
                         Processing
                       </span>
                     ) : null}
+                    {pipelineStatus.status === 'pending' ? (
+                      <span class='inline-flex items-center gap-2 text-text-muted text-xs'>
+                        <span class='h-2 w-2 animate-pulse bg-text-muted' />
+                        Queued
+                      </span>
+                    ) : null}
                   </div>
                 </div>
-                <Button
-                  class='h-9 px-3 lg:justify-self-end'
-                  disabled={app.status.loading.value || !canRetry}
-                  onClick={onRetry}
-                  variant='ghost'
-                >
-                  Retry failed jobs
-                </Button>
+                <div class='flex items-center gap-2 lg:justify-self-end'>
+                  <Button
+                    class='h-9 px-3'
+                    disabled={app.status.loading.value}
+                    onClick={onOpenFolder}
+                    variant='ghost'
+                  >
+                    Open folder
+                  </Button>
+                  <Button
+                    class='h-9 px-3'
+                    disabled={app.status.loading.value || !canRetry}
+                    onClick={onRetry}
+                    variant='ghost'
+                  >
+                    Retry failed jobs
+                  </Button>
+                </div>
               </div>
               <div class='grid gap-2 md:grid-cols-2 xl:grid-cols-3'>
                 {jobs.map((job) => (
@@ -69,6 +85,12 @@ export const JobsRoute = ({ app }: JobsRouteProps): JSX.Element => (
                       <span class='inline-flex items-center gap-2 text-accent-light text-xs'>
                         <span class='h-2 w-2 animate-pulse bg-accent-light' />
                         Running
+                      </span>
+                    ) : null}
+                    {job.status === 'pending' ? (
+                      <span class='inline-flex items-center gap-2 text-text-muted text-xs'>
+                        <span class='h-2 w-2 animate-pulse bg-text-muted' />
+                        Queued
                       </span>
                     ) : null}
                     <div class='h-1 bg-bg-page'>

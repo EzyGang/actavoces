@@ -9,12 +9,19 @@ import {
   writeDiagnosticLog
 } from '../../../services/desktop/app.service';
 import { appSnapshotSignal } from '../../../stores/app.store';
-import type { AppSettingsUpdate, AppSnapshot, WorkerSetupProgress } from '../../../types/desktop';
+import type {
+  AppSettingsUpdate,
+  AppSnapshot,
+  SortformerSetupProgress,
+  WorkerSetupProgress
+} from '../../../types/desktop';
 import {
   diagnosticsMessage,
   errorMessage,
   initialSetupProgress,
-  isTauriRuntime
+  isTauriRuntime,
+  setupProgressFromSnapshot,
+  startupDelay
 } from './appRuntime.helpers';
 
 interface UseAppRuntimeInput {
@@ -31,6 +38,7 @@ export const useAppRuntime = ({
   setSnapshot
 }: UseAppRuntimeInput) => {
   const setupProgress = useSignal<WorkerSetupProgress>(initialSetupProgress);
+  const sortformerProgress = useSignal<SortformerSetupProgress | null>(null);
   const setupRunning = useSignal(false);
   const bootstrapRequested = useSignal(false);
   const workerSetupReady = useComputed(
@@ -45,16 +53,32 @@ export const useAppRuntime = ({
   );
   const setupReady = useComputed(() => workerSetupReady.value && !needsDiarizationSetup.value);
 
-  const loadSnapshot = async () => {
+  const loadSnapshot = async (attempts = 1) => {
     loading.value = true;
     setError(null);
 
-    try {
-      setSnapshot(await getAppSnapshot());
-    } catch (error) {
-      setError(errorMessage(error, 'Desktop backend unavailable'));
-    } finally {
-      loading.value = false;
+    for (let attempt = 1; attempt <= attempts; attempt += 1) {
+      try {
+        const snapshot = await getAppSnapshot();
+
+        setSnapshot(snapshot);
+        setupProgress.value = setupProgressFromSnapshot(snapshot);
+        loading.value = false;
+
+        return;
+      } catch (error) {
+        const message = errorMessage(error, 'Desktop backend unavailable');
+
+        if (message === 'ActaVoces is still starting' && attempt < attempts) {
+          await startupDelay(100);
+          continue;
+        }
+
+        setError(message);
+        loading.value = false;
+
+        return;
+      }
     }
   };
 
@@ -136,6 +160,7 @@ export const useAppRuntime = ({
     bootstrapRequested,
     loading,
     setupProgress,
+    sortformerProgress,
     setError,
     setSnapshot,
     loadSnapshot,
@@ -144,6 +169,7 @@ export const useAppRuntime = ({
 
   return {
     setupProgress,
+    sortformerProgress,
     setupRunning,
     setupReady,
     needsDiarizationSetup,
@@ -159,6 +185,7 @@ const useRuntimeEffects = ({
   bootstrapRequested,
   loading,
   setupProgress,
+  sortformerProgress,
   setError,
   setSnapshot,
   loadSnapshot,
@@ -167,9 +194,10 @@ const useRuntimeEffects = ({
   bootstrapRequested: Signal<boolean>;
   loading: Signal<boolean>;
   setupProgress: Signal<WorkerSetupProgress>;
+  sortformerProgress: Signal<SortformerSetupProgress | null>;
   setError: (message: string | null) => void;
   setSnapshot: (snapshot: AppSnapshot) => void;
-  loadSnapshot: () => Promise<void>;
+  loadSnapshot: (attempts?: number) => Promise<void>;
   runBootstrap: () => Promise<void>;
 }) => {
   useEffect(() => {
@@ -179,6 +207,7 @@ const useRuntimeEffects = ({
 
     const snapshotListener = listen<AppSnapshot>('app-snapshot-updated', (event) => {
       setSnapshot(event.payload);
+      setupProgress.value = setupProgressFromSnapshot(event.payload);
       loading.value = false;
     });
     const errorListener = listen<string>('app-error', (event) => {
@@ -187,11 +216,26 @@ const useRuntimeEffects = ({
     const setupListener = listen<WorkerSetupProgress>('worker-setup-progress', (event) => {
       setupProgress.value = event.payload;
     });
+    const sortformerListener = listen<SortformerSetupProgress>(
+      'sortformer-diarization-progress',
+      (event) => {
+        sortformerProgress.value = event.payload;
+
+        if (event.payload.status === 'ready') {
+          window.setTimeout(() => {
+            if (sortformerProgress.value?.status === 'ready') {
+              sortformerProgress.value = null;
+            }
+          }, 4000);
+        }
+      }
+    );
 
     return () => {
       void snapshotListener.then((unlisten) => unlisten());
       void errorListener.then((unlisten) => unlisten());
       void setupListener.then((unlisten) => unlisten());
+      void sortformerListener.then((unlisten) => unlisten());
     };
   }, []);
 
@@ -229,7 +273,7 @@ const useRuntimeEffects = ({
       return;
     }
 
-    loading.value = true;
+    void loadSnapshot(20);
   }, []);
 
   useEffect(() => {

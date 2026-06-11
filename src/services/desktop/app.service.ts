@@ -42,6 +42,11 @@ export const retryRecordingJobs = (recordingId: string) =>
     input: { recordingId }
   });
 
+export const renameRecordingTitle = (recordingId: string, title: string) =>
+  invoke<AppSnapshot>('rename_recording_title', {
+    input: { recordingId, title }
+  });
+
 export const renameSpeakerLabel = (recordingId: string, speaker: string, replacement: string) =>
   invoke<AppSnapshot>('rename_speaker_label', {
     input: { recordingId, speaker, replacement }
