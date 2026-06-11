@@ -442,6 +442,7 @@ src-tauri/src/app/
 - Max file size is 350 lines.
 - Keep imports grouped in this order: std, external crates, current crate.
 - Use one `use` per crate group and let `cargo fmt` handle ordering.
+- Don't write tests inline, always put them into a separate file.
 
 ## Python Worker
 
