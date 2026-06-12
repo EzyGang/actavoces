@@ -148,7 +148,16 @@ Users are responsible for consent and recording-law compliance in their jurisdic
 
 ## Installation
 
-Published builds are available from the [GitHub Releases page](https://github.com/EzyGang/actavoces/releases). If no build is available for your platform yet, use the development setup below to run from source.
+Published builds are available from the [GitHub Releases page](https://github.com/EzyGang/actavoces/releases). Latest direct downloads:
+
+| Platform | Downloads |
+| --- | --- |
+| Windows x64 | [Setup EXE](https://github.com/EzyGang/actavoces/releases/latest/download/ActaVoces-windows-x64-setup.exe) · [MSI](https://github.com/EzyGang/actavoces/releases/latest/download/ActaVoces-windows-x64.msi) |
+| macOS Apple Silicon | [DMG](https://github.com/EzyGang/actavoces/releases/latest/download/ActaVoces-macos-aarch64.dmg) |
+| macOS Intel | [DMG](https://github.com/EzyGang/actavoces/releases/latest/download/ActaVoces-macos-x64.dmg) |
+| Linux x64 | [AppImage](https://github.com/EzyGang/actavoces/releases/latest/download/ActaVoces-linux-x64.AppImage) · [DEB](https://github.com/EzyGang/actavoces/releases/latest/download/ActaVoces-linux-x64.deb) · [RPM](https://github.com/EzyGang/actavoces/releases/latest/download/ActaVoces-linux-x64.rpm) |
+
+If no build is available for your platform yet, use the development setup below to run from source.
 
 On first run, ActaVoces prepares the local worker runtime and installs the default transcription model. Some model and backend setup steps require network access.
 

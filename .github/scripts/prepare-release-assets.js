@@ -87,6 +87,66 @@ const uploadAssetName = (filePath) => {
   return basename;
 };
 
+const downloadAliasName = (filePath) => {
+  const basename = path.basename(filePath);
+  const isSignature = basename.endsWith('.sig');
+  const unsignedName = isSignature ? basename.slice(0, -4) : basename;
+  const target = targetForPath(filePath);
+
+  if (!target) {
+    return null;
+  }
+
+  const signatureSuffix = isSignature ? '.sig' : '';
+
+  if (target.target === 'x86_64-pc-windows-msvc') {
+    if (unsignedName.endsWith('-setup.exe')) {
+      return `ActaVoces-windows-x64-setup.exe${signatureSuffix}`;
+    }
+
+    if (unsignedName.endsWith('.msi')) {
+      return `ActaVoces-windows-x64.msi${signatureSuffix}`;
+    }
+  }
+
+  if (target.target === 'aarch64-apple-darwin' && unsignedName.endsWith('.dmg')) {
+    return `ActaVoces-macos-aarch64.dmg${signatureSuffix}`;
+  }
+
+  if (target.target === 'x86_64-apple-darwin' && unsignedName.endsWith('.dmg')) {
+    return `ActaVoces-macos-x64.dmg${signatureSuffix}`;
+  }
+
+  if (target.target === 'x86_64-unknown-linux-gnu') {
+    if (unsignedName.endsWith('.AppImage')) {
+      return `ActaVoces-linux-x64.AppImage${signatureSuffix}`;
+    }
+
+    if (unsignedName.endsWith('.deb')) {
+      return `ActaVoces-linux-x64.deb${signatureSuffix}`;
+    }
+
+    if (unsignedName.endsWith('.rpm')) {
+      return `ActaVoces-linux-x64.rpm${signatureSuffix}`;
+    }
+  }
+
+  return null;
+};
+
+const copyAsset = (copied, sourcePath, assetName) => {
+  const existingPath = copied.get(assetName);
+
+  if (existingPath) {
+    throw new Error(
+      `Release asset name collision for ${assetName}: ${existingPath} and ${sourcePath}`
+    );
+  }
+
+  copied.set(assetName, sourcePath);
+  fs.copyFileSync(sourcePath, path.join(uploadRoot, assetName));
+};
+
 const copyReleaseAssets = (files) => {
   fs.rmSync(uploadRoot, { force: true, recursive: true });
   fs.mkdirSync(uploadRoot, { recursive: true });
@@ -95,16 +155,12 @@ const copyReleaseAssets = (files) => {
 
   for (const filePath of files.filter(isReleaseAsset)) {
     const assetName = uploadAssetName(filePath);
-    const existingPath = copied.get(assetName);
+    const aliasName = downloadAliasName(filePath);
 
-    if (existingPath) {
-      throw new Error(
-        `Release asset name collision for ${assetName}: ${existingPath} and ${filePath}`
-      );
+    copyAsset(copied, filePath, assetName);
+    if (aliasName && aliasName !== assetName) {
+      copyAsset(copied, filePath, aliasName);
     }
-
-    copied.set(assetName, filePath);
-    fs.copyFileSync(filePath, path.join(uploadRoot, assetName));
   }
 
   return copied;
