@@ -1,13 +1,23 @@
 use tauri::image::Image;
 use tauri::menu::{Menu, MenuItem};
 use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
-use tauri::Manager;
+use tauri::{Emitter, Manager};
 
 const TRAY_ID: &str = "actavoces-tray";
+const CHECK_FOR_UPDATES_ITEM_ID: &str = "check-for-updates";
+const QUIT_ITEM_ID: &str = "quit";
+const CHECK_FOR_UPDATES_EVENT: &str = "check-for-updates-requested";
 
 pub fn init_tray(app: &tauri::App) -> Result<(), tauri::Error> {
-    let quit_item = MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)?;
-    let menu = Menu::with_items(app, &[&quit_item])?;
+    let check_for_updates_item = MenuItem::with_id(
+        app,
+        CHECK_FOR_UPDATES_ITEM_ID,
+        "Check for updates",
+        true,
+        None::<&str>,
+    )?;
+    let quit_item = MenuItem::with_id(app, QUIT_ITEM_ID, "Quit", true, None::<&str>)?;
+    let menu = Menu::with_items(app, &[&check_for_updates_item, &quit_item])?;
     let _ = TrayIconBuilder::with_id(TRAY_ID)
         .icon(app.default_window_icon().unwrap().clone())
         .menu(&menu)
@@ -26,10 +36,13 @@ pub fn init_tray(app: &tauri::App) -> Result<(), tauri::Error> {
             }
             _ => (),
         })
-        .on_menu_event(|app, event| {
-            if event.id.as_ref() == "quit" {
-                app.exit(0);
+        .on_menu_event(|app, event| match event.id.as_ref() {
+            CHECK_FOR_UPDATES_ITEM_ID => {
+                show_main_window(app);
+                let _ = app.emit(CHECK_FOR_UPDATES_EVENT, ());
             }
+            QUIT_ITEM_ID => app.exit(0),
+            _ => (),
         })
         .build(app)?;
 

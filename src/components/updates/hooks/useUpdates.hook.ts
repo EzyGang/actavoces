@@ -1,6 +1,8 @@
 import { useSignal } from '@preact/signals';
+import { listen } from '@tauri-apps/api/event';
 import { relaunch } from '@tauri-apps/plugin-process';
 import { check, type Update } from '@tauri-apps/plugin-updater';
+import { useEffect } from 'preact/hooks';
 import { errorMessage, isTauriRuntime } from '../../app-shell/hooks/appRuntime.helpers';
 
 interface UseUpdatesInput {
@@ -73,6 +75,20 @@ export const useUpdates = ({ setError }: UseUpdatesInput) => {
       updateInstalling.value = false;
     }
   };
+
+  useEffect(() => {
+    if (!isTauriRuntime()) {
+      return;
+    }
+
+    const checkForUpdatesListener = listen('check-for-updates-requested', () => {
+      void checkForUpdates();
+    });
+
+    return () => {
+      void checkForUpdatesListener.then((unlisten) => unlisten());
+    };
+  }, []);
 
   return {
     updateChecking,
