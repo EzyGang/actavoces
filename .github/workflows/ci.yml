@@ -67,5 +67,16 @@ jobs:
       - name: Lint and type-check
         run: pnpm ci-run && pnpm type-check && pnpm lint:rust && pnpm lint:py
 
-      - name: Run tests
-        run: pnpm test:all
+      - name: Run frontend tests
+        run: pnpm test
+
+      - name: Run Rust tests
+        if: runner.os != 'Windows'
+        run: pnpm test:rust
+
+      - name: Run Rust tests serially
+        if: runner.os == 'Windows'
+        run: cargo test --manifest-path src-tauri/Cargo.toml -- --test-threads=1 --nocapture
+
+      - name: Run Python tests
+        run: pnpm test:py

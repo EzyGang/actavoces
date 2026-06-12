@@ -90,7 +90,8 @@ jobs:
             updater-platform: linux-x86_64
             uv-asset: uv-x86_64-unknown-linux-gnu.tar.gz
             uv-binary: uv
-            ffmpeg-asset: ffmpeg-linux-x64.zip
+            ffmpeg-asset: ffmpeg-release-amd64-static.tar.xz
+            ffmpeg-url: https://johnvansickle.com/ffmpeg/releases/ffmpeg-release-amd64-static.tar.xz
             ffmpeg-binary: ffmpeg
 
     steps:
@@ -165,6 +166,7 @@ jobs:
         shell: bash
         env:
           FFMPEG_ASSET: ${{ matrix.ffmpeg-asset }}
+          FFMPEG_URL: ${{ matrix.ffmpeg-url }}
           FFMPEG_BINARY: ${{ matrix.ffmpeg-binary }}
           RUST_TARGET: ${{ matrix.rust-target }}
         run: bash .github/scripts/bundle-ffmpeg.sh
