@@ -1,6 +1,7 @@
 use std::env;
 use std::fs;
 use std::path::Path;
+use std::sync::atomic::{AtomicU64, Ordering};
 
 use crate::app::commands::{
     rename_recording_outputs, resume_pipeline_jobs, rewrite_speaker_label, start_recording_session,
@@ -26,6 +27,8 @@ use crate::utils::default_records_root;
 use crate::worker::runtime::{
     extract_model_inventory, hash_worker_source_directory, parse_worker_events, WorkerRuntimeState,
 };
+
+static TEST_PATH_COUNTER: AtomicU64 = AtomicU64::new(0);
 
 #[test]
 fn default_records_root_uses_home_actavoces_records() {
@@ -1146,5 +1149,10 @@ fn test_database_path(name: &str) -> std::path::PathBuf {
 }
 
 fn test_artifact_path(name: &str) -> std::path::PathBuf {
-    env::temp_dir().join("actavoces-tests").join(name)
+    let counter = TEST_PATH_COUNTER.fetch_add(1, Ordering::Relaxed);
+
+    env::temp_dir()
+        .join("actavoces-tests")
+        .join(format!("{}-{counter}", std::process::id()))
+        .join(name)
 }

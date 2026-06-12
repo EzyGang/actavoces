@@ -184,7 +184,7 @@ jobs:
       - name: Upload bundle artifacts
         uses: actions/upload-artifact@v7
         with:
-          name: actavoces-${{ needs.version.outputs.tag }}-${{ matrix.rust-target }}
+          name: ActaVoces-${{ needs.version.outputs.tag }}-${{ matrix.rust-target }}
           path: |
             src-tauri/target/${{ matrix.rust-target }}/release/bundle/**/*
             src-tauri/target/release/bundle/**/*
