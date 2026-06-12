@@ -208,19 +208,35 @@ jobs:
         with:
           path: release-assets
 
-      - name: Create updater latest.json
-        run: node .github/scripts/create-updater-latest.js release-assets ${{ needs.version.outputs.tag }} ${{ needs.version.outputs.version }}
-
-      - name: Remove temporary updater manifests
-        run: find release-assets -type f -name 'updater-*.json' -delete
+      - name: Prepare release assets
+        run: node .github/scripts/prepare-release-assets.js release-assets release-upload ${{ needs.version.outputs.tag }} ${{ needs.version.outputs.version }}
 
       - name: Create release and upload assets
-        uses: softprops/action-gh-release@v3
-        with:
-          tag_name: ${{ needs.version.outputs.tag }}
-          target_commitish: ${{ github.sha }}
-          name: ${{ needs.version.outputs.name }}
-          prerelease: ${{ needs.version.outputs.prerelease == 'true' }}
-          generate_release_notes: true
-          previous_tag: ${{ needs.version.outputs.previous_tag }}
-          files: release-assets/**/*
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_NAME: ${{ needs.version.outputs.name }}
+          RELEASE_PRERELEASE: ${{ needs.version.outputs.prerelease }}
+          RELEASE_PREVIOUS_TAG: ${{ needs.version.outputs.previous_tag }}
+          RELEASE_TAG: ${{ needs.version.outputs.tag }}
+        run: |
+          args=(
+            release create "${RELEASE_TAG}"
+            --draft
+            --target "${GITHUB_SHA}"
+            --title "${RELEASE_NAME}"
+            --generate-notes
+          )
+
+          if [[ -n "${RELEASE_PREVIOUS_TAG}" ]]; then
+            args+=(--notes-start-tag "${RELEASE_PREVIOUS_TAG}")
+          fi
+
+          if [[ "${RELEASE_PRERELEASE}" == "true" ]]; then
+            args+=(--prerelease)
+          fi
+
+          args+=(release-upload/*)
+
+          gh "${args[@]}"
+          gh release edit "${RELEASE_TAG}" --draft=false
