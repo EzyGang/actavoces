@@ -76,7 +76,8 @@ jobs:
 
       - name: Run Rust tests serially
         if: runner.os == 'Windows'
-        run: cargo test --manifest-path src-tauri/Cargo.toml -- --test-threads=1 --nocapture
+        shell: pwsh
+        run: ./.github/scripts/run-rust-tests-windows.ps1
 
       - name: Run Python tests
         run: pnpm test:py
