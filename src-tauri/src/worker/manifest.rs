@@ -2,6 +2,7 @@ use std::fs;
 
 use serde::{Deserialize, Serialize};
 
+use crate::worker::files::worker_virtualenv_is_scoped;
 use crate::worker::paths::{uv_runtime_is_available, worker_runtime_version, WorkerRuntimePaths};
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -19,6 +20,7 @@ pub(crate) struct WorkerBootstrapManifest {
 pub(crate) fn worker_bootstrap_is_ready(paths: &WorkerRuntimePaths, source_hash: &str) -> bool {
     if !uv_runtime_is_available(paths)
         || !paths.worker_directory.join("app").join("main.py").exists()
+        || !worker_virtualenv_is_scoped(paths)
     {
         return false;
     }

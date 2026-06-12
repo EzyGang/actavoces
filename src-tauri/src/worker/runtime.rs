@@ -13,6 +13,7 @@ pub(crate) use crate::worker::events::{
 #[allow(unused_imports)]
 pub(crate) use crate::worker::files::{
     copy_directory, copy_file, prepare_uv_executable, prepare_worker_directory,
+    prepare_worker_virtualenv, worker_virtualenv_is_scoped,
 };
 #[allow(unused_imports)]
 pub(crate) use crate::worker::manifest::{
@@ -95,6 +96,7 @@ pub(crate) fn run_worker_bootstrap(
     )?;
     prepare_worker_directory(app, &paths.worker_directory)?;
     prepare_uv_executable(app, &paths.uv_executable)?;
+    prepare_worker_virtualenv(&paths)?;
 
     emit_worker_setup_progress(
         app,

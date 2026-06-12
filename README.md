@@ -81,6 +81,9 @@ Published builds are available from the [GitHub Releases page](https://github.co
 
 If there is no build for your platform yet, use the [development setup](#development) below to run from source.
 
+> [!NOTE]
+> Windows builds are not code-signed yet. Microsoft Defender SmartScreen or Smart App Control may warn that the app is from an unknown publisher, especially when it is downloaded from a browser.
+
 ---
 
 ## First Run

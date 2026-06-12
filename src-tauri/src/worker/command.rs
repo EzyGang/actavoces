@@ -8,11 +8,15 @@ use crate::domain::types::WorkerEvent;
 use crate::utils::unix_timestamp;
 use crate::worker::events::parse_worker_events;
 use crate::worker::paths::{resolve_worker_directory, WorkerRuntimePaths};
+use crate::worker::process::hide_console_window;
 
 pub(crate) static WORKER_RUNTIME_PATHS: OnceLock<WorkerRuntimePaths> = OnceLock::new();
 
 pub(crate) fn run_uv_sync(paths: &WorkerRuntimePaths) -> Result<(), String> {
-    let output = Command::new(resolve_uv_command(paths))
+    let mut command = Command::new(resolve_uv_command(paths));
+    hide_console_window(&mut command);
+    apply_worker_path_env(&mut command, paths)?;
+    let output = command
         .arg("sync")
         .arg("--locked")
         .arg("--no-dev")
@@ -30,7 +34,10 @@ pub(crate) fn run_uv_sync(paths: &WorkerRuntimePaths) -> Result<(), String> {
 }
 
 pub(crate) fn run_uv_sync_extra(paths: &WorkerRuntimePaths, extra: &str) -> Result<(), String> {
-    let output = Command::new(resolve_uv_command(paths))
+    let mut command = Command::new(resolve_uv_command(paths));
+    hide_console_window(&mut command);
+    apply_worker_path_env(&mut command, paths)?;
+    let output = command
         .arg("sync")
         .arg("--locked")
         .arg("--no-dev")
@@ -76,6 +83,7 @@ pub(crate) fn run_worker_command_with_paths(
         "payload": payload,
     });
     let mut command_runner = Command::new(resolve_uv_command(paths));
+    hide_console_window(&mut command_runner);
     command_runner
         .arg("run")
         .arg("python")
@@ -123,6 +131,17 @@ pub(crate) fn apply_worker_path_env(
     command: &mut Command,
     paths: &WorkerRuntimePaths,
 ) -> Result<(), String> {
+    let uv_state_directory = paths.worker_directory.join(".uv");
+    command
+        .env("UV_CACHE_DIR", uv_state_directory.join("cache"))
+        .env("UV_PYTHON_INSTALL_DIR", uv_state_directory.join("python"))
+        .env("UV_PYTHON_BIN_DIR", uv_state_directory.join("python-bin"))
+        .env("UV_PYTHON_NO_REGISTRY", "1")
+        .env(
+            "UV_PROJECT_ENVIRONMENT",
+            paths.worker_directory.join(".venv"),
+        );
+
     let Some(ffmpeg_directory) = &paths.ffmpeg_directory else {
         return Ok(());
     };

@@ -4,6 +4,8 @@ use std::process::Command;
 
 use tauri::Manager;
 
+use crate::worker::process::hide_console_window;
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct WorkerRuntimePaths {
     pub(crate) uv_executable: PathBuf,
@@ -37,7 +39,10 @@ pub(crate) fn uv_runtime_is_available(paths: &WorkerRuntimePaths) -> bool {
         return true;
     }
 
-    Command::new("uv")
+    let mut command = Command::new("uv");
+    hide_console_window(&mut command);
+
+    command
         .arg("--version")
         .stdout(std::process::Stdio::null())
         .stderr(std::process::Stdio::null())
