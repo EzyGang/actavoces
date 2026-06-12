@@ -61,7 +61,7 @@
     "wouter-preact": "^3.10.0"
   },
   "devDependencies": {
-    "@biomejs/biome": "^2.4.11",
+    "@biomejs/biome": "^2.5.0",
     "@preact/preset-vite": "^2.9.3",
     "@tauri-apps/cli": "^2",
     "@testing-library/preact": "^3.2.4",
