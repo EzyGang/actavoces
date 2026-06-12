@@ -1,110 +1,104 @@
 # ActaVoces
 
-[![CI](https://github.com/EzyGang/actavoces/actions/workflows/ci.yml/badge.svg)](https://github.com/EzyGang/actavoces/actions/workflows/ci.yml)
-![AGPL-3.0-or-later](https://img.shields.io/badge/license-AGPL--3.0--or--later-green)
-![GitHub release](https://img.shields.io/github/v/release/EzyGang/actavoces)
+<p align="center">
+  <a href="https://github.com/EzyGang/actavoces/actions/workflows/ci.yml">
+    <img src="https://github.com/EzyGang/actavoces/actions/workflows/ci.yml/badge.svg" alt="CI">
+  </a>
+  <img src="https://img.shields.io/badge/license-AGPL--3.0--or--later-green" alt="AGPL-3.0-or-later">
+  <img src="https://img.shields.io/github/v/release/EzyGang/actavoces" alt="GitHub release">
+</p>
 
-**ActaVoces is a local-first desktop meeting recorder that produces files you can inspect, search, back up, and reuse outside the app.**
+---
 
-It captures microphone and system audio, transcribes recordings locally, adds optional speaker labels, and writes Markdown and JSON artifacts beside each recording. The app is built for people who want a durable meeting archive instead of notes locked inside a hosted product.
+**ActaVoces** is a local-first desktop meeting recorder for people who want their recordings, transcripts, speaker labels, and notes saved as normal files they can inspect and keep.
 
-Pronunciation: `AHK-tah VOH-kays`.
+It records microphone and system audio, transcribes locally, adds optional speaker labels, and writes Markdown plus JSON artifacts beside each recording.
 
-The name joins two Latin roots:
+> [!WARNING]
+> ActaVoces is still pre-1.0 software. The main workflow exists, but packaged builds, real-world audio devices, model setup, and platform-specific capture behavior still need careful validation before relying on it for critical meetings.
 
-- `acta`: records or proceedings
-- `voces`: voices
+**Pronunciation:** `AHK-tah VOH-kays`  
+**Name:** `acta` means records or proceedings, and `voces` means voices.
 
-## Navigation
+---
 
-- [Features](#features)
-- [How It Works](#how-it-works)
-- [Available Backends](#available-backends)
-- [Artifact Layout](#artifact-layout)
+## Table of Contents
+
+- [Why ActaVoces?](#why-actavoces)
+- [Download](#download)
+- [First Run](#first-run)
+- [What You Get](#what-you-get)
+- [Privacy and Remote Features](#privacy-and-remote-features)
+- [Backends](#backends)
 - [Platform Support](#platform-support)
-- [Installation](#installation)
 - [Development](#development)
 - [Architecture](#architecture)
 - [Releases](#releases)
-- [Project Status](#project-status)
 - [Contributing](#contributing)
 - [License](#license)
 
-## Features
+---
 
-- **Local recording archive**
-  Recordings are stored under your configured records folder. Existing recording folders keep stable paths when settings change.
+## Why ActaVoces?
 
-- **Inspectable artifacts**
-  ActaVoces writes Markdown transcripts, WAV audio, JSON segment data, diarization turns, metadata, and a JSONL job log.
+**🗂️ Your meeting archive stays yours**  
+Recordings are stored under your configured records folder. The files are readable outside the app, easy to back up, and not locked inside a hosted workspace.
 
-- **Desktop capture**
-  Capture microphone audio and available system audio from the Tauri desktop app. Recording can be controlled from the app, tray, global hotkey, or floating overlay.
+**🎙️ Local transcription by default**  
+Transcription runs through the bundled Python worker with `faster-whisper`. You choose and install the supported model from the app.
 
-- **Local transcription**
-  Transcription runs through the bundled Python worker with `faster-whisper`. The app tracks model status and can install supported models from Settings.
+**📁 Useful files, not mystery blobs**  
+Each recording becomes a folder with WAV audio, Markdown transcripts, JSON segment data, speaker-label data, metadata, and a job log.
 
-- **Speaker labels**
-  Speaker attribution supports the default local Sortformer backend and an optional `pyannote.audio` backend. A one-speaker mode works without downloading a diarization model.
+**🗣️ Speaker labels when you need them**  
+Use the default local Sortformer backend, a one-speaker mode, or the optional `pyannote.audio` backend if you want that workflow.
 
-- **Speaker label editing**
-  Rename speakers after processing. ActaVoces rewrites `meta/diarization.json` and regenerates `diarized-transcript.md`.
+**🔁 Recovery is part of the app**  
+SQLite tracks recordings, settings, artifacts, models, and pipeline jobs. Failed or setup-blocked stages can be retried from the desktop UI.
 
-- **Optional summaries**
-  Summary generation is disabled by default and can be enabled with an OpenAI-compatible provider URL, model, API key, and prompt.
+| Feature | What it helps with |
+| --- | --- |
+| Recording archive | Keep stable, inspectable meeting folders on disk |
+| Desktop capture | Record microphone and available system audio |
+| Local transcription | Generate transcripts without a required hosted service |
+| Speaker labels | Split transcript text by detected speaker turns |
+| Speaker editing | Rename speakers and regenerate diarized transcripts |
+| Optional summaries | Use an OpenAI-compatible provider only when enabled |
+| Pipeline recovery | Retry failed stages from the app |
 
-- **Pipeline recovery**
-  SQLite tracks recordings, settings, artifacts, models, and pipeline jobs. Failed or setup-blocked stages can be retried from the app.
+---
 
-- **Self-updates**
-  Release builds produce Tauri updater artifacts and `latest.json` for GitHub Releases.
+## Download
 
-## How It Works
+Published builds are available from the [GitHub Releases page](https://github.com/EzyGang/actavoces/releases).
 
-ActaVoces keeps the source recording and primary processing local by default:
+| Platform | Downloads |
+| --- | --- |
+| Windows x64 | [Setup EXE](https://github.com/EzyGang/actavoces/releases/latest/download/ActaVoces-windows-x64-setup.exe) / [MSI](https://github.com/EzyGang/actavoces/releases/latest/download/ActaVoces-windows-x64.msi) |
+| macOS Apple Silicon | [DMG](https://github.com/EzyGang/actavoces/releases/latest/download/ActaVoces-macos-aarch64.dmg) |
+| macOS Intel | [DMG](https://github.com/EzyGang/actavoces/releases/latest/download/ActaVoces-macos-x64.dmg) |
+| Linux x64 | [AppImage](https://github.com/EzyGang/actavoces/releases/latest/download/ActaVoces-linux-x64.AppImage) / [DEB](https://github.com/EzyGang/actavoces/releases/latest/download/ActaVoces-linux-x64.deb) / [RPM](https://github.com/EzyGang/actavoces/releases/latest/download/ActaVoces-linux-x64.rpm) |
 
-| Stage | Implementation | Notes |
-| --- | --- | --- |
-| Capture | Rust + `cpal` | Microphone plus system source when the OS exposes one. |
-| Transcription | Python worker + `faster-whisper` | Supported models: `small`, `medium`, `large-v3`, `distil-large-v3`. |
-| Diarization | Rust Sortformer/ONNX or Python `pyannote.audio` | Sortformer is the default; pyannote requires setup and a Hugging Face token. |
-| Summary | OpenAI-compatible provider | Optional remote call; disabled by default. |
-| Storage | SQLite + files on disk | Records, jobs, settings, and artifact readiness are tracked locally. |
+If there is no build for your platform yet, use the [development setup](#development) below to run from source.
 
-## Available Backends
+---
 
-### Transcription
+## First Run
 
-ActaVoces uses `faster-whisper` through the Python worker. The app exposes model inventory and installation controls for:
+1. Open ActaVoces.
+2. Keep network access available during setup.
+3. Wait while ActaVoces prepares the local worker runtime and default settings.
+4. Let the app download and install the default transcription model automatically.
+5. Allow the OS microphone and audio-capture permissions when prompted.
+6. Start a recording from the app, tray, global hotkey, or floating overlay.
 
-- `small`
-- `medium`
-- `large-v3`
-- `distil-large-v3`
+Initial setup requires network access for model downloads. After the local transcription model and local speaker-label backend are prepared, normal recording and local processing can run without network access. Summary generation is disabled unless you configure a provider.
 
-Compute mode can be set to automatic, CPU, CUDA, or Metal. CUDA mode requires the NVIDIA runtime libraries shown in Settings.
+Users are responsible for consent and recording-law compliance in their jurisdiction.
 
-### Diarization
+---
 
-ActaVoces currently supports two speaker-label backends:
-
-- **Sortformer**: the default local backend. It uses a bundled Rust path with ONNX Runtime and downloads the Sortformer ONNX model on first use. It does not require a Hugging Face token.
-- **pyannote**: optional Python-worker backend using `pyannote.audio` and `pyannote/speaker-diarization-community-1`. It requires accepted Hugging Face model terms, a Hugging Face token, and FFmpeg.
-
-pyannoteAI cloud API support is not implemented.
-
-### Summaries
-
-Summaries use an OpenAI-compatible provider through `pydantic-ai`. You can point the provider settings at OpenAI or another compatible endpoint by configuring:
-
-- Base URL
-- Model
-- API key
-- Summary prompt
-
-Summary generation can stay disabled without blocking recording, transcription, or speaker labels.
-
-## Artifact Layout
+## What You Get
 
 Each recording gets a folder under the configured records directory:
 
@@ -112,7 +106,7 @@ Each recording gets a folder under the configured records directory:
 ~/actavoces/records/YYYY-MM-DD-HHMM-title/
 ```
 
-Human-readable artifacts are kept at the recording folder root:
+Human-readable files live at the recording folder root:
 
 ```text
 raw-transcript.md
@@ -132,7 +126,65 @@ meta/
   job-log.jsonl
 ```
 
-The raw transcript can appear before diarization and summary finish. Later stages update their own files instead of rewriting one combined note.
+The raw transcript can appear before speaker labels and summaries finish. Later stages update their own files instead of rewriting one combined note.
+
+---
+
+## Privacy and Remote Features
+
+ActaVoces keeps recording and primary processing local by default.
+
+| Stage | Implementation | Local by default? |
+| --- | --- | --- |
+| Capture | Rust + `cpal` | Yes |
+| Transcription | Python worker + `faster-whisper` | Yes |
+| Speaker labels | Rust Sortformer/ONNX or Python `pyannote.audio` | Yes for Sortformer |
+| Summary | OpenAI-compatible provider | Disabled by default; depends on provider settings |
+| Storage | SQLite + files on disk | Yes |
+
+Remote or networked behavior is explicit:
+
+- Model downloads need network access.
+- Optional `pyannote.audio` setup needs Hugging Face access and accepted model terms.
+- Optional summaries call the provider you configure. They can stay local with a local OpenAI-compatible endpoint such as Ollama, or use a remote provider if you choose one.
+- Summary generation can remain disabled without blocking recording, transcription, or speaker labels.
+
+---
+
+## Backends
+
+### Transcription
+
+ActaVoces uses `faster-whisper` through the Python worker. The app exposes model inventory and installation controls for:
+
+- `small`
+- `medium`
+- `large-v3`
+- `distil-large-v3`
+
+Compute mode can be automatic, CPU, CUDA, or Metal. CUDA mode requires the NVIDIA runtime libraries shown in Settings.
+
+### Speaker Labels
+
+ActaVoces currently supports two speaker-label backends:
+
+- **Sortformer:** the default local backend. It uses a bundled Rust path with ONNX Runtime and downloads the Sortformer ONNX model on first use. It does not require a Hugging Face token.
+- **pyannote:** optional Python-worker backend using `pyannote.audio` and `pyannote/speaker-diarization-community-1`. It requires accepted Hugging Face model terms, a Hugging Face token, and FFmpeg.
+
+pyannoteAI cloud API support is not implemented.
+
+### Summaries
+
+Summaries are disabled by default. When enabled, they use an OpenAI-compatible provider through `pydantic-ai`. You can point the base URL at a local provider such as Ollama, or at a remote provider if that is what you want.
+
+You can configure:
+
+- Base URL
+- Model
+- API key
+- Summary prompt
+
+---
 
 ## Platform Support
 
@@ -144,22 +196,7 @@ ActaVoces is a desktop app built with Tauri v2.
 | macOS | Build target | CI plus Apple Silicon and Intel release builds. |
 | Linux | Build target | CI and release workflow build Linux x64. System audio requires a PipeWire/PulseAudio monitor or loopback input device. |
 
-Users are responsible for consent and recording-law compliance in their jurisdiction.
-
-## Installation
-
-Published builds are available from the [GitHub Releases page](https://github.com/EzyGang/actavoces/releases). Latest direct downloads:
-
-| Platform | Downloads |
-| --- | --- |
-| Windows x64 | [Setup EXE](https://github.com/EzyGang/actavoces/releases/latest/download/ActaVoces-windows-x64-setup.exe) · [MSI](https://github.com/EzyGang/actavoces/releases/latest/download/ActaVoces-windows-x64.msi) |
-| macOS Apple Silicon | [DMG](https://github.com/EzyGang/actavoces/releases/latest/download/ActaVoces-macos-aarch64.dmg) |
-| macOS Intel | [DMG](https://github.com/EzyGang/actavoces/releases/latest/download/ActaVoces-macos-x64.dmg) |
-| Linux x64 | [AppImage](https://github.com/EzyGang/actavoces/releases/latest/download/ActaVoces-linux-x64.AppImage) · [DEB](https://github.com/EzyGang/actavoces/releases/latest/download/ActaVoces-linux-x64.deb) · [RPM](https://github.com/EzyGang/actavoces/releases/latest/download/ActaVoces-linux-x64.rpm) |
-
-If no build is available for your platform yet, use the development setup below to run from source.
-
-On first run, ActaVoces prepares the local worker runtime and installs the default transcription model. Some model and backend setup steps require network access.
+---
 
 ## Development
 
@@ -230,6 +267,8 @@ pnpm format:py    # Format Python worker
 pnpm format:all   # Format all code
 ```
 
+---
+
 ## Architecture
 
 ```text
@@ -243,7 +282,7 @@ Main stack:
 
 - **Frontend:** Preact 10, TypeScript, `@preact/signals`, Tailwind CSS v4, Base UI
 - **Desktop backend:** Tauri v2, Rust, SQLite through `rusqlite`, native capture through `cpal`
-- **Diarization:** Rust Sortformer/ONNX path plus optional Python `pyannote.audio`
+- **Speaker labels:** Rust Sortformer/ONNX path plus optional Python `pyannote.audio`
 - **Worker:** Python 3.14, `uv`, Pydantic, `faster-whisper`, `pydantic-ai`
 
 The Rust app owns windows, tray behavior, hotkeys, capture, filesystem paths, SQLite state, updater integration, and worker orchestration. The Python worker owns ML-heavy transcription, optional pyannote diarization, and summary calls.
@@ -281,6 +320,8 @@ The worker receives newline-delimited JSON commands from the Rust app and emits 
 
 Worker code lives under `worker/app/`; worker tests live under `worker/tests/`.
 
+---
+
 ## Releases
 
 Releases are created with the GitHub Actions release workflow.
@@ -290,20 +331,7 @@ Releases are created with the GitHub Actions release workflow.
 - Build artifacts are uploaded to GitHub Releases.
 - Tauri updater metadata is generated as part of the release.
 
-## Project Status
-
-ActaVoces has the main desktop workflow implemented:
-
-- Recording lifecycle with durable WAV output
-- SQLite-backed settings, recordings, artifacts, and jobs
-- Dashboard, Recordings, Jobs, and Settings views
-- Floating recording overlay, tray integration, global hotkey, and launch-at-login setting
-- Worker bootstrap and newline-delimited JSON command protocol
-- Local transcription, Sortformer diarization, optional pyannote diarization, optional summaries, retries, and artifact opening
-- CI across TypeScript, Rust, and Python
-- Release workflow for Windows, macOS, and Linux bundles
-
-The project is still pre-1.0. Packaged build behavior, real-world audio devices, model setup, and platform-specific capture paths should be validated carefully before relying on it for critical meetings.
+---
 
 ## Contributing
 
@@ -367,6 +395,8 @@ pnpm test:py
 - Document tested operating systems for capture, hotkey, overlay, autostart, and updater changes.
 - Treat SQLite migrations as additive by default. Do not drop user data without explicit approval and a migration plan.
 - Keep generated artifacts useful outside the app. Markdown should be readable; JSON should stay machine-friendly.
+
+---
 
 ## License
 
