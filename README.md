@@ -1,6 +1,10 @@
 # ActaVoces
 
 <p align="center">
+  <img src="screenshots/banner.png" alt="ActaVoces local-first desktop meeting recorder">
+</p>
+
+<p align="center">
   <a href="https://github.com/EzyGang/actavoces/actions/workflows/ci.yml">
     <img src="https://github.com/EzyGang/actavoces/actions/workflows/ci.yml/badge.svg" alt="CI">
   </a>
