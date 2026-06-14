@@ -58,43 +58,61 @@ export const AppView = ({ app }: AppViewProps): JSX.Element =>
           </div>
         </header>
 
-        <div class='grid min-h-0 grid-cols-[176px_minmax(0,1fr)] xl:grid-cols-[176px_minmax(0,1fr)_360px]'>
-          <nav class='flex min-h-0 flex-col gap-2 border-border-base border-r bg-bg-page p-3'>
-            {app.navigation.map((item) => (
-              <button
-                aria-current={item.isActive ? 'page' : undefined}
-                class={
-                  item.isActive
-                    ? 'border border-text-primary bg-text-primary px-3 py-3 text-left font-semibold text-bg-page text-xs uppercase tracking-wider'
-                    : 'border border-border-base bg-bg-card px-3 py-3 text-left font-semibold text-text-secondary text-xs uppercase tracking-wider hover:border-text-muted hover:bg-bg-hover hover:text-text-primary'
-                }
-                key={item.route}
-                onClick={item.onSelect}
-                type='button'
+        <div class='grid h-[calc(100vh-64px)] min-h-0 grid-cols-[176px_minmax(0,1fr)]'>
+          <nav class='flex min-h-0 flex-col justify-between gap-4 overflow-y-auto border-border-base border-r bg-bg-page p-3'>
+            <div class='flex flex-col gap-2'>
+              {app.navigation.map((item) => (
+                <button
+                  aria-current={item.isActive ? 'page' : undefined}
+                  class={
+                    item.isActive
+                      ? 'border border-text-primary bg-text-primary px-3 py-3 text-left font-semibold text-bg-page text-xs uppercase tracking-wider'
+                      : 'border border-border-base bg-bg-card px-3 py-3 text-left font-semibold text-text-secondary text-xs uppercase tracking-wider hover:border-text-muted hover:bg-bg-hover hover:text-text-primary'
+                  }
+                  key={item.route}
+                  onClick={item.onSelect}
+                  type='button'
+                >
+                  {item.label}
+                </button>
+              ))}
+            </div>
+
+            <div class='flex flex-col gap-3 border border-border-base bg-bg-card p-3'>
+              <a
+                class='font-semibold text-text-secondary text-xs uppercase tracking-wider hover:text-text-primary'
+                href='https://insigh.to/b/actavoces'
+                rel='noreferrer'
+                target='_blank'
               >
-                {item.label}
-              </button>
-            ))}
+                Suggest feedback
+              </a>
+              <span class='font-mono text-text-muted text-[11px] uppercase tracking-wider'>
+                v{app.data.appVersion}
+              </span>
+            </div>
           </nav>
 
           <section class='min-h-0 overflow-y-auto bg-bg-page'>
-            <div class='flex flex-col gap-5 p-5 lg:p-7'>
-              {app.status.error.value ? (
-                <section class='border border-error-border bg-error-bg p-4 text-error text-sm'>
-                  {app.status.error.value}
-                </section>
-              ) : null}
+            <div class='grid min-h-full grid-cols-[minmax(0,1fr)] xl:grid-cols-[minmax(0,1fr)_360px]'>
+              <div class='flex min-w-0 flex-col gap-5 p-5 lg:p-7'>
+                {app.status.error.value ? (
+                  <section class='border border-error-border bg-error-bg p-4 text-error text-sm'>
+                    {app.status.error.value}
+                  </section>
+                ) : null}
 
-              {app.status.activeRoute.value === 'dashboard' ? <DashboardRoute app={app} /> : null}
-              {app.status.activeRoute.value === 'recordings' ? (
-                <RecordingsSection app={app} />
-              ) : null}
-              {app.status.activeRoute.value === 'jobs' ? <JobsRoute app={app} /> : null}
-              {app.status.activeRoute.value === 'settings' ? <SettingsRoute app={app} /> : null}
+                {app.status.activeRoute.value === 'dashboard' ? <DashboardRoute app={app} /> : null}
+                {app.status.activeRoute.value === 'recordings' ? (
+                  <RecordingsSection app={app} />
+                ) : null}
+                {app.status.activeRoute.value === 'jobs' ? <JobsRoute app={app} /> : null}
+                {app.status.activeRoute.value === 'settings' ? <SettingsRoute app={app} /> : null}
+              </div>
+
+              <AppSidebar app={app} />
             </div>
           </section>
-
-          <AppSidebar app={app} />
         </div>
 
         {app.status.isRecording.value ? (

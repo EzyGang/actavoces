@@ -8,7 +8,7 @@ interface AppSidebarProps {
 }
 
 export const AppSidebar = ({ app }: AppSidebarProps): JSX.Element => (
-  <aside class='hidden min-h-0 flex-col gap-5 overflow-y-auto border-border-base border-l bg-bg-card p-5 lg:flex'>
+  <aside class='hidden min-h-full flex-col gap-5 border-border-base border-l bg-bg-card p-5 xl:flex'>
     <section class='flex flex-col gap-4'>
       <h2 class='font-semibold text-xl'>Recent records</h2>
       {app.data.recentRecordingRows.value.length > 0 ? (

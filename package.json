@@ -1,6 +1,6 @@
 {
   "name": "actavoces",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "description": "Local-first meeting recorder and transcript workspace.",
   "license": "AGPL-3.0-or-later",
   "author": "galtozzy <galtozzy+git@gmail.com>",
@@ -13,7 +13,13 @@
   "bugs": {
     "url": "https://github.com/EzyGang/actavoces/issues"
   },
-  "keywords": ["meetings", "recording", "transcription", "tauri", "local-first"],
+  "keywords": [
+    "meetings",
+    "recording",
+    "transcription",
+    "tauri",
+    "local-first"
+  ],
   "packageManager": "pnpm@10.30.1",
   "scripts": {
     "dev": "vite",
