@@ -1,4 +1,6 @@
 import { useSignal } from '@preact/signals';
+import { getVersion } from '@tauri-apps/api/app';
+import { useEffect } from 'preact/hooks';
 import { appErrorSignal, appSnapshotSignal } from '../../../stores/app.store';
 import { activeRouteSignal } from '../../../stores/route.store';
 import type { AppSnapshot } from '../../../types/desktop';
@@ -8,12 +10,13 @@ import { useRecordings } from '../../recordings/hooks/useRecordings.hook';
 import { useSettings } from '../../settings/hooks/useSettings.hook';
 import { useUpdates } from '../../updates/hooks/useUpdates.hook';
 import { useWorkerRuntime } from '../../worker-runtime/hooks/useWorkerRuntime.hook';
-import { routeLabel } from './appRuntime.helpers';
+import { isTauriRuntime, routeLabel } from './appRuntime.helpers';
 import { useAppNavigation } from './useAppNavigation.hook';
 import { useAppRuntime } from './useAppRuntime.hook';
 
 export const useApp = () => {
   const loading = useSignal(false);
+  const appVersion = useSignal('unknown');
   const setError = (message: string | null) => {
     appErrorSignal.value = message;
   };
@@ -60,6 +63,16 @@ export const useApp = () => {
     resetSettingsDraft
   });
 
+  useEffect(() => {
+    if (!isTauriRuntime()) {
+      return;
+    }
+
+    void getVersion().then((version) => {
+      appVersion.value = version;
+    });
+  }, []);
+
   return {
     data: {
       snapshot: appSnapshotSignal,
@@ -80,7 +93,8 @@ export const useApp = () => {
       setupProgress: runtime.setupProgress,
       sortformerProgress: runtime.sortformerProgress,
       updateStatus: updates.updateStatus,
-      updateAvailable: updates.updateAvailable
+      updateAvailable: updates.updateAvailable,
+      appVersion
     },
     status: {
       loading,

@@ -59,22 +59,38 @@ export const AppView = ({ app }: AppViewProps): JSX.Element =>
         </header>
 
         <div class='grid min-h-0 grid-cols-[176px_minmax(0,1fr)] xl:grid-cols-[176px_minmax(0,1fr)_360px]'>
-          <nav class='flex min-h-0 flex-col gap-2 border-border-base border-r bg-bg-page p-3'>
-            {app.navigation.map((item) => (
-              <button
-                aria-current={item.isActive ? 'page' : undefined}
-                class={
-                  item.isActive
-                    ? 'border border-text-primary bg-text-primary px-3 py-3 text-left font-semibold text-bg-page text-xs uppercase tracking-wider'
-                    : 'border border-border-base bg-bg-card px-3 py-3 text-left font-semibold text-text-secondary text-xs uppercase tracking-wider hover:border-text-muted hover:bg-bg-hover hover:text-text-primary'
-                }
-                key={item.route}
-                onClick={item.onSelect}
-                type='button'
+          <nav class='flex min-h-0 flex-col justify-between gap-4 border-border-base border-r bg-bg-page p-3'>
+            <div class='flex flex-col gap-2'>
+              {app.navigation.map((item) => (
+                <button
+                  aria-current={item.isActive ? 'page' : undefined}
+                  class={
+                    item.isActive
+                      ? 'border border-text-primary bg-text-primary px-3 py-3 text-left font-semibold text-bg-page text-xs uppercase tracking-wider'
+                      : 'border border-border-base bg-bg-card px-3 py-3 text-left font-semibold text-text-secondary text-xs uppercase tracking-wider hover:border-text-muted hover:bg-bg-hover hover:text-text-primary'
+                  }
+                  key={item.route}
+                  onClick={item.onSelect}
+                  type='button'
+                >
+                  {item.label}
+                </button>
+              ))}
+            </div>
+
+            <div class='flex flex-col gap-3 border border-border-base bg-bg-card p-3'>
+              <a
+                class='font-semibold text-text-secondary text-xs uppercase tracking-wider hover:text-text-primary'
+                href='https://insigh.to/b/actavoces'
+                rel='noreferrer'
+                target='_blank'
               >
-                {item.label}
-              </button>
-            ))}
+                Suggest feedback
+              </a>
+              <span class='font-mono text-text-muted text-[11px] uppercase tracking-wider'>
+                v{app.data.appVersion}
+              </span>
+            </div>
           </nav>
 
           <section class='min-h-0 overflow-y-auto bg-bg-page'>
