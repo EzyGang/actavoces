@@ -68,9 +68,13 @@ export const useApp = () => {
       return;
     }
 
-    void getVersion().then((version) => {
-      appVersion.value = version;
-    });
+    void getVersion()
+      .then((version) => {
+        appVersion.value = version;
+      })
+      .catch(() => {
+        appVersion.value = 'unknown';
+      });
   }, []);
 
   return {
