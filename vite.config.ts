@@ -6,7 +6,7 @@ import { defineConfig } from 'vite';
 const host = process.env.TAURI_DEV_HOST;
 
 // https://vite.dev/config/
-export default defineConfig({
+export default defineConfig(({ mode }) => ({
   plugins: [tailwindcss(), preact()],
 
   // Vite options tailored for Tauri development and only applied in `tauri dev` or `tauri build`
@@ -35,5 +35,13 @@ export default defineConfig({
       react: 'preact/compat',
       'react-dom': 'preact/compat'
     }
-  }
-});
+  },
+  build: mode === 'landing'
+    ? {
+        outDir: 'dist-landing',
+        rollupOptions: {
+          input: 'landing.html'
+        }
+      }
+    : undefined
+}));

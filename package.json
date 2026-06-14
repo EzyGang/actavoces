@@ -25,6 +25,7 @@
     "dev": "vite",
     "build": "pnpm tauri build",
     "build:web": "pnpm type-check && vite build",
+    "build:landing": "pnpm type-check && vite build --mode landing && node -e \"require('node:fs').renameSync('dist-landing/landing.html', 'dist-landing/index.html')\"",
     "preview": "vite preview",
     "tauri": "tauri",
     "lint": "biome check --error-on-warnings ./src",
@@ -54,6 +55,7 @@
   "dependencies": {
     "@base-ui/react": "^1.5.0",
     "@preact/signals": "^2.9.1",
+    "@tabler/icons-react": "^3.44.0",
     "@tailwindcss/vite": "^4.3.0",
     "@tauri-apps/api": "^2",
     "@tauri-apps/plugin-dialog": "^2.7.1",

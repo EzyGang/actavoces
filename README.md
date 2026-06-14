@@ -19,7 +19,7 @@
 It records microphone and system audio, transcribes locally, adds optional speaker labels, and writes Markdown plus JSON artifacts beside each recording.
 
 > [!WARNING]
-> ActaVoces is still pre-1.0 software. The main workflow exists, but packaged builds, real-world audio devices, model setup, and platform-specific capture behavior still need careful validation before relying on it for critical meetings.
+> ActaVoces is usable and is being used, but it is still open-source pre-1.0 software without comprehensive multi-platform QA. It has seen ongoing Windows use, lighter macOS use, and Linux currently lacks active QA.
 
 **Pronunciation:** `AHK-tah VOH-kays`  
 **Name:** `acta` means records or proceedings, and `voces` means voices.
@@ -86,7 +86,7 @@ Published builds are available from the [GitHub Releases page](https://github.co
 If there is no build for your platform yet, use the [development setup](#development) below to run from source.
 
 > [!NOTE]
-> Windows builds are not code-signed yet. Microsoft Defender SmartScreen or Smart App Control may warn that the app is from an unknown publisher, especially when it is downloaded from a browser.
+> Builds are not code-signed yet. Code signing is expensive for a simple open-source app. macOS builds may later move through App Store distribution and signing, Linux packaging can improve over time, and Windows builds will likely remain unsigned for a while. Operating systems may warn that the app is from an unknown publisher.
 
 ---
 
@@ -153,7 +153,7 @@ Remote or networked behavior is explicit:
 
 - Model downloads need network access.
 - Optional `pyannote.audio` setup needs Hugging Face access and accepted model terms.
-- Optional summaries call the provider you configure. They can stay local with a local OpenAI-compatible endpoint such as Ollama, or use a remote provider if you choose one.
+- Optional summaries call the provider you configure. They can stay local with a local OpenAI-compatible endpoint such as Ollama, or use any other OpenAI-compatible API if you choose one.
 - Summary generation can remain disabled without blocking recording, transcription, or speaker labels.
 
 ---
@@ -254,6 +254,7 @@ pnpm test:rust    # Rust tests
 pnpm test:py      # Python worker tests
 pnpm test:all     # Frontend, Rust, and Python tests
 pnpm build:web    # Vite production build
+pnpm build:landing # Static landing page build -> dist-landing/
 pnpm build        # Tauri production build
 ```
 
