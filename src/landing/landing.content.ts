@@ -56,10 +56,54 @@ export const artifactItems = [
 ];
 
 export const downloadRows = [
-  ['Windows x64', 'Setup EXE / MSI'],
-  ['macOS Apple Silicon', 'DMG'],
-  ['macOS Intel', 'DMG'],
-  ['Linux x64', 'AppImage / DEB / RPM']
+  {
+    platform: 'Windows x64',
+    links: [
+      {
+        label: 'Setup EXE',
+        href: 'https://github.com/EzyGang/actavoces/releases/latest/download/ActaVoces-windows-x64-setup.exe'
+      },
+      {
+        label: 'MSI',
+        href: 'https://github.com/EzyGang/actavoces/releases/latest/download/ActaVoces-windows-x64.msi'
+      }
+    ]
+  },
+  {
+    platform: 'macOS Apple Silicon',
+    links: [
+      {
+        label: 'DMG',
+        href: 'https://github.com/EzyGang/actavoces/releases/latest/download/ActaVoces-macos-aarch64.dmg'
+      }
+    ]
+  },
+  {
+    platform: 'macOS Intel',
+    links: [
+      {
+        label: 'DMG',
+        href: 'https://github.com/EzyGang/actavoces/releases/latest/download/ActaVoces-macos-x64.dmg'
+      }
+    ]
+  },
+  {
+    platform: 'Linux x64',
+    links: [
+      {
+        label: 'AppImage',
+        href: 'https://github.com/EzyGang/actavoces/releases/latest/download/ActaVoces-linux-x64.AppImage'
+      },
+      {
+        label: 'DEB',
+        href: 'https://github.com/EzyGang/actavoces/releases/latest/download/ActaVoces-linux-x64.deb'
+      },
+      {
+        label: 'RPM',
+        href: 'https://github.com/EzyGang/actavoces/releases/latest/download/ActaVoces-linux-x64.rpm'
+      }
+    ]
+  }
 ];
 
 export const faqItems = [

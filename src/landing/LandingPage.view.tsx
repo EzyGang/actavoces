@@ -276,13 +276,26 @@ export const LandingPage = (): JSX.Element => (
           </a>
         </div>
         <div class='flex flex-col gap-3'>
-          {downloadRows.map(([platform, files]) => (
+          {downloadRows.map((download) => (
             <div
               class='grid gap-2 border border-border-base bg-bg-page p-4 sm:grid-cols-[220px_minmax(0,1fr)]'
-              key={platform}
+              key={download.platform}
             >
-              <span class='font-semibold'>{platform}</span>
-              <span class='font-mono text-text-muted text-xs'>{files}</span>
+              <span class='font-semibold'>{download.platform}</span>
+              <span class='flex flex-wrap gap-3 font-mono text-xs'>
+                {download.links.map((link) => (
+                  <a
+                    class='inline-flex items-center gap-1.5 text-text-secondary hover:text-text-primary'
+                    href={link.href}
+                    key={link.href}
+                    rel='noreferrer'
+                    target='_blank'
+                  >
+                    <IconDownload aria-hidden='true' className='h-3.5 w-3.5' />
+                    {link.label}
+                  </a>
+                ))}
+              </span>
             </div>
           ))}
           <p class='border border-warning-border bg-warning-bg p-4 text-sm text-warning leading-6'>
