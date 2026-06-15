@@ -10,6 +10,7 @@ from app.dtos import SummarizePayload, SummaryOutput
 from app.events import emit
 from app.formatting import render_diarized_transcript, render_raw_transcript
 from app.handlers import handle
+from app.json_utils import loads
 from app.models import cuda_status, install_faster_whisper_model, model_installed, run_faster_whisper
 from app.protocol import WorkerCommand, WorkerEvent
 from app.summaries import (
@@ -79,6 +80,36 @@ async def test_transcribe_run_writes_supplied_segments(tmp_path: Path) -> None:
     assert (tmp_path / 'meta' / 'raw-segments.json').exists()
 
 
+async def test_transcribe_run_writes_transcription_metadata(tmp_path: Path) -> None:
+    audio_path = tmp_path / 'recording.wav'
+    audio_path.write_bytes(b'RIFFdata')
+
+    events = await handle(
+        WorkerCommand(
+            id='metadata',
+            name='transcribe.run',
+            payload={
+                'audioPath': str(audio_path),
+                'outputDirectory': str(tmp_path),
+                'model': 'small',
+                'language': 'en',
+                'segments': [{'start': 2, 'end': 5, 'text': ' Metadata '}],
+            },
+        )
+    )
+
+    metadata = loads((tmp_path / 'meta' / 'transcription.json').read_text())
+    assert events[-1].event == 'transcribe.complete'
+    assert metadata['model'] == 'small'
+    assert metadata['language'] == 'en'
+    assert metadata['transcriptionProfile'] == 'conservative_vad'
+    assert metadata['vad']['enabled'] is True
+    assert metadata['vad']['profile'] == 'conservative_vad'
+    assert metadata['vad']['parameters']['min_silence_duration_ms'] == 2000
+    assert metadata['sourceStart'] == 2
+    assert metadata['sourceEnd'] == 5
+
+
 async def test_transcribe_run_reports_missing_audio() -> None:
     events = await handle(
         WorkerCommand(
@@ -116,12 +147,16 @@ async def test_transcribe_run_reports_setup_when_faster_whisper_is_missing(
 
 
 def test_faster_whisper_adapter_returns_segments_from_model() -> None:
+    transcribe_calls: list[dict[str, Any]] = []
+
     class FakeModel:
         def __init__(self, model_name: str, **kwargs: Any) -> None:
             self.model_name = model_name
             self.kwargs = kwargs
 
         def transcribe(self, audio_path: str, **kwargs: Any) -> tuple[list[SimpleNamespace], SimpleNamespace]:
+            transcribe_calls.append(kwargs)
+
             return (
                 [SimpleNamespace(start=0.0, end=1.5, text='Hello')],
                 SimpleNamespace(language='en'),
@@ -139,6 +174,18 @@ def test_faster_whisper_adapter_returns_segments_from_model() -> None:
     assert result.status == 'complete'
     assert result.segments[0].text == 'Hello'
     assert result.language == 'en'
+    assert transcribe_calls == [
+        {
+            'vad_filter': True,
+            'vad_parameters': {
+                'threshold': 0.5,
+                'min_speech_duration_ms': 0,
+                'min_silence_duration_ms': 2000,
+                'speech_pad_ms': 400,
+            },
+            'language': 'en',
+        }
+    ]
 
 
 def test_faster_whisper_cuda_fallback_uses_cpu_when_cuda_libraries_are_missing() -> None:

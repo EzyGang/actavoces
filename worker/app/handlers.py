@@ -18,6 +18,8 @@ from app.dtos import (
     TranscribeCompletePayload,
     TranscribePayload,
     TranscriptionCompleteResult,
+    TranscriptionMetadata,
+    TranscriptionVadOptions,
 )
 from app.events import command_event
 from app.formatting import render_diarized_transcript, render_raw_transcript, render_summary
@@ -31,6 +33,7 @@ from app.models import (
     install_faster_whisper_model,
     model_installed,
     run_faster_whisper,
+    vad_parameters,
 )
 from app.protocol import WorkerCommand, WorkerEvent
 from app.summaries import run_openai_compatible_summary, summary_transcript
@@ -129,6 +132,10 @@ async def handle_transcribe(command: WorkerCommand) -> list[WorkerEvent]:
     write_text(
         raw_transcript_path(output_directory=payload.output_directory),
         render_raw_transcript(segments=result.segments, title=payload.title),
+    )
+    write_json(
+        transcription_metadata_path(output_directory=payload.output_directory),
+        transcription_metadata(payload=payload, result=result).model_dump(by_alias=True),
     )
 
     return [
@@ -261,9 +268,34 @@ def transcribe_audio(payload: TranscribePayload) -> TranscriptionResult:
         language=payload.language,
         compute_type=payload.compute_type,
         model_storage_directory=payload.model_storage_directory,
+        transcription_profile=payload.transcription_profile,
     )
 
     return result
+
+
+def transcription_metadata(payload: TranscribePayload, result: TranscriptionCompleteResult) -> TranscriptionMetadata:
+    source_start, source_end = segment_source_timing(segments=result.segments)
+
+    return TranscriptionMetadata(
+        model=payload.model,
+        language=result.language or payload.language,
+        transcription_profile=payload.transcription_profile,
+        vad=TranscriptionVadOptions(
+            enabled=True,
+            profile=payload.transcription_profile,
+            parameters=vad_parameters(transcription_profile=payload.transcription_profile),
+        ),
+        source_start=source_start,
+        source_end=source_end,
+    )
+
+
+def segment_source_timing(segments: list[Segment]) -> tuple[float | None, float | None]:
+    if not segments:
+        return None, None
+
+    return min(segment.start for segment in segments), max(segment.end for segment in segments)
 
 
 def transcription_failure_events(command: WorkerCommand, result: TranscriptionResult) -> list[WorkerEvent]:
@@ -301,6 +333,10 @@ def mixed_audio_path(output_directory: Path) -> Path:
 
 def raw_segments_path(output_directory: Path) -> Path:
     return meta_path(output_directory=output_directory) / 'raw-segments.json'
+
+
+def transcription_metadata_path(output_directory: Path) -> Path:
+    return meta_path(output_directory=output_directory) / 'transcription.json'
 
 
 def raw_transcript_path(output_directory: Path) -> Path:
