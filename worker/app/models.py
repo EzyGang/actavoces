@@ -29,6 +29,13 @@ except ImportError:
 ctranslate2_module: Any = ctranslate2
 INITIAL_MODELS = ['medium', 'small', 'large-v3', 'distil-large-v3']
 DEFAULT_MODEL = 'medium'
+DEFAULT_TRANSCRIPTION_PROFILE = 'conservative_vad'
+CONSERVATIVE_VAD_PARAMETERS: dict[str, int | float] = {
+    'threshold': 0.5,
+    'min_speech_duration_ms': 0,
+    'min_silence_duration_ms': 2000,
+    'speech_pad_ms': 400,
+}
 type ModelInstallResult = NeedsSetupResult | FailedResult | ModelInstallCompleteResult
 type TranscriptionResult = NeedsSetupResult | FailedResult | TranscriptionCompleteResult
 
@@ -39,6 +46,7 @@ def run_faster_whisper(
     language: str | None,
     compute_type: str,
     model_storage_directory: Path | None,
+    transcription_profile: str = DEFAULT_TRANSCRIPTION_PROFILE,
     model_factory: FasterWhisperModelFactory | None = None,
 ) -> TranscriptionResult:
     model_class = model_factory or faster_whisper_model_factory
@@ -54,6 +62,7 @@ def run_faster_whisper(
             language=language,
             compute_type=compute_type,
             model_storage_directory=model_storage_directory,
+            transcription_profile=transcription_profile,
         )
 
         return TranscriptionCompleteResult(segments=segments, language=detected_language)
@@ -67,6 +76,7 @@ def run_faster_whisper(
                     language=language,
                     compute_type='cpu',
                     model_storage_directory=model_storage_directory,
+                    transcription_profile=transcription_profile,
                 )
 
                 return TranscriptionCompleteResult(
@@ -186,11 +196,23 @@ def model_kwargs(compute_type: str, storage_path: Path | None) -> dict[str, Any]
     return kwargs
 
 
-def transcribe_kwargs(language: str | None) -> dict[str, Any]:
-    if language and language != 'auto':
-        return {'language': language}
+def transcribe_kwargs(language: str | None, transcription_profile: str) -> dict[str, Any]:
+    kwargs: dict[str, Any] = {
+        'vad_filter': True,
+        'vad_parameters': vad_parameters(transcription_profile=transcription_profile),
+    }
 
-    return {}
+    if language and language != 'auto':
+        kwargs['language'] = language
+
+    return kwargs
+
+
+def vad_parameters(transcription_profile: str) -> dict[str, int | float]:
+    if transcription_profile == DEFAULT_TRANSCRIPTION_PROFILE:
+        return CONSERVATIVE_VAD_PARAMETERS.copy()
+
+    return CONSERVATIVE_VAD_PARAMETERS.copy()
 
 
 def transcribe_with_model(
@@ -200,11 +222,12 @@ def transcribe_with_model(
     language: str | None,
     compute_type: str,
     model_storage_directory: Path | None,
+    transcription_profile: str,
 ) -> tuple[list[Segment], str | None]:
     model = model_class(model_name, **model_kwargs(compute_type=compute_type, storage_path=model_storage_directory))
     raw_segments, info = model.transcribe(
         str(audio_path),
-        **transcribe_kwargs(language=language),
+        **transcribe_kwargs(language=language, transcription_profile=transcription_profile),
     )
     segments = [
         Segment(id=index, start=segment.start, end=segment.end, text=segment.text)

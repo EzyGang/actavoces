@@ -87,6 +87,21 @@ class TranscriptionCompleteResult(AppBaseModel):
     warning: str | None = None
 
 
+class TranscriptionVadOptions(AppBaseModel):
+    enabled: bool = True
+    profile: Literal['conservative_vad'] = 'conservative_vad'
+    parameters: dict[str, int | float]
+
+
+class TranscriptionMetadata(AppBaseModel):
+    model: str
+    language: str | None = None
+    transcription_profile: Literal['conservative_vad'] = 'conservative_vad'
+    vad: TranscriptionVadOptions
+    source_start: float | None = None
+    source_end: float | None = None
+
+
 class SummaryCompleteResult(AppBaseModel):
     status: Literal['complete'] = 'complete'
     title: str
@@ -102,6 +117,7 @@ class TranscribePayload(AppBaseModel):
     language: str | None = None
     compute_type: str = 'auto'
     model_storage_directory: Path | None = None
+    transcription_profile: Literal['conservative_vad'] = 'conservative_vad'
 
 
 class DiarizePayload(AppBaseModel):
