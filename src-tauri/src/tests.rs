@@ -10,7 +10,7 @@ use crate::app::commands::{
 use crate::artifacts::{
     artifact_directory, capture_artifacts_with_readiness, diarization_path,
     diarized_transcript_path, microphone_audio_path, mixed_audio_path, raw_segments_path,
-    raw_transcript_path, summary_path,
+    raw_transcript_path, raw_words_path, summary_path,
 };
 use crate::capture::audio::{
     dedupe_capture_devices, is_default_system_source_name, is_system_monitor_device_name,
@@ -607,6 +607,7 @@ fn resume_pipeline_runs_worker_events_and_persists_artifacts() {
         .unwrap();
     repository.set_setting("exactSpeakers", "1").unwrap();
     let mut observed_transcription_running = false;
+    let mut observed_diarization_words = false;
 
     resume_pipeline_jobs(
         &mut repository,
@@ -625,6 +626,11 @@ fn resume_pipeline_runs_worker_events_and_persists_artifacts() {
                         "{\"segments\":[{\"start\":0,\"end\":1,\"text\":\"Hello\"}]}\n",
                     )
                     .unwrap();
+                    fs::write(
+                        raw_words_path(&output_directory),
+                        "{\"words\":[{\"segment_id\":0,\"text\":\"Hello\",\"start\":0,\"end\":1,\"probability\":0.95}]}\n",
+                    )
+                    .unwrap();
                     fs::write(raw_transcript_path(&output_directory), "# Raw\n\nHello\n").unwrap();
 
                     Ok(vec![worker_event(
@@ -632,10 +638,18 @@ fn resume_pipeline_runs_worker_events_and_persists_artifacts() {
                         serde_json::json!({
                             "segmentsPath": raw_segments_path(&output_directory),
                             "transcriptPath": raw_transcript_path(&output_directory),
+                            "wordsPath": raw_words_path(&output_directory),
                         }),
                     )])
                 }
                 "diarize.run" => {
+                    observed_diarization_words = payload
+                        .get("words")
+                        .and_then(serde_json::Value::as_array)
+                        .and_then(|words| words.first())
+                        .and_then(|word| word.get("text"))
+                        .and_then(serde_json::Value::as_str)
+                        == Some("Hello");
                     fs::write(
                         diarization_path(&output_directory),
                         "{\"turns\":[{\"speaker\":\"Speaker 1\",\"start\":0,\"end\":1}]}\n",
@@ -694,6 +708,7 @@ fn resume_pipeline_runs_worker_events_and_persists_artifacts() {
         .artifacts
         .iter()
         .any(|artifact| artifact.kind == ArtifactKind::DiarizedTranscript && artifact.ready));
+    assert!(observed_diarization_words);
 }
 
 #[test]

@@ -4,10 +4,10 @@ use tauri::{Emitter, Manager};
 
 use crate::artifacts::{
     artifact, diarized_transcript_path, mixed_audio_path, raw_segments_path, raw_transcript_path,
-    stage_label,
+    raw_words_path, stage_label,
 };
 use crate::diarization::{
-    run_single_speaker_diarization, run_sortformer_diarization, TranscriptSegment,
+    run_single_speaker_diarization, run_sortformer_diarization, TranscriptSegment, TranscriptWord,
 };
 use crate::domain::types::*;
 use crate::storage::repository::AppRepository;
@@ -212,6 +212,7 @@ fn run_sortformer_pipeline_stage(
     let job_id = pipeline_job_id(&recording.id, stage)?;
     let artifact_directory = PathBuf::from(&recording.artifact_directory);
     let segments = read_transcript_segments(&artifact_directory);
+    let words = read_transcript_words(&artifact_directory);
 
     repository
         .update_job(
@@ -231,16 +232,21 @@ fn run_sortformer_pipeline_stage(
         .map_err(|error| error.to_string())?;
     on_update(repository)?;
 
-    let output =
-        match run_local_diarization(&artifact_directory, settings, &segments, &recording.title) {
-            Ok(output) => output,
-            Err(error) => {
-                mark_stage_failed(repository, &recording.id, stage, &error)?;
-                on_update(repository)?;
+    let output = match run_local_diarization(
+        &artifact_directory,
+        settings,
+        &segments,
+        &words,
+        &recording.title,
+    ) {
+        Ok(output) => output,
+        Err(error) => {
+            mark_stage_failed(repository, &recording.id, stage, &error)?;
+            on_update(repository)?;
 
-                return Ok(());
-            }
-        };
+            return Ok(());
+        }
+    };
 
     repository
         .upsert_artifact(
@@ -278,10 +284,11 @@ fn run_local_diarization(
     artifact_directory: &Path,
     settings: &AppSettings,
     segments: &[TranscriptSegment],
+    words: &[TranscriptWord],
     title: &str,
 ) -> Result<crate::diarization::SortformerDiarizationOutput, String> {
     if exact_one_speaker_diarization(settings) {
-        return run_single_speaker_diarization(artifact_directory, segments, title);
+        return run_single_speaker_diarization(artifact_directory, segments, words, title);
     }
 
     run_sortformer_diarization(
@@ -289,6 +296,7 @@ fn run_local_diarization(
         artifact_directory,
         &PathBuf::from(&settings.model_storage_directory),
         segments,
+        words,
         title,
     )
 }
@@ -658,11 +666,15 @@ fn diarization_payload(
     let segments = read_json_file(raw_segments_path(&artifact_directory))
         .and_then(|value| value.get("segments").cloned())
         .unwrap_or_else(|| serde_json::json!([]));
+    let words = read_json_file(raw_words_path(&artifact_directory))
+        .and_then(|value| value.get("words").cloned())
+        .unwrap_or_else(|| serde_json::json!([]));
 
     serde_json::json!({
         "audioPath": mixed_audio_path(&artifact_directory),
         "outputDirectory": artifact_directory,
         "segments": segments,
+        "words": words,
         "title": recording.title,
         "backend": settings.diarization_backend,
         "apiKey": api_key,
@@ -676,6 +688,13 @@ fn diarization_payload(
 fn read_transcript_segments(artifact_directory: &Path) -> Vec<TranscriptSegment> {
     read_json_file(raw_segments_path(artifact_directory))
         .and_then(|value| value.get("segments").cloned())
+        .and_then(|value| serde_json::from_value(value).ok())
+        .unwrap_or_default()
+}
+
+fn read_transcript_words(artifact_directory: &Path) -> Vec<TranscriptWord> {
+    read_json_file(raw_words_path(artifact_directory))
+        .and_then(|value| value.get("words").cloned())
         .and_then(|value| serde_json::from_value(value).ok())
         .unwrap_or_default()
 }

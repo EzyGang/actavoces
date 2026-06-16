@@ -12,6 +12,8 @@ from app.dtos import (
     ModelStatus,
     RuntimeCapabilitiesPayload,
     Segment,
+    SpeakerLabeledUtterance,
+    SpeakerLabeledWord,
     SpeakerTurn,
     SummarizePayload,
     SummaryCompletePayload,
@@ -37,6 +39,7 @@ from app.models import (
     vad_parameters,
 )
 from app.protocol import WorkerCommand, WorkerEvent
+from app.speaker_diarization import speaker_labeled_utterances, speaker_labeled_words
 from app.summaries import run_openai_compatible_summary, summary_transcript
 
 
@@ -197,10 +200,21 @@ async def handle_diarize(command: WorkerCommand) -> list[WorkerEvent]:
         ]
 
     prepare_output_directories(output_directory=payload.output_directory)
+    labeled_words = speaker_labeled_words(words=payload.words, turns=turns)
+    utterances = speaker_labeled_utterances(words=labeled_words)
     write_json(diarization_path(output_directory=payload.output_directory), {'turns': turn_payloads(turns=turns)})
+    if labeled_words:
+        write_json(
+            speaker_labeled_words_path(output_directory=payload.output_directory),
+            {'words': speaker_labeled_word_payloads(words=labeled_words)},
+        )
+        write_json(
+            speaker_labeled_utterances_path(output_directory=payload.output_directory),
+            {'utterances': speaker_labeled_utterance_payloads(utterances=utterances)},
+        )
     write_text(
         diarized_transcript_path(output_directory=payload.output_directory),
-        render_diarized_transcript(segments=payload.segments, turns=turns, title=payload.title),
+        render_diarized_transcript(segments=payload.segments, turns=turns, title=payload.title, words=payload.words),
     )
 
     return [
@@ -211,6 +225,14 @@ async def handle_diarize(command: WorkerCommand) -> list[WorkerEvent]:
             payload=DiarizeCompletePayload(
                 diarization_path=str(diarization_path(output_directory=payload.output_directory)),
                 transcript_path=str(diarized_transcript_path(output_directory=payload.output_directory)),
+                speaker_labeled_words_path=str(speaker_labeled_words_path(output_directory=payload.output_directory))
+                if labeled_words
+                else None,
+                speaker_labeled_utterances_path=str(
+                    speaker_labeled_utterances_path(output_directory=payload.output_directory)
+                )
+                if labeled_words
+                else None,
             ),
         ),
     ]
@@ -329,6 +351,14 @@ def turn_payloads(turns: list[SpeakerTurn]) -> list[dict[str, float | str]]:
     return [turn.model_dump() for turn in turns]
 
 
+def speaker_labeled_word_payloads(words: list[SpeakerLabeledWord]) -> list[dict[str, int | float | str | None]]:
+    return [word.model_dump() for word in words]
+
+
+def speaker_labeled_utterance_payloads(utterances: list[SpeakerLabeledUtterance]) -> list[dict[str, float | str]]:
+    return [utterance.model_dump() for utterance in utterances]
+
+
 def prepare_output_directories(output_directory: Path) -> None:
     meta_path(output_directory=output_directory).mkdir(parents=True, exist_ok=True)
 
@@ -359,6 +389,14 @@ def raw_transcript_path(output_directory: Path) -> Path:
 
 def diarization_path(output_directory: Path) -> Path:
     return meta_path(output_directory=output_directory) / 'diarization.json'
+
+
+def speaker_labeled_words_path(output_directory: Path) -> Path:
+    return meta_path(output_directory=output_directory) / 'speaker-labeled-words.json'
+
+
+def speaker_labeled_utterances_path(output_directory: Path) -> Path:
+    return meta_path(output_directory=output_directory) / 'speaker-labeled-utterances.json'
 
 
 def diarized_transcript_path(output_directory: Path) -> Path:

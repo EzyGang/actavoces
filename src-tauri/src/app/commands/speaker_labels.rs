@@ -1,7 +1,13 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use crate::artifacts::{diarization_path, diarized_transcript_path, raw_segments_path};
+use crate::artifacts::{
+    diarization_path, diarized_transcript_path, raw_segments_path, speaker_labeled_utterances_path,
+    speaker_labeled_words_path,
+};
+use crate::diarization::{
+    render_speaker_labeled_utterances, SpeakerLabeledUtterance, SpeakerLabeledWord,
+};
 use crate::domain::types::{Recording, SpeakerRenameInput};
 
 pub fn rewrite_speaker_label(
@@ -22,6 +28,8 @@ pub fn rewrite_speaker_label(
     let artifact_directory = PathBuf::from(&recording.artifact_directory);
     let diarization_path = diarization_path(&artifact_directory);
     let raw_segments_path = raw_segments_path(&artifact_directory);
+    let speaker_labeled_words_path = speaker_labeled_words_path(&artifact_directory);
+    let speaker_labeled_utterances_path = speaker_labeled_utterances_path(&artifact_directory);
     let transcript_path = diarized_transcript_path(&artifact_directory);
     let mut diarization = read_structured_artifact::<DiarizationArtifact>(&diarization_path)?;
     let segments = read_structured_artifact::<SegmentsArtifact>(&raw_segments_path)?.segments;
@@ -41,11 +49,66 @@ pub fn rewrite_speaker_label(
     let content = serde_json::to_string_pretty(&diarization).map_err(|error| error.to_string())?;
 
     fs::write(&diarization_path, format!("{content}\n")).map_err(|error| error.to_string())?;
-    fs::write(
-        &transcript_path,
-        render_diarized_transcript(&segments, &diarization.turns, &recording.title),
-    )
-    .map_err(|error| error.to_string())
+    rewrite_speaker_labeled_words(&speaker_labeled_words_path, current, replacement)?;
+
+    match rewrite_speaker_labeled_utterances(
+        &speaker_labeled_utterances_path,
+        current,
+        replacement,
+    )? {
+        Some(utterances) => fs::write(
+            &transcript_path,
+            render_speaker_labeled_utterances(&utterances, &recording.title),
+        )
+        .map_err(|error| error.to_string()),
+        None => fs::write(
+            &transcript_path,
+            render_diarized_transcript(&segments, &diarization.turns, &recording.title),
+        )
+        .map_err(|error| error.to_string()),
+    }
+}
+
+fn rewrite_speaker_labeled_words(
+    path: &Path,
+    current: &str,
+    replacement: &str,
+) -> Result<(), String> {
+    if !path.exists() {
+        return Ok(());
+    }
+
+    let mut artifact = read_structured_artifact::<SpeakerLabeledWordsArtifact>(path)?;
+
+    for word in &mut artifact.words {
+        if word.speaker == current {
+            word.speaker = replacement.to_owned();
+        }
+    }
+
+    write_structured_artifact(path, &artifact)
+}
+
+fn rewrite_speaker_labeled_utterances(
+    path: &Path,
+    current: &str,
+    replacement: &str,
+) -> Result<Option<Vec<SpeakerLabeledUtterance>>, String> {
+    if !path.exists() {
+        return Ok(None);
+    }
+
+    let mut artifact = read_structured_artifact::<SpeakerLabeledUtterancesArtifact>(path)?;
+
+    for utterance in &mut artifact.utterances {
+        if utterance.speaker == current {
+            utterance.speaker = replacement.to_owned();
+        }
+    }
+
+    write_structured_artifact(path, &artifact)?;
+
+    Ok(Some(artifact.utterances))
 }
 
 #[derive(Clone, Debug, serde::Deserialize)]
@@ -58,6 +121,16 @@ struct SegmentsArtifact {
 #[serde(rename_all = "camelCase")]
 struct DiarizationArtifact {
     turns: Vec<SpeakerTurnArtifact>,
+}
+
+#[derive(Clone, Debug, serde::Deserialize, serde::Serialize)]
+struct SpeakerLabeledWordsArtifact {
+    words: Vec<SpeakerLabeledWord>,
+}
+
+#[derive(Clone, Debug, serde::Deserialize, serde::Serialize)]
+struct SpeakerLabeledUtterancesArtifact {
+    utterances: Vec<SpeakerLabeledUtterance>,
 }
 
 #[derive(Clone, Debug, serde::Deserialize)]
@@ -85,6 +158,15 @@ where
 
     serde_json::from_str(&content)
         .map_err(|error| format!("Unable to parse {}: {error}", path.display()))
+}
+
+fn write_structured_artifact<T>(path: &Path, value: &T) -> Result<(), String>
+where
+    T: serde::Serialize,
+{
+    let content = serde_json::to_string_pretty(value).map_err(|error| error.to_string())?;
+
+    fs::write(path, format!("{content}\n")).map_err(|error| error.to_string())
 }
 
 fn render_diarized_transcript(

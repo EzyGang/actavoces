@@ -1,4 +1,25 @@
-use crate::diarization::{SpeakerTurn, TranscriptSegment};
+use crate::diarization::{SpeakerTurn, TranscriptSegment, TranscriptWord};
+
+const PAUSE_SPLIT_SECONDS: f64 = 1.0;
+const PUNCTUATION_SPLIT_SECONDS: f64 = 0.3;
+
+#[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
+pub(crate) struct SpeakerLabeledWord {
+    pub(crate) segment_id: usize,
+    pub(crate) speaker: String,
+    pub(crate) text: String,
+    pub(crate) start: f64,
+    pub(crate) end: f64,
+    pub(crate) probability: Option<f64>,
+}
+
+#[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
+pub(crate) struct SpeakerLabeledUtterance {
+    pub(crate) speaker: String,
+    pub(crate) start: f64,
+    pub(crate) end: f64,
+    pub(crate) text: String,
+}
 
 #[derive(Clone, Debug, PartialEq)]
 struct DiarizedTextGroup {
@@ -8,11 +29,16 @@ struct DiarizedTextGroup {
     texts: Vec<String>,
 }
 
-pub(super) fn render_diarized_transcript(
+pub(crate) fn render_diarized_transcript(
     segments: &[TranscriptSegment],
     turns: &[SpeakerTurn],
     title: &str,
+    utterances: &[SpeakerLabeledUtterance],
 ) -> String {
+    if !utterances.is_empty() {
+        return render_speaker_labeled_utterances(utterances, title);
+    }
+
     let mut lines = vec![diarized_transcript_heading(title), String::new()];
     let mut groups: Vec<DiarizedTextGroup> = Vec::new();
 
@@ -54,6 +80,100 @@ pub(super) fn render_diarized_transcript(
     lines.join("\n")
 }
 
+pub(crate) fn speaker_labeled_words(
+    words: &[TranscriptWord],
+    turns: &[SpeakerTurn],
+) -> Vec<SpeakerLabeledWord> {
+    let mut sorted_words = words.to_vec();
+    let mut sorted_turns = turns.to_vec();
+
+    sorted_words.sort_by(|left, right| {
+        left.start
+            .total_cmp(&right.start)
+            .then_with(|| left.end.total_cmp(&right.end))
+    });
+    sorted_turns.sort_by(|left, right| {
+        left.start
+            .total_cmp(&right.start)
+            .then_with(|| left.end.total_cmp(&right.end))
+            .then_with(|| left.speaker.cmp(&right.speaker))
+    });
+
+    sorted_words
+        .iter()
+        .map(|word| SpeakerLabeledWord {
+            segment_id: word.segment_id,
+            speaker: best_speaker_for_word(word, &sorted_turns)
+                .unwrap_or("Unknown speaker")
+                .to_owned(),
+            text: word.text.clone(),
+            start: word.start,
+            end: word.end,
+            probability: word.probability,
+        })
+        .collect()
+}
+
+pub(crate) fn speaker_labeled_utterances(
+    words: &[SpeakerLabeledWord],
+) -> Vec<SpeakerLabeledUtterance> {
+    let mut utterances: Vec<SpeakerLabeledUtterance> = Vec::new();
+    let mut sorted_words = words.to_vec();
+
+    sorted_words.sort_by(|left, right| {
+        left.start
+            .total_cmp(&right.start)
+            .then_with(|| left.end.total_cmp(&right.end))
+    });
+
+    for word in sorted_words {
+        let text = word.text.trim();
+        if text.is_empty() {
+            continue;
+        }
+
+        match utterances.last_mut() {
+            Some(utterance) if !should_start_utterance(utterance, &word) => {
+                utterance.end = word.end;
+                utterance.text = format!("{} {text}", utterance.text);
+            }
+            _ => utterances.push(SpeakerLabeledUtterance {
+                speaker: word.speaker,
+                start: word.start,
+                end: word.end,
+                text: text.to_owned(),
+            }),
+        }
+    }
+
+    utterances
+}
+
+pub(crate) fn render_speaker_labeled_utterances(
+    utterances: &[SpeakerLabeledUtterance],
+    title: &str,
+) -> String {
+    let mut lines = vec![diarized_transcript_heading(title), String::new()];
+
+    for utterance in utterances {
+        lines.push(format!("## {}", utterance.speaker));
+        lines.push(String::new());
+        lines.push(
+            format!(
+                "[{} - {}] {}",
+                format_artifact_timestamp(utterance.start),
+                format_artifact_timestamp(utterance.end),
+                utterance.text
+            )
+            .trim()
+            .to_owned(),
+        );
+        lines.push(String::new());
+    }
+
+    lines.join("\n")
+}
+
 fn diarized_transcript_heading(title: &str) -> String {
     match title.trim() {
         "" => "# Diarized transcript".to_owned(),
@@ -78,6 +198,20 @@ fn best_speaker_for_segment<'a>(
         .map(|turn| turn.speaker.as_str())
 }
 
+fn best_speaker_for_word<'a>(word: &TranscriptWord, turns: &'a [SpeakerTurn]) -> Option<&'a str> {
+    let word_midpoint = (word.start + word.end) / 2.0;
+
+    turns
+        .iter()
+        .max_by(|left, right| {
+            let left_score = word_turn_score(word, word_midpoint, left);
+            let right_score = word_turn_score(word, word_midpoint, right);
+
+            left_score.total_cmp(&right_score)
+        })
+        .map(|turn| turn.speaker.as_str())
+}
+
 fn speaker_turn_score(
     segment: &TranscriptSegment,
     segment_midpoint: f64,
@@ -86,12 +220,44 @@ fn speaker_turn_score(
     let overlap = segment.end.min(turn.end) - segment.start.max(turn.start);
 
     if overlap > 0.0 {
-        return overlap;
+        let turn_duration = (turn.end - turn.start).max(0.001);
+
+        return overlap + (1.0 / turn_duration / 1_000_000.0);
     }
 
     let turn_midpoint = (turn.start + turn.end) / 2.0;
 
     -((segment_midpoint - turn_midpoint).abs())
+}
+
+fn word_turn_score(word: &TranscriptWord, word_midpoint: f64, turn: &SpeakerTurn) -> f64 {
+    let overlap = word.end.min(turn.end) - word.start.max(turn.start);
+
+    if overlap > 0.0 {
+        return overlap;
+    }
+
+    let turn_midpoint = (turn.start + turn.end) / 2.0;
+
+    -((word_midpoint - turn_midpoint).abs())
+}
+
+fn should_start_utterance(utterance: &SpeakerLabeledUtterance, word: &SpeakerLabeledWord) -> bool {
+    let pause = word.start - utterance.end;
+
+    if utterance.speaker != word.speaker {
+        return true;
+    }
+
+    if pause > PAUSE_SPLIT_SECONDS {
+        return true;
+    }
+
+    pause >= PUNCTUATION_SPLIT_SECONDS && ends_with_terminal_punctuation(&utterance.text)
+}
+
+fn ends_with_terminal_punctuation(value: &str) -> bool {
+    value.trim_end().ends_with(['.', '?', '!'])
 }
 
 fn format_artifact_timestamp(value: f64) -> String {
@@ -100,72 +266,4 @@ fn format_artifact_timestamp(value: f64) -> String {
     let seconds = total_seconds % 60;
 
     format!("{minutes:02}:{seconds:02}")
-}
-
-#[cfg(test)]
-mod tests {
-    use crate::diarization::render::render_diarized_transcript;
-    use crate::diarization::{SpeakerTurn, TranscriptSegment};
-
-    #[test]
-    fn sortformer_transcript_rendering_uses_existing_turn_shape() {
-        let content = render_diarized_transcript(
-            &[TranscriptSegment {
-                start: 0.0,
-                end: 3.0,
-                text: "Hello there".to_owned(),
-            }],
-            &[SpeakerTurn {
-                speaker: "Speaker 1".to_owned(),
-                start: 0.0,
-                end: 4.0,
-            }],
-            "Planning Call",
-        );
-
-        assert!(content.contains("# Diarized transcript - Planning Call"));
-        assert!(content.contains("## Speaker 1"));
-        assert!(content.contains("[00:00 - 00:03] Hello there"));
-        assert!(content.contains("Hello there"));
-    }
-
-    #[test]
-    fn sortformer_transcript_rendering_preserves_partially_overlapping_segments() {
-        let content = render_diarized_transcript(
-            &[
-                TranscriptSegment {
-                    start: 0.0,
-                    end: 3.0,
-                    text: "first sentence".to_owned(),
-                },
-                TranscriptSegment {
-                    start: 3.0,
-                    end: 6.0,
-                    text: "second sentence".to_owned(),
-                },
-                TranscriptSegment {
-                    start: 6.0,
-                    end: 9.0,
-                    text: "third sentence".to_owned(),
-                },
-            ],
-            &[
-                SpeakerTurn {
-                    speaker: "Speaker 1".to_owned(),
-                    start: 0.5,
-                    end: 2.5,
-                },
-                SpeakerTurn {
-                    speaker: "Speaker 2".to_owned(),
-                    start: 3.5,
-                    end: 5.5,
-                },
-            ],
-            "",
-        );
-
-        assert!(content.contains("first sentence"));
-        assert!(content.contains("second sentence"));
-        assert!(content.contains("third sentence"));
-    }
 }

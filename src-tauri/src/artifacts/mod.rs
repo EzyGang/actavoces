@@ -201,6 +201,14 @@ pub(crate) fn diarization_path(artifact_directory: &Path) -> PathBuf {
     meta_directory(artifact_directory).join("diarization.json")
 }
 
+pub(crate) fn speaker_labeled_words_path(artifact_directory: &Path) -> PathBuf {
+    meta_directory(artifact_directory).join("speaker-labeled-words.json")
+}
+
+pub(crate) fn speaker_labeled_utterances_path(artifact_directory: &Path) -> PathBuf {
+    meta_directory(artifact_directory).join("speaker-labeled-utterances.json")
+}
+
 pub(crate) fn diarized_transcript_path(artifact_directory: &Path) -> PathBuf {
     artifact_directory.join("diarized-transcript.md")
 }

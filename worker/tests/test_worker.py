@@ -257,9 +257,7 @@ async def test_transcribe_run_writes_raw_words_from_faster_whisper(mocker: Mocke
     result = SimpleNamespace(
         status='complete',
         segments=[Segment(id=0, start=0, end=1, text='Hello')],
-        words=[
-            TranscriptionWord(segment_id=0, text='Hello', start=0, end=1, probability=0.95)
-        ],
+        words=[TranscriptionWord(segment_id=0, text='Hello', start=0, end=1, probability=0.95)],
         language='en',
         warning=None,
     )
@@ -278,9 +276,7 @@ async def test_transcribe_run_writes_raw_words_from_faster_whisper(mocker: Mocke
 
     assert events[-1].event == 'transcribe.complete'
     assert events[-1].payload['wordsPath'] == str(tmp_path / 'meta' / 'raw-words.json')
-    assert raw_words == {
-        'words': [{'segment_id': 0, 'text': 'Hello', 'start': 0, 'end': 1, 'probability': 0.95}]
-    }
+    assert raw_words == {'words': [{'segment_id': 0, 'text': 'Hello', 'start': 0, 'end': 1, 'probability': 0.95}]}
     assert raw_segments == {'segments': [{'id': 0, 'start': 0, 'end': 1, 'text': 'Hello'}]}
 
 
@@ -420,6 +416,62 @@ def test_diarized_transcript_rendering_uses_turns_and_segments() -> None:
     assert 'Hello there' in transcript
 
 
+def test_diarized_transcript_splits_mixed_speaker_words_inside_segment() -> None:
+    transcript = render_diarized_transcript(
+        segments=[{'start': 0, 'end': 4, 'text': 'Hello yes continue'}],
+        words=[
+            TranscriptionWord(segment_id=0, text='Hello', start=0, end=0.5),
+            TranscriptionWord(segment_id=0, text='yes', start=1.0, end=1.2),
+            TranscriptionWord(segment_id=0, text='continue', start=1.4, end=2.0),
+        ],
+        turns=[
+            {'speaker': 'Speaker 1', 'start': 0, 'end': 0.8},
+            {'speaker': 'Speaker 2', 'start': 0.9, 'end': 1.3},
+            {'speaker': 'Speaker 1', 'start': 1.3, 'end': 3},
+        ],
+    )
+
+    assert '[00:00 - 00:00] Hello' in transcript
+    assert '[00:01 - 00:01] yes' in transcript
+    assert '[00:01 - 00:02] continue' in transcript
+
+
+def test_diarized_transcript_keeps_short_backchannel_separate() -> None:
+    transcript = render_diarized_transcript(
+        segments=[{'start': 0, 'end': 4, 'text': 'I think yes we should ship'}],
+        words=[
+            TranscriptionWord(segment_id=0, text='I', start=0, end=0.2),
+            TranscriptionWord(segment_id=0, text='think', start=0.3, end=0.6),
+            TranscriptionWord(segment_id=0, text='yes', start=0.7, end=0.9),
+            TranscriptionWord(segment_id=0, text='we', start=1.0, end=1.2),
+            TranscriptionWord(segment_id=0, text='should', start=1.3, end=1.6),
+            TranscriptionWord(segment_id=0, text='ship', start=1.7, end=2.0),
+        ],
+        turns=[
+            {'speaker': 'Speaker 1', 'start': 0, 'end': 2.5},
+            {'speaker': 'Speaker 2', 'start': 0.65, 'end': 0.95},
+        ],
+    )
+
+    assert '[00:00 - 00:00] I think' in transcript
+    assert '[00:00 - 00:00] yes' in transcript
+    assert '[00:01 - 00:02] we should ship' in transcript
+
+
+def test_diarized_transcript_uses_nearest_turn_for_no_overlap_words() -> None:
+    transcript = render_diarized_transcript(
+        segments=[{'start': 5, 'end': 6, 'text': 'between'}],
+        words=[TranscriptionWord(segment_id=0, text='between', start=5, end=6)],
+        turns=[
+            {'speaker': 'Speaker 1', 'start': 0, 'end': 1},
+            {'speaker': 'Speaker 2', 'start': 7, 'end': 8},
+        ],
+    )
+
+    assert '## Speaker 2' in transcript
+    assert '[00:05 - 00:06] between' in transcript
+
+
 async def test_diarize_run_completes_exact_single_speaker(tmp_path: Path) -> None:
     events = await handle(
         WorkerCommand(
@@ -443,6 +495,29 @@ async def test_diarize_run_completes_exact_single_speaker(tmp_path: Path) -> Non
     assert '# Diarized transcript - Planning Call' in transcript
     assert 'Speaker 1' in transcript
     assert (tmp_path / 'meta' / 'diarization.json').exists()
+
+
+async def test_diarize_run_writes_speaker_labeled_artifacts(tmp_path: Path) -> None:
+    events = await handle(
+        WorkerCommand(
+            id='speaker-words',
+            name='diarize.run',
+            payload={
+                'outputDirectory': str(tmp_path),
+                'speakerCountMode': 'exact',
+                'exactSpeakers': 1,
+                'segments': [{'start': 0, 'end': 1, 'text': 'Hello'}],
+                'words': [{'segmentId': 0, 'text': 'Hello', 'start': 0, 'end': 1, 'probability': 0.95}],
+            },
+        )
+    )
+
+    words = loads((tmp_path / 'meta' / 'speaker-labeled-words.json').read_text())
+    utterances = loads((tmp_path / 'meta' / 'speaker-labeled-utterances.json').read_text())
+
+    assert events[-1].event == 'diarize.complete'
+    assert words['words'][0]['speaker'] == 'Speaker 1'
+    assert utterances['utterances'][0]['text'] == 'Hello'
 
 
 async def test_diarize_run_reports_backend_specific_setup(tmp_path: Path) -> None:
