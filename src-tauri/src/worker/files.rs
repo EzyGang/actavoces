@@ -34,6 +34,9 @@ pub(crate) fn prepare_uv_executable(app: &tauri::AppHandle, target: &Path) -> Re
         Err(_) => {
             let mut command = Command::new("uv");
             hide_console_window(&mut command);
+            if let Some(parent) = target.parent() {
+                command.current_dir(parent);
+            }
             let status = command
                 .arg("--version")
                 .stdout(Stdio::null())

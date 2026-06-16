@@ -12,9 +12,9 @@ use crate::worker::progress::{
 };
 use crate::worker::source_hash::worker_source_hash;
 
-#[cfg(test)]
-pub(crate) use crate::worker::command::apply_worker_path_env;
 pub(crate) use crate::worker::command::run_worker_command;
+#[cfg(test)]
+pub(crate) use crate::worker::command::{apply_worker_current_dir, apply_worker_path_env};
 #[cfg(test)]
 pub(crate) use crate::worker::events::parse_worker_events;
 pub(crate) use crate::worker::events::{

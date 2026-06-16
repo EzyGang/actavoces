@@ -3,7 +3,9 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 
-use crate::worker::command::{apply_worker_path_env, resolve_uv_command, worker_command_error};
+use crate::worker::command::{
+    apply_worker_current_dir, apply_worker_path_env, resolve_uv_command, worker_command_error,
+};
 use crate::worker::paths::WorkerRuntimePaths;
 use crate::worker::process::hide_console_window;
 
@@ -21,12 +23,12 @@ pub(crate) fn resolve_worker_python_executable(
 
     let mut command = Command::new(resolve_uv_command(paths));
     hide_console_window(&mut command);
+    apply_worker_current_dir(&mut command, paths)?;
     apply_worker_path_env(&mut command, paths)?;
     let output = command
         .arg("python")
         .arg("find")
         .arg(WORKER_PYTHON_VERSION)
-        .current_dir(&paths.worker_directory)
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .output()
@@ -90,6 +92,7 @@ pub(crate) fn find_worker_python_executable(
 fn install_worker_python(paths: &WorkerRuntimePaths) -> Result<(), String> {
     let mut command = Command::new(resolve_uv_command(paths));
     hide_console_window(&mut command);
+    apply_worker_current_dir(&mut command, paths)?;
     apply_worker_path_env(&mut command, paths)?;
     let output = command
         .arg("python")
@@ -97,7 +100,6 @@ fn install_worker_python(paths: &WorkerRuntimePaths) -> Result<(), String> {
         .arg(WORKER_PYTHON_VERSION)
         .arg("--no-registry")
         .arg("--no-bin")
-        .current_dir(&paths.worker_directory)
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .output()

@@ -1,4 +1,5 @@
 use std::env;
+use std::fs;
 use std::path::PathBuf;
 use std::process::Command;
 
@@ -53,9 +54,13 @@ pub(crate) fn uv_runtime_is_available(paths: &WorkerRuntimePaths) -> bool {
 
     let mut command = Command::new("uv");
     hide_console_window(&mut command);
+    if fs::create_dir_all(&paths.worker_directory).is_err() {
+        return false;
+    }
 
     command
         .arg("--version")
+        .current_dir(&paths.worker_directory)
         .stdout(std::process::Stdio::null())
         .stderr(std::process::Stdio::null())
         .status()
