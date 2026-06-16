@@ -1,3 +1,4 @@
+use std::cmp::Reverse;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
@@ -81,7 +82,7 @@ pub(crate) fn find_worker_python_executable(
         }
     }
 
-    candidates.sort_by(|left, right| right.0.cmp(&left.0));
+    candidates.sort_by_key(|candidate| Reverse(candidate.0));
 
     Ok(candidates.into_iter().map(|(_, path)| path).next())
 }
