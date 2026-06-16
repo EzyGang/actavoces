@@ -6,6 +6,7 @@ from typing import Any, cast
 import ctranslate2
 
 from app.dtos import (
+    DEFAULT_TRANSCRIPTION_PROFILE,
     FailedResult,
     FasterWhisperModelFactory,
     FasterWhisperWord,
@@ -31,7 +32,6 @@ except ImportError:
 ctranslate2_module: Any = ctranslate2
 INITIAL_MODELS = ['medium', 'small', 'large-v3', 'distil-large-v3']
 DEFAULT_MODEL = 'medium'
-DEFAULT_TRANSCRIPTION_PROFILE = 'conservative_vad'
 CONSERVATIVE_VAD_PARAMETERS: dict[str, int | float] = {
     'threshold': 0.5,
     'min_speech_duration_ms': 0,
@@ -213,9 +213,6 @@ def transcribe_kwargs(language: str | None, transcription_profile: str) -> dict[
 
 
 def vad_parameters(transcription_profile: str) -> dict[str, int | float]:
-    if transcription_profile == DEFAULT_TRANSCRIPTION_PROFILE:
-        return CONSERVATIVE_VAD_PARAMETERS.copy()
-
     return CONSERVATIVE_VAD_PARAMETERS.copy()
 
 

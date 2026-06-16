@@ -6,6 +6,10 @@ from pydantic import BaseModel, Field
 from app.core.pydantic_base import AppBaseModel
 
 
+type TranscriptionProfile = Literal['conservative_vad']
+DEFAULT_TRANSCRIPTION_PROFILE: TranscriptionProfile = 'conservative_vad'
+
+
 class FasterWhisperSegment(Protocol):
     start: float
     end: float
@@ -106,14 +110,14 @@ class TranscriptionCompleteResult(AppBaseModel):
 
 class TranscriptionVadOptions(AppBaseModel):
     enabled: bool = True
-    profile: Literal['conservative_vad'] = 'conservative_vad'
+    profile: TranscriptionProfile = DEFAULT_TRANSCRIPTION_PROFILE
     parameters: dict[str, int | float]
 
 
 class TranscriptionMetadata(AppBaseModel):
     model: str
     language: str | None = None
-    transcription_profile: Literal['conservative_vad'] = 'conservative_vad'
+    transcription_profile: TranscriptionProfile = DEFAULT_TRANSCRIPTION_PROFILE
     vad: TranscriptionVadOptions
     source_start: float | None = None
     source_end: float | None = None
@@ -134,7 +138,7 @@ class TranscribePayload(AppBaseModel):
     language: str | None = None
     compute_type: str = 'auto'
     model_storage_directory: Path | None = None
-    transcription_profile: Literal['conservative_vad'] = 'conservative_vad'
+    transcription_profile: TranscriptionProfile = DEFAULT_TRANSCRIPTION_PROFILE
 
 
 class DiarizePayload(AppBaseModel):

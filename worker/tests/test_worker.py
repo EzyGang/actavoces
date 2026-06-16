@@ -6,7 +6,14 @@ from pydantic_ai import Agent
 from pydantic_ai.models.test import TestModel
 from pytest_mock import MockerFixture
 
-from app.dtos import Segment, SummarizePayload, SummaryOutput, TranscriptionWord
+from app.dtos import (
+    Segment,
+    SummarizePayload,
+    SummaryOutput,
+    TranscriptionMetadata,
+    TranscriptionVadOptions,
+    TranscriptionWord,
+)
 from app.events import emit
 from app.formatting import render_diarized_transcript, render_raw_transcript
 from app.handlers import handle
@@ -110,6 +117,21 @@ async def test_transcribe_run_writes_transcription_metadata(tmp_path: Path) -> N
     assert metadata['vad']['parameters']['min_silence_duration_ms'] == 2000
     assert metadata['sourceStart'] == 2
     assert metadata['sourceEnd'] == 5
+
+
+def test_transcription_metadata_serializes_aliases() -> None:
+    metadata = TranscriptionMetadata(
+        model='small',
+        language='en',
+        vad=TranscriptionVadOptions(parameters={'min_silence_duration_ms': 2000}),
+        source_start=2,
+        source_end=5,
+    ).model_dump(by_alias=True)
+
+    assert metadata['transcriptionProfile'] == 'conservative_vad'
+    assert metadata['sourceStart'] == 2
+    assert metadata['sourceEnd'] == 5
+    assert metadata['vad']['profile'] == 'conservative_vad'
 
 
 async def test_transcribe_run_reports_missing_audio() -> None:
