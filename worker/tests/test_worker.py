@@ -18,7 +18,13 @@ from app.events import emit
 from app.formatting import render_diarized_transcript, render_raw_transcript
 from app.handlers import handle
 from app.json_utils import loads
-from app.models import cuda_status, install_faster_whisper_model, model_installed, run_faster_whisper
+from app.models import (
+    cuda_status,
+    install_faster_whisper_model,
+    model_installed,
+    normalized_transcription_context,
+    run_faster_whisper,
+)
 from app.protocol import WorkerCommand, WorkerEvent
 from app.summaries import (
     assemble_summary_prompt,
@@ -227,6 +233,67 @@ def test_faster_whisper_adapter_returns_segments_from_model() -> None:
             'language': 'en',
         }
     ]
+
+
+def test_faster_whisper_adapter_passes_transcription_context_prompt() -> None:
+    transcribe_calls: list[dict[str, Any]] = []
+
+    class FakeModel:
+        def __init__(self, model_name: str, **kwargs: Any) -> None:
+            pass
+
+        def transcribe(self, audio_path: str, **kwargs: Any) -> tuple[list[SimpleNamespace], SimpleNamespace]:
+            transcribe_calls.append(kwargs)
+
+            return ([SimpleNamespace(start=0.0, end=1.0, text='ActaVoces')], SimpleNamespace(language='en'))
+
+    result = run_faster_whisper(
+        audio_path=Path('recording.wav'),
+        model_name='medium',
+        language='auto',
+        transcription_context=' ActaVoces \n\nKaneo\nActaVoces ',
+        compute_type='int8',
+        model_storage_directory=None,
+        model_factory=FakeModel,
+    )
+
+    assert result.status == 'complete'
+    assert transcribe_calls[0]['initial_prompt'] == 'ActaVoces\nKaneo'
+    assert 'language' not in transcribe_calls[0]
+
+
+def test_blank_transcription_context_does_not_pass_initial_prompt() -> None:
+    transcribe_calls: list[dict[str, Any]] = []
+
+    class FakeModel:
+        def __init__(self, model_name: str, **kwargs: Any) -> None:
+            pass
+
+        def transcribe(self, audio_path: str, **kwargs: Any) -> tuple[list[SimpleNamespace], SimpleNamespace]:
+            transcribe_calls.append(kwargs)
+
+            return ([SimpleNamespace(start=0.0, end=1.0, text='Hello')], SimpleNamespace(language='en'))
+
+    result = run_faster_whisper(
+        audio_path=Path('recording.wav'),
+        model_name='medium',
+        language='en',
+        transcription_context='\n  \n',
+        compute_type='int8',
+        model_storage_directory=None,
+        model_factory=FakeModel,
+    )
+
+    assert result.status == 'complete'
+    assert 'initial_prompt' not in transcribe_calls[0]
+    assert transcribe_calls[0]['language'] == 'en'
+
+
+def test_transcription_context_normalization_bounds_prompt() -> None:
+    context = normalized_transcription_context(context=f'ActaVoces\n\nKaneo\nActaVoces\n{"a" * 4100}')
+
+    assert context.startswith('ActaVoces\nKaneo\n')
+    assert len(context) == 4000
 
 
 def test_faster_whisper_adapter_handles_missing_words() -> None:

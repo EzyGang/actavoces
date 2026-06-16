@@ -24,6 +24,7 @@ interface UseSettingsInput {
 export const useSettings = ({ setError, setSnapshot }: UseSettingsInput) => {
   const savingSettings = useSignal(false);
   const recordingHotkey = useSignal(false);
+  const glossaryInput = useSignal('');
   const draft = useSignal<AppSettingsUpdate>(buildSettingsUpdate(appSnapshotSignal.value.settings));
   const validationErrors = useComputed(() =>
     validateSettingsDraft(
@@ -38,6 +39,7 @@ export const useSettings = ({ setError, setSnapshot }: UseSettingsInput) => {
 
   const resetDraft = (settings: AppSettings) => {
     draft.value = buildSettingsUpdate(settings);
+    glossaryInput.value = '';
   };
 
   const saveSettings = async () => {
@@ -134,7 +136,7 @@ export const useSettings = ({ setError, setSnapshot }: UseSettingsInput) => {
     validationErrors,
     hasUnsavedSettings,
     resetDraft,
-    fields: buildSettingsFields(draft, recordingHotkey),
+    fields: buildSettingsFields(draft, recordingHotkey, glossaryInput),
     actions: {
       saveSettings,
       clearProviderApiKey,

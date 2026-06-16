@@ -6,7 +6,11 @@ import type { AppSettingsUpdate } from '../../../types/desktop';
 import { displayHotkey } from '../../../utils/hotkey';
 import {
   captureDeviceOptions,
+  contextFromGlossaryEntries,
+  glossaryEntriesFromContext,
+  normalizeGlossaryEntries,
   type SettingsFolderField,
+  type SettingsGlossaryField,
   type SettingsHotkeyField,
   type SettingsNumberField,
   type SettingsSelectField,
@@ -17,12 +21,14 @@ import { selectFields } from './settingsSelectFields';
 
 export const buildSettingsFields = (
   draft: Signal<AppSettingsUpdate>,
-  recordingHotkey: Signal<boolean>
+  recordingHotkey: Signal<boolean>,
+  glossaryInput: Signal<string>
 ) => {
   const inputHandlers = createInputHandlers(draft);
 
   return {
     folderFields: folderFields(draft),
+    glossaryField: glossaryField(draft, glossaryInput),
     hotkeyField: hotkeyField(draft, recordingHotkey),
     huggingFaceTokenField: {
       key: 'huggingFaceToken',
@@ -37,6 +43,54 @@ export const buildSettingsFields = (
     selectFields: selectFields(draft, inputHandlers.select),
     textareaFields: textareaFields(draft, inputHandlers.textarea),
     toggles: toggles(draft)
+  };
+};
+
+const glossaryField = (
+  draft: Signal<AppSettingsUpdate>,
+  glossaryInput: Signal<string>
+): SettingsGlossaryField => {
+  const entries = glossaryEntriesFromContext(draft.value.transcriptionContext);
+  const updateEntries = (nextEntries: string[]) => {
+    draft.value = {
+      ...draft.value,
+      transcriptionContext: contextFromGlossaryEntries(normalizeGlossaryEntries(nextEntries))
+    };
+  };
+  const addEntry = () => {
+    const nextEntry = glossaryInput.value.trim();
+
+    if (nextEntry.length === 0) {
+      return;
+    }
+
+    updateEntries([...entries, nextEntry]);
+    glossaryInput.value = '';
+  };
+
+  return {
+    label: 'Transcription glossary',
+    hint: 'Optional words, names, products, acronyms, and short phrases to hint during transcription.',
+    placeholder: 'Type a term or phrase, then press Enter',
+    value: glossaryInput.value,
+    entries: entries.map((entry) => ({
+      value: entry,
+      onRemove: () => {
+        updateEntries(entries.filter((candidate) => candidate !== entry));
+      }
+    })),
+    onInput: (event) => {
+      glossaryInput.value = event.currentTarget.value;
+    },
+    onKeyDown: (event) => {
+      if (event.key !== 'Enter') {
+        return;
+      }
+
+      event.preventDefault();
+      addEntry();
+    },
+    onAdd: addEntry
   };
 };
 

@@ -294,6 +294,7 @@ def transcribe_audio(payload: TranscribePayload) -> TranscriptionResult:
         audio_path=payload.audio_path,
         model_name=payload.model,
         language=payload.language,
+        transcription_context=payload.transcription_context,
         compute_type=payload.compute_type,
         model_storage_directory=payload.model_storage_directory,
         transcription_profile=payload.transcription_profile,

@@ -102,6 +102,7 @@ export interface AppSettings {
   whisperModel: string;
   modelRecommendation: ModelRecommendation;
   transcriptionLanguage: string;
+  transcriptionContext: string;
   computeType: string;
   modelStorageDirectory: string;
   diarizationBackend: 'pyannote' | 'sortformer';

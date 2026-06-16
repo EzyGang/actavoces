@@ -24,6 +24,22 @@ export interface SettingsHotkeyField {
   onCapture: () => void;
 }
 
+export interface SettingsGlossaryEntry {
+  value: string;
+  onRemove: () => void;
+}
+
+export interface SettingsGlossaryField {
+  label: string;
+  hint: string;
+  placeholder: string;
+  value: string;
+  entries: SettingsGlossaryEntry[];
+  onInput: JSX.InputEventHandler<HTMLInputElement>;
+  onKeyDown: JSX.KeyboardEventHandler<HTMLInputElement>;
+  onAdd: () => void;
+}
+
 export interface SettingsNumberField {
   key: keyof AppSettingsUpdate;
   label: string;
@@ -76,6 +92,7 @@ export const buildSettingsUpdate = (settings: AppSettings): AppSettingsUpdate =>
   sampleRate: settings.sampleRate,
   whisperModel: settings.whisperModel,
   transcriptionLanguage: settings.transcriptionLanguage,
+  transcriptionContext: settings.transcriptionContext,
   computeType: settings.computeType,
   modelStorageDirectory: settings.modelStorageDirectory,
   diarizationBackend: settings.diarizationBackend,
@@ -94,6 +111,29 @@ export const buildSettingsUpdate = (settings: AppSettings): AppSettingsUpdate =>
 
 export const settingsDraftChanged = (draft: AppSettingsUpdate, settings: AppSettings): boolean =>
   JSON.stringify(draft) !== JSON.stringify(buildSettingsUpdate(settings));
+
+export const normalizeGlossaryEntries = (entries: string[]): string[] => {
+  const seen = new Set<string>();
+  const normalizedEntries: string[] = [];
+
+  for (const value of entries) {
+    const entry = value.trim();
+
+    if (entry.length === 0 || seen.has(entry)) {
+      continue;
+    }
+
+    seen.add(entry);
+    normalizedEntries.push(entry);
+  }
+
+  return normalizedEntries;
+};
+
+export const glossaryEntriesFromContext = (context: string): string[] =>
+  normalizeGlossaryEntries(context.split('\n'));
+
+export const contextFromGlossaryEntries = (entries: string[]): string => entries.join('\n');
 
 export const captureDeviceOptions = (
   devices: CaptureDeviceInfo[],

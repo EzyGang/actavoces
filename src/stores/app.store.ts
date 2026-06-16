@@ -53,6 +53,7 @@ const initialSnapshot: AppSnapshot = {
       userOverridden: false
     },
     transcriptionLanguage: 'auto',
+    transcriptionContext: '',
     computeType: 'auto',
     modelStorageDirectory: '',
     diarizationBackend: 'sortformer',

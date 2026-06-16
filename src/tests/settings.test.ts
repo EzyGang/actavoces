@@ -14,6 +14,7 @@ const validSettings: AppSettingsUpdate = {
   sampleRate: 48000,
   whisperModel: 'medium',
   transcriptionLanguage: 'auto',
+  transcriptionContext: '',
   computeType: 'auto',
   modelStorageDirectory: '/tmp/actavoces/models',
   diarizationBackend: 'sortformer',

@@ -1,4 +1,7 @@
-use std::path::{Path, PathBuf};
+use std::{
+    collections::HashSet,
+    path::{Path, PathBuf},
+};
 
 use tauri::{Emitter, Manager};
 
@@ -16,6 +19,9 @@ use crate::worker::runtime::run_worker_command;
 
 use super::overlay::sync_recording_overlay;
 use super::recordings::rename_recording_outputs;
+
+const MAX_TRANSCRIPTION_CONTEXT_CHARS: usize = 4000;
+// Keep this limit in sync with worker/app/models.py.
 
 pub fn emit_snapshot_update(app: &tauri::AppHandle, snapshot: &AppSnapshot) {
     let _ = app.emit("app-snapshot-updated", snapshot);
@@ -645,8 +651,7 @@ fn stage_is_complete(
 
 fn transcription_payload(recording: &Recording, settings: &AppSettings) -> serde_json::Value {
     let artifact_directory = PathBuf::from(&recording.artifact_directory);
-
-    serde_json::json!({
+    let mut payload = serde_json::json!({
         "audioPath": mixed_audio_path(&artifact_directory),
         "outputDirectory": artifact_directory,
         "title": recording.title,
@@ -654,7 +659,41 @@ fn transcription_payload(recording: &Recording, settings: &AppSettings) -> serde
         "language": settings.transcription_language,
         "computeType": settings.compute_type,
         "modelStorageDirectory": settings.model_storage_directory,
-    })
+    });
+
+    if let Some(context) = normalized_transcription_context(&settings.transcription_context) {
+        payload["transcriptionContext"] = serde_json::json!(context);
+    }
+
+    payload
+}
+
+pub(crate) fn normalized_transcription_context(input: &str) -> Option<String> {
+    let mut seen = HashSet::new();
+    let mut values = Vec::new();
+
+    for line in input.lines() {
+        let value = line.trim();
+
+        if value.is_empty() || !seen.insert(value) {
+            continue;
+        }
+
+        values.push(value);
+    }
+
+    let context = values.join("\n");
+
+    if context.is_empty() {
+        return None;
+    }
+
+    Some(
+        context
+            .chars()
+            .take(MAX_TRANSCRIPTION_CONTEXT_CHARS)
+            .collect(),
+    )
 }
 
 fn diarization_payload(
