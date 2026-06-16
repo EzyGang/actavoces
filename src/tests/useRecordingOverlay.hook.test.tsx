@@ -1,11 +1,14 @@
+import { type EventCallback, listen } from '@tauri-apps/api/event';
 import { renderHook, waitFor } from '@testing-library/preact';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { useRecordingOverlay } from '../components/recording-overlay/hooks/useRecordingOverlay.hook';
 import { getAppSnapshot } from '../services/desktop/app.service';
 import type { AppSettings, AppSnapshot } from '../types/desktop';
 
+const eventListeners = vi.hoisted(() => new Map<string, EventCallback<unknown>>());
+
 vi.mock('@tauri-apps/api/event', () => ({
-  listen: vi.fn(() => Promise.resolve(() => undefined))
+  listen: vi.fn()
 }));
 
 vi.mock('../services/desktop/app.service', () => ({
@@ -75,6 +78,12 @@ const makeSnapshot = (settings: Partial<AppSettings> = {}): AppSnapshot => ({
 describe('useRecordingOverlay hook', () => {
   beforeEach(() => {
     vi.resetAllMocks();
+    eventListeners.clear();
+    vi.mocked(listen).mockImplementation((eventName: string, callback: EventCallback<unknown>) => {
+      eventListeners.set(eventName, callback);
+
+      return Promise.resolve(() => undefined);
+    });
     Object.defineProperty(window, '__TAURI_INTERNALS__', {
       configurable: true,
       value: {}
@@ -93,5 +102,39 @@ describe('useRecordingOverlay hook', () => {
     await waitFor(() => {
       expect(result.current.status.displayMode.value).toBe('full');
     });
+    expect(listen).toHaveBeenCalledWith('recording-overlay-sync', expect.any(Function));
+  });
+
+  it('updates display mode from overlay sync events', async () => {
+    vi.mocked(getAppSnapshot).mockResolvedValue(makeSnapshot({ overlayDisplayMode: 'full' }));
+
+    const { result } = renderHook(() => useRecordingOverlay());
+
+    await waitFor(() => {
+      expect(eventListeners.has('recording-overlay-sync')).toBe(true);
+    });
+
+    const overlaySync = eventListeners.get('recording-overlay-sync');
+
+    overlaySync?.({
+      event: 'recording-overlay-sync',
+      id: 1,
+      payload: { visible: true, displayMode: 'minimal' }
+    });
+    expect(result.current.status.displayMode.value).toBe('minimal');
+
+    overlaySync?.({
+      event: 'recording-overlay-sync',
+      id: 2,
+      payload: { visible: true, displayMode: 'full' }
+    });
+    expect(result.current.status.displayMode.value).toBe('full');
+
+    overlaySync?.({
+      event: 'recording-overlay-sync',
+      id: 3,
+      payload: { visible: false, displayMode: 'full' }
+    });
+    expect(result.current.status.displayMode.value).toBe('none');
   });
 });
