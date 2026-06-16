@@ -22,14 +22,17 @@ use crate::domain::types::{
     ModelInventoryItem, OverlayDisplayMode, OverlayPosition, PipelineStageId, PipelineStageStatus,
     RecordingStatus, SpeakerCountMode, SpeakerRenameInput, WorkerEvent, WorkerSetupStatus,
 };
-use crate::settings::default_settings;
+use crate::settings::{
+    default_settings,
+    recommendation::{model_recommendation, ModelRecommendationInput},
+};
 use crate::storage::repository::{AppRepository, NewRecording};
 use crate::utils::default_records_root;
 use crate::worker::runtime::{
     apply_worker_current_dir, apply_worker_path_env, extract_model_inventory,
-    find_worker_python_executable, hash_worker_source_directory, parse_worker_events,
-    resolve_worker_virtualenv_python_executable, worker_runtime_paths_from_local_data_directory,
-    WorkerRuntimePaths, WorkerRuntimeState,
+    find_worker_python_executable, hash_worker_source_directory, model_install_payload,
+    model_install_step, parse_worker_events, resolve_worker_virtualenv_python_executable,
+    worker_runtime_paths_from_local_data_directory, WorkerRuntimePaths, WorkerRuntimeState,
 };
 
 static TEST_PATH_COUNTER: AtomicU64 = AtomicU64::new(0);
@@ -201,6 +204,84 @@ fn repository_seeds_and_updates_model_inventory() {
         .models
         .iter()
         .any(|model| model.name == "medium" && model.installed && !model.setup_required));
+}
+
+#[test]
+fn cpu_only_low_resource_recommends_small_model() {
+    let recommendation = model_recommendation(
+        ModelRecommendationInput {
+            cuda_available: false,
+            total_memory_bytes: Some(8 * 1024 * 1024 * 1024),
+            cpu_count: Some(4),
+        },
+        "small",
+        false,
+    );
+
+    assert_eq!(recommendation.recommended_model, "small");
+    assert!(!recommendation.user_overridden);
+}
+
+#[test]
+fn cpu_only_higher_resource_recommends_medium_model() {
+    let recommendation = model_recommendation(
+        ModelRecommendationInput {
+            cuda_available: false,
+            total_memory_bytes: Some(16 * 1024 * 1024 * 1024),
+            cpu_count: Some(6),
+        },
+        "medium",
+        false,
+    );
+
+    assert_eq!(recommendation.recommended_model, "medium");
+    assert!(!recommendation.user_overridden);
+}
+
+#[test]
+fn validated_cuda_recommends_distil_large_v3_model() {
+    let recommendation = model_recommendation(
+        ModelRecommendationInput {
+            cuda_available: true,
+            total_memory_bytes: Some(8 * 1024 * 1024 * 1024),
+            cpu_count: Some(4),
+        },
+        "distil-large-v3",
+        false,
+    );
+
+    assert_eq!(recommendation.recommended_model, "distil-large-v3");
+    assert!(!recommendation.user_overridden);
+}
+
+#[test]
+fn repository_preserves_existing_whisper_model_setting() {
+    let database_path = test_database_path("existing-whisper-model");
+    let mut repository = AppRepository::open(&database_path).unwrap();
+
+    repository.set_setting("whisperModel", "large-v3").unwrap();
+
+    let settings = repository.settings().unwrap();
+
+    assert_eq!(settings.whisper_model, "large-v3");
+    assert!(settings.model_recommendation.user_overridden);
+}
+
+#[test]
+fn bootstrap_model_install_payload_uses_settings_model() {
+    let database_path = test_database_path("bootstrap-recommended-model");
+    let mut settings = default_settings(&database_path);
+
+    settings.whisper_model = "distil-large-v3".to_owned();
+
+    let payload = model_install_payload(&settings, "cuda");
+
+    assert_eq!(
+        model_install_step(&settings.whisper_model),
+        "Installing distil-large-v3 model"
+    );
+    assert_eq!(payload["model"], "distil-large-v3");
+    assert_eq!(payload["computeType"], "cuda");
 }
 
 #[test]

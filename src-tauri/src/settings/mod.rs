@@ -1,3 +1,5 @@
+pub(crate) mod recommendation;
+
 use std::path::Path;
 
 use crate::domain::types::*;
@@ -19,7 +21,13 @@ pub(crate) fn default_settings(database_path: &Path) -> AppSettings {
         microphone_device: "Default microphone".to_owned(),
         system_audio_source: "Default system output".to_owned(),
         sample_rate: 48_000,
-        whisper_model: "medium".to_owned(),
+        whisper_model: "small".to_owned(),
+        model_recommendation: ModelRecommendation {
+            recommended_model: "small".to_owned(),
+            reason: "Small is the safest default until hardware capabilities are checked"
+                .to_owned(),
+            user_overridden: false,
+        },
         transcription_language: "auto".to_owned(),
         compute_type: "auto".to_owned(),
         model_storage_directory: default_model_storage_root(),

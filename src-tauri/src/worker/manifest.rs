@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 use crate::worker::files::worker_virtualenv_is_scoped;
 use crate::worker::paths::{uv_runtime_is_available, WorkerRuntimePaths};
 
-pub(crate) const WORKER_RUNTIME_SCHEMA_VERSION: u16 = 3;
+pub(crate) const WORKER_RUNTIME_SCHEMA_VERSION: u16 = 4;
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -34,7 +34,7 @@ pub(crate) fn worker_bootstrap_is_ready(paths: &WorkerRuntimePaths, source_hash:
                 && manifest.uv_ready
                 && manifest.synced
                 && manifest.health_ok
-                && manifest.default_model == "medium"
+                && bootstrap_model_is_supported(&manifest.default_model)
                 && manifest.default_model_installed
         }
         None => false,
@@ -53,6 +53,7 @@ pub(crate) fn read_worker_bootstrap_manifest(
 pub(crate) fn write_worker_bootstrap_manifest(
     paths: &WorkerRuntimePaths,
     source_hash: &str,
+    default_model: &str,
 ) -> Result<(), String> {
     let manifest = WorkerBootstrapManifest {
         runtime_schema_version: WORKER_RUNTIME_SCHEMA_VERSION,
@@ -60,7 +61,7 @@ pub(crate) fn write_worker_bootstrap_manifest(
         uv_ready: true,
         synced: true,
         health_ok: true,
-        default_model: "medium".to_owned(),
+        default_model: default_model.to_owned(),
         default_model_installed: true,
     };
     let content = serde_json::to_string_pretty(&manifest)
@@ -71,4 +72,8 @@ pub(crate) fn write_worker_bootstrap_manifest(
         content,
     )
     .map_err(|error| format!("Unable to write worker manifest: {error}"))
+}
+
+fn bootstrap_model_is_supported(model: &str) -> bool {
+    matches!(model, "small" | "medium" | "large-v3" | "distil-large-v3")
 }

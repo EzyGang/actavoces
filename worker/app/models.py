@@ -30,7 +30,7 @@ except ImportError:
 
 
 ctranslate2_module: Any = ctranslate2
-INITIAL_MODELS = ['medium', 'small', 'large-v3', 'distil-large-v3']
+INITIAL_MODELS = ['small', 'medium', 'large-v3', 'distil-large-v3']
 DEFAULT_MODEL = 'medium'
 CONSERVATIVE_VAD_PARAMETERS: dict[str, int | float] = {
     'threshold': 0.5,

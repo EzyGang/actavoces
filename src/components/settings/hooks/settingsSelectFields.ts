@@ -13,8 +13,8 @@ export const selectFields = (
     label: 'Whisper model',
     value: draft.value.whisperModel,
     options: [
-      { value: 'medium', label: 'medium' },
       { value: 'small', label: 'small' },
+      { value: 'medium', label: 'medium' },
       { value: 'large-v3', label: 'large-v3' },
       { value: 'distil-large-v3', label: 'distil-large-v3' }
     ],
