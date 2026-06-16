@@ -27,7 +27,8 @@ use crate::storage::repository::{AppRepository, NewRecording};
 use crate::utils::default_records_root;
 use crate::worker::runtime::{
     apply_worker_path_env, extract_model_inventory, find_worker_python_executable,
-    hash_worker_source_directory, parse_worker_events, WorkerRuntimePaths, WorkerRuntimeState,
+    hash_worker_source_directory, parse_worker_events,
+    worker_runtime_paths_from_local_data_directory, WorkerRuntimePaths, WorkerRuntimeState,
 };
 
 static TEST_PATH_COUNTER: AtomicU64 = AtomicU64::new(0);
@@ -1119,6 +1120,28 @@ fn worker_source_hash_changes_when_worker_files_change() {
 }
 
 #[test]
+fn worker_runtime_paths_use_local_app_data_layout() {
+    let local_app_data = test_artifact_path("worker-local-runtime-layout");
+    let ffmpeg_directory = local_app_data.join("runtime").join("ffmpeg");
+
+    let paths = worker_runtime_paths_from_local_data_directory(
+        local_app_data.clone(),
+        Some(ffmpeg_directory.clone()),
+    );
+
+    assert_eq!(paths.worker_directory, local_app_data.join("worker"));
+    assert_eq!(paths.uv_state_directory, local_app_data.join("uv"));
+    assert_eq!(
+        paths.uv_executable,
+        local_app_data
+            .join("runtime")
+            .join("uv")
+            .join(test_uv_executable_name())
+    );
+    assert_eq!(paths.ffmpeg_directory, Some(ffmpeg_directory));
+}
+
+#[test]
 fn worker_uv_environment_is_scoped_to_app_paths() {
     let root = test_artifact_path("worker-uv-env");
     let paths = WorkerRuntimePaths {
@@ -1140,6 +1163,16 @@ fn worker_uv_environment_is_scoped_to_app_paths() {
         Some(paths.uv_state_directory.join("cache").display().to_string())
     );
     assert_eq!(
+        command_env(&command, "UV_PYTHON_CACHE_DIR"),
+        Some(
+            paths
+                .uv_state_directory
+                .join("python-cache")
+                .display()
+                .to_string()
+        )
+    );
+    assert_eq!(
         command_env(&command, "UV_PYTHON_INSTALL_DIR"),
         Some(
             paths
@@ -1148,6 +1181,11 @@ fn worker_uv_environment_is_scoped_to_app_paths() {
                 .display()
                 .to_string()
         )
+    );
+    assert_eq!(command_env(&command, "UV_NO_CONFIG"), Some("1".to_owned()));
+    assert_eq!(
+        command_env(&command, "UV_NO_SYSTEM_CONFIG"),
+        Some("1".to_owned())
     );
     assert_eq!(
         command_env(&command, "UV_PROJECT_ENVIRONMENT"),
@@ -1243,6 +1281,13 @@ fn test_python_executable_relative_path() -> std::path::PathBuf {
     match cfg!(windows) {
         true => std::path::PathBuf::from("python.exe"),
         false => std::path::PathBuf::from("bin").join("python3.14"),
+    }
+}
+
+fn test_uv_executable_name() -> &'static str {
+    match cfg!(windows) {
+        true => "uv.exe",
+        false => "uv",
     }
 }
 

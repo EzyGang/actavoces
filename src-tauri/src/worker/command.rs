@@ -149,6 +149,10 @@ pub(crate) fn apply_worker_path_env(
     command
         .env("UV_CACHE_DIR", paths.uv_state_directory.join("cache"))
         .env(
+            "UV_PYTHON_CACHE_DIR",
+            paths.uv_state_directory.join("python-cache"),
+        )
+        .env(
             "UV_PYTHON_INSTALL_DIR",
             paths.uv_state_directory.join("python"),
         )
@@ -160,6 +164,8 @@ pub(crate) fn apply_worker_path_env(
         .env("UV_PYTHON_INSTALL_REGISTRY", "0")
         .env("UV_LINK_MODE", "copy")
         .env("UV_MANAGED_PYTHON", "1")
+        .env("UV_NO_CONFIG", "1")
+        .env("UV_NO_SYSTEM_CONFIG", "1")
         .env(
             "UV_PROJECT_ENVIRONMENT",
             paths.worker_directory.join(".venv"),

@@ -21,6 +21,8 @@ pub(crate) use crate::worker::events::{
     diarization_setup_message, extract_model_inventory, extract_runtime_capabilities,
     model_install_message,
 };
+#[cfg(test)]
+pub(crate) use crate::worker::paths::worker_runtime_paths_from_local_data_directory;
 pub(crate) use crate::worker::paths::WorkerRuntimePaths;
 pub(crate) use crate::worker::progress::persist_worker_setup_progress;
 #[cfg(test)]
