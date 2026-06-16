@@ -69,6 +69,22 @@ class TranscriptionWord(AppBaseModel):
     probability: float | None = None
 
 
+class SpeakerLabeledWord(AppBaseModel):
+    segment_id: int
+    speaker: str = 'Speaker'
+    text: str = ''
+    start: float = 0
+    end: float = 0
+    probability: float | None = None
+
+
+class SpeakerLabeledUtterance(AppBaseModel):
+    speaker: str = 'Speaker'
+    start: float = 0
+    end: float = 0
+    text: str = ''
+
+
 class SpeakerTurn(AppBaseModel):
     speaker: str = 'Speaker'
     start: float = 0
@@ -145,6 +161,7 @@ class DiarizePayload(AppBaseModel):
     audio_path: Path | None = None
     output_directory: Path
     segments: list[Segment] = Field(default_factory=list)
+    words: list[TranscriptionWord] = Field(default_factory=list)
     turns: list[SpeakerTurn] = Field(default_factory=list)
     title: str = ''
     speaker_count_mode: str = 'automatic'
@@ -209,6 +226,8 @@ class TranscribeCompletePayload(AppBaseModel):
 class DiarizeCompletePayload(AppBaseModel):
     diarization_path: str
     transcript_path: str
+    speaker_labeled_words_path: str | None = None
+    speaker_labeled_utterances_path: str | None = None
 
 
 class SummarySetupPayload(AppBaseModel):
