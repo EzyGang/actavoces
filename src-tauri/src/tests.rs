@@ -1,6 +1,7 @@
 use std::env;
 use std::fs;
 use std::path::Path;
+use std::process::Command;
 use std::sync::atomic::{AtomicU64, Ordering};
 
 use crate::app::commands::{
@@ -25,7 +26,8 @@ use crate::settings::default_settings;
 use crate::storage::repository::{AppRepository, NewRecording};
 use crate::utils::default_records_root;
 use crate::worker::runtime::{
-    extract_model_inventory, hash_worker_source_directory, parse_worker_events, WorkerRuntimeState,
+    apply_worker_path_env, extract_model_inventory, find_worker_python_executable,
+    hash_worker_source_directory, parse_worker_events, WorkerRuntimePaths, WorkerRuntimeState,
 };
 
 static TEST_PATH_COUNTER: AtomicU64 = AtomicU64::new(0);
@@ -1116,6 +1118,74 @@ fn worker_source_hash_changes_when_worker_files_change() {
     assert_ne!(first_hash, second_hash);
 }
 
+#[test]
+fn worker_uv_environment_is_scoped_to_app_paths() {
+    let root = test_artifact_path("worker-uv-env");
+    let paths = WorkerRuntimePaths {
+        uv_executable: root.join("runtime").join("uv.exe"),
+        worker_directory: root.join("worker"),
+        uv_state_directory: root.join("uv"),
+        ffmpeg_directory: None,
+    };
+    let mut command = Command::new("uv");
+
+    apply_worker_path_env(&mut command, &paths).unwrap();
+
+    assert_eq!(
+        command_env(&command, "UV_LINK_MODE"),
+        Some("copy".to_owned())
+    );
+    assert_eq!(
+        command_env(&command, "UV_CACHE_DIR"),
+        Some(paths.uv_state_directory.join("cache").display().to_string())
+    );
+    assert_eq!(
+        command_env(&command, "UV_PYTHON_INSTALL_DIR"),
+        Some(
+            paths
+                .uv_state_directory
+                .join("python")
+                .display()
+                .to_string()
+        )
+    );
+    assert_eq!(
+        command_env(&command, "UV_PROJECT_ENVIRONMENT"),
+        Some(paths.worker_directory.join(".venv").display().to_string())
+    );
+}
+
+#[test]
+fn worker_python_resolution_uses_concrete_patch_installation() {
+    let root = test_artifact_path("worker-python-resolution");
+    let paths = WorkerRuntimePaths {
+        uv_executable: root.join("runtime").join("uv.exe"),
+        worker_directory: root.join("worker"),
+        uv_state_directory: root.join("uv"),
+        ffmpeg_directory: None,
+    };
+    let older = paths
+        .uv_state_directory
+        .join("python")
+        .join("cpython-3.14.6-windows-x86_64-none");
+    let newer = paths
+        .uv_state_directory
+        .join("python")
+        .join("cpython-3.14.10-windows-x86_64-none");
+    let unrelated_minor_link = paths
+        .uv_state_directory
+        .join("python")
+        .join("cpython-3.14-windows-x86_64-none");
+    let older_executable = create_test_python_executable(&older);
+    let newer_executable = create_test_python_executable(&newer);
+    create_test_python_executable(&unrelated_minor_link);
+
+    let resolved = find_worker_python_executable(&paths).unwrap().unwrap();
+
+    assert_eq!(resolved, newer_executable);
+    assert_ne!(resolved, older_executable);
+}
+
 fn settings_update(output_directory: String) -> AppSettingsUpdate {
     AppSettingsUpdate {
         output_directory,
@@ -1151,6 +1221,28 @@ fn worker_event(event: &str, payload: serde_json::Value) -> WorkerEvent {
         command_id: "test-command".to_owned(),
         event: event.to_owned(),
         payload,
+    }
+}
+
+fn command_env(command: &Command, key: &str) -> Option<String> {
+    command
+        .get_envs()
+        .find(|(name, _)| *name == key)
+        .and_then(|(_, value)| value.map(|value| value.to_string_lossy().into_owned()))
+}
+
+fn create_test_python_executable(directory: &Path) -> std::path::PathBuf {
+    let executable = directory.join(test_python_executable_relative_path());
+    fs::create_dir_all(executable.parent().unwrap()).unwrap();
+    fs::write(&executable, "python").unwrap();
+
+    executable
+}
+
+fn test_python_executable_relative_path() -> std::path::PathBuf {
+    match cfg!(windows) {
+        true => std::path::PathBuf::from("python.exe"),
+        false => std::path::PathBuf::from("bin").join("python3.14"),
     }
 }
 
