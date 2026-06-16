@@ -8,6 +8,7 @@ import {
   captureDeviceOptions,
   contextFromGlossaryEntries,
   glossaryEntriesFromContext,
+  normalizeGlossaryEntries,
   type SettingsFolderField,
   type SettingsGlossaryField,
   type SettingsHotkeyField,
@@ -53,7 +54,7 @@ const glossaryField = (
   const updateEntries = (nextEntries: string[]) => {
     draft.value = {
       ...draft.value,
-      transcriptionContext: contextFromGlossaryEntries(nextEntries)
+      transcriptionContext: contextFromGlossaryEntries(normalizeGlossaryEntries(nextEntries))
     };
   };
   const addEntry = () => {

@@ -433,6 +433,13 @@ fn transcription_context_normalization_trims_deduplicates_and_bounds() {
 }
 
 #[test]
+fn transcription_context_normalization_preserves_exact_limit() {
+    let context = "a".repeat(4_000);
+
+    assert_eq!(normalized_transcription_context(&context), Some(context));
+}
+
+#[test]
 fn settings_secrets_are_stored_in_database_settings() {
     let database_path = test_database_path("settings-secrets");
     let mut repository = AppRepository::open(&database_path).unwrap();

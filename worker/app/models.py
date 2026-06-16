@@ -33,6 +33,7 @@ ctranslate2_module: Any = ctranslate2
 INITIAL_MODELS = ['small', 'medium', 'large-v3', 'distil-large-v3']
 DEFAULT_MODEL = 'small'
 MAX_TRANSCRIPTION_CONTEXT_CHARS = 4000
+# Keep this limit in sync with src-tauri/src/app/commands/pipeline.rs.
 CONSERVATIVE_VAD_PARAMETERS: dict[str, int | float] = {
     'threshold': 0.5,
     'min_speech_duration_ms': 0,

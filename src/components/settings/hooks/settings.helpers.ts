@@ -112,26 +112,28 @@ export const buildSettingsUpdate = (settings: AppSettings): AppSettingsUpdate =>
 export const settingsDraftChanged = (draft: AppSettingsUpdate, settings: AppSettings): boolean =>
   JSON.stringify(draft) !== JSON.stringify(buildSettingsUpdate(settings));
 
-export const glossaryEntriesFromContext = (context: string): string[] => {
+export const normalizeGlossaryEntries = (entries: string[]): string[] => {
   const seen = new Set<string>();
-  const entries: string[] = [];
+  const normalizedEntries: string[] = [];
 
-  for (const line of context.split('\n')) {
-    const entry = line.trim();
+  for (const value of entries) {
+    const entry = value.trim();
 
     if (entry.length === 0 || seen.has(entry)) {
       continue;
     }
 
     seen.add(entry);
-    entries.push(entry);
+    normalizedEntries.push(entry);
   }
 
-  return entries;
+  return normalizedEntries;
 };
 
-export const contextFromGlossaryEntries = (entries: string[]): string =>
-  glossaryEntriesFromContext(entries.join('\n')).join('\n');
+export const glossaryEntriesFromContext = (context: string): string[] =>
+  normalizeGlossaryEntries(context.split('\n'));
+
+export const contextFromGlossaryEntries = (entries: string[]): string => entries.join('\n');
 
 export const captureDeviceOptions = (
   devices: CaptureDeviceInfo[],
