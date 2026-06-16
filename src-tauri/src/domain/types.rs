@@ -248,6 +248,7 @@ pub struct AppSettings {
     pub(crate) system_audio_source: String,
     pub(crate) sample_rate: u32,
     pub(crate) whisper_model: String,
+    pub(crate) model_recommendation: ModelRecommendation,
     pub(crate) transcription_language: String,
     pub(crate) compute_type: String,
     pub(crate) model_storage_directory: String,
@@ -265,6 +266,14 @@ pub struct AppSettings {
     pub(crate) provider_base_url: String,
     pub(crate) provider_model: String,
     pub(crate) summary_prompt: String,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ModelRecommendation {
+    pub(crate) recommended_model: String,
+    pub(crate) reason: String,
+    pub(crate) user_overridden: bool,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]

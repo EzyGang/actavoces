@@ -46,7 +46,12 @@ const initialSnapshot: AppSnapshot = {
     microphoneDevice: 'Default microphone',
     systemAudioSource: 'Default system output',
     sampleRate: 48000,
-    whisperModel: 'medium',
+    whisperModel: 'small',
+    modelRecommendation: {
+      recommendedModel: 'small',
+      reason: 'Small is the safest default until hardware capabilities are checked',
+      userOverridden: false
+    },
     transcriptionLanguage: 'auto',
     computeType: 'auto',
     modelStorageDirectory: '',

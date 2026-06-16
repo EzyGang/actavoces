@@ -138,17 +138,13 @@ pub(crate) fn run_worker_bootstrap(
         app,
         state,
         WorkerSetupStatus::Installing,
-        "Installing medium model",
+        &model_install_step(&settings.whisper_model),
         None,
     )?;
     let install_events = run_worker_command_with_paths(
         &paths,
         "models.install",
-        serde_json::json!({
-            "model": "medium",
-            "computeType": bootstrap_compute_type,
-            "modelStorageDirectory": settings.model_storage_directory,
-        }),
+        model_install_payload(&settings, bootstrap_compute_type),
     )?;
 
     if !install_events
@@ -162,7 +158,7 @@ pub(crate) fn run_worker_bootstrap(
         &paths,
         "models.status",
         serde_json::json!({
-            "modelStorageDirectory": settings.model_storage_directory,
+            "modelStorageDirectory": &settings.model_storage_directory,
         }),
     )?;
     let models = extract_model_inventory(&status_events)?;
@@ -179,7 +175,7 @@ pub(crate) fn run_worker_bootstrap(
             .map_err(|error| error.to_string())?;
     }
 
-    write_worker_bootstrap_manifest(&paths, &source_hash)?;
+    write_worker_bootstrap_manifest(&paths, &source_hash, &settings.whisper_model)?;
     emit_worker_setup_progress(
         app,
         state,
@@ -187,6 +183,21 @@ pub(crate) fn run_worker_bootstrap(
         "Worker runtime ready",
         None,
     )
+}
+
+pub(crate) fn model_install_step(model: &str) -> String {
+    format!("Installing {model} model")
+}
+
+pub(crate) fn model_install_payload(
+    settings: &AppSettings,
+    compute_type: &str,
+) -> serde_json::Value {
+    serde_json::json!({
+        "model": &settings.whisper_model,
+        "computeType": compute_type,
+        "modelStorageDirectory": &settings.model_storage_directory,
+    })
 }
 
 pub(crate) fn run_diarization_setup(

@@ -2,8 +2,9 @@ use rusqlite::{params, OptionalExtension};
 
 use crate::domain::types::*;
 use crate::settings::{
-    settings_pairs, summary_provider_configured_for, validate_settings, DEFAULT_SUMMARY_PROMPT,
-    HUGGING_FACE_TOKEN_SETTING, SUMMARY_PROVIDER_API_KEY_SETTING,
+    recommendation::current_model_recommendation, settings_pairs, summary_provider_configured_for,
+    validate_settings, DEFAULT_SUMMARY_PROMPT, HUGGING_FACE_TOKEN_SETTING,
+    SUMMARY_PROVIDER_API_KEY_SETTING,
 };
 use crate::storage::repository::AppRepository;
 use crate::utils::{
@@ -23,14 +24,17 @@ impl AppRepository {
             values.push(pair?);
         }
 
-        let get_value = |key: &str, fallback: &str| -> String {
+        let get_optional_value = |key: &str| -> Option<String> {
             for (candidate_key, value) in &values {
                 if candidate_key == key {
-                    return value.clone();
+                    return Some(value.clone());
                 }
             }
 
-            fallback.to_owned()
+            None
+        };
+        let get_value = |key: &str, fallback: &str| -> String {
+            get_optional_value(key).unwrap_or_else(|| fallback.to_owned())
         };
         let summary_enabled = parse_bool(&get_value("summaryEnabled", "false"));
         let provider_base_url = get_value("providerBaseUrl", "https://api.openai.com/v1");
@@ -41,6 +45,16 @@ impl AppRepository {
             secret_configured(&get_value(HUGGING_FACE_TOKEN_SETTING, ""));
         let summary_provider_configured =
             summary_provider_configured_for(summary_enabled, &provider_base_url, &provider_model);
+        let runtime_status = self.desktop_runtime_status()?;
+        let persisted_whisper_model = get_optional_value("whisperModel");
+        let model_recommendation = current_model_recommendation(
+            runtime_status.cuda_available,
+            persisted_whisper_model.as_deref().unwrap_or(""),
+            persisted_whisper_model.is_some(),
+        );
+        let whisper_model = persisted_whisper_model
+            .clone()
+            .unwrap_or_else(|| model_recommendation.recommended_model.clone());
 
         Ok(AppSettings {
             output_directory: get_value("outputDirectory", &default_records_root()),
@@ -58,7 +72,8 @@ impl AppRepository {
             microphone_device: get_value("microphoneDevice", "Default microphone"),
             system_audio_source: get_value("systemAudioSource", "Default system output"),
             sample_rate: get_value("sampleRate", "48000").parse().unwrap_or(48_000),
-            whisper_model: get_value("whisperModel", "medium"),
+            whisper_model,
+            model_recommendation,
             transcription_language: get_value("transcriptionLanguage", "auto"),
             compute_type: get_value("computeType", "auto"),
             model_storage_directory: get_value(

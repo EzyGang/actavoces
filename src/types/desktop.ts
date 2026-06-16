@@ -100,6 +100,7 @@ export interface AppSettings {
   systemAudioSource: string;
   sampleRate: number;
   whisperModel: string;
+  modelRecommendation: ModelRecommendation;
   transcriptionLanguage: string;
   computeType: string;
   modelStorageDirectory: string;
@@ -119,6 +120,12 @@ export interface AppSettings {
   summaryPrompt: string;
 }
 
+export interface ModelRecommendation {
+  recommendedModel: string;
+  reason: string;
+  userOverridden: boolean;
+}
+
 export type AppSettingsUpdate = Omit<
   AppSettings,
   | 'databasePath'
@@ -126,6 +133,7 @@ export type AppSettingsUpdate = Omit<
   | 'providerApiKeyConfigured'
   | 'huggingFaceTokenConfigured'
   | 'diarizationRuntimeReady'
+  | 'modelRecommendation'
 > & {
   providerApiKey: string;
   huggingFaceToken: string;

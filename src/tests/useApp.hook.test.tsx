@@ -68,6 +68,11 @@ const baseSettings: AppSettings = {
   systemAudioSource: 'Default system output',
   sampleRate: 48000,
   whisperModel: 'medium',
+  modelRecommendation: {
+    recommendedModel: 'medium',
+    reason: 'CPU-only system has enough resources for medium',
+    userOverridden: false
+  },
   transcriptionLanguage: 'auto',
   computeType: 'auto',
   modelStorageDirectory: '/tmp/actavoces/models',

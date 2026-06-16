@@ -30,8 +30,8 @@ except ImportError:
 
 
 ctranslate2_module: Any = ctranslate2
-INITIAL_MODELS = ['medium', 'small', 'large-v3', 'distil-large-v3']
-DEFAULT_MODEL = 'medium'
+INITIAL_MODELS = ['small', 'medium', 'large-v3', 'distil-large-v3']
+DEFAULT_MODEL = 'small'
 CONSERVATIVE_VAD_PARAMETERS: dict[str, int | float] = {
     'threshold': 0.5,
     'min_speech_duration_ms': 0,

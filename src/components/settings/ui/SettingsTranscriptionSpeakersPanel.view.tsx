@@ -127,6 +127,22 @@ export const SettingsTranscriptionSpeakersPanel = ({ app }: SettingsPanelProps):
           }
         />
       </div>
+      <div class='flex flex-col gap-2 border border-border-base bg-bg-card p-3 text-xs'>
+        <div class='flex flex-wrap items-center justify-between gap-2'>
+          <span class='text-text-muted'>Recommended model</span>
+          <span class='font-mono'>
+            {app.data.snapshot.value.settings.modelRecommendation.recommendedModel}
+          </span>
+        </div>
+        <span class='text-text-muted'>
+          {app.data.snapshot.value.settings.modelRecommendation.reason}
+        </span>
+        {app.data.snapshot.value.settings.modelRecommendation.userOverridden ? (
+          <span class='border border-warning-border bg-warning-bg p-2 text-warning'>
+            Manual override active. The selected model differs from the current recommendation.
+          </span>
+        ) : null}
+      </div>
       <div class='grid gap-2 sm:grid-cols-2'>
         <Button
           class='h-9 px-3'
