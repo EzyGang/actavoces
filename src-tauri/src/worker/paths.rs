@@ -10,6 +10,7 @@ use crate::worker::process::hide_console_window;
 pub(crate) struct WorkerRuntimePaths {
     pub(crate) uv_executable: PathBuf,
     pub(crate) worker_directory: PathBuf,
+    pub(crate) uv_state_directory: PathBuf,
     pub(crate) ffmpeg_directory: Option<PathBuf>,
 }
 
@@ -21,15 +22,21 @@ pub(crate) fn worker_runtime_paths(app: &tauri::AppHandle) -> Result<WorkerRunti
     let worker_directory = app_data_directory
         .join("worker")
         .join(worker_runtime_version());
-    let uv_executable = app_data_directory
+    let local_app_data_directory = app
+        .path()
+        .app_local_data_dir()
+        .unwrap_or_else(|_| app_data_directory.clone());
+    let uv_executable = local_app_data_directory
         .join("runtime")
         .join("uv")
         .join(uv_executable_name());
+    let uv_state_directory = local_app_data_directory.join("uv-state");
     let ffmpeg_directory = resolve_ffmpeg_resource_directory(app).ok();
 
     Ok(WorkerRuntimePaths {
         uv_executable,
         worker_directory,
+        uv_state_directory,
         ffmpeg_directory,
     })
 }
