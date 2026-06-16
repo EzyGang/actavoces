@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 use crate::worker::files::worker_virtualenv_is_scoped;
 use crate::worker::paths::{uv_runtime_is_available, WorkerRuntimePaths};
 
-pub(crate) const WORKER_RUNTIME_SCHEMA_VERSION: u16 = 2;
+pub(crate) const WORKER_RUNTIME_SCHEMA_VERSION: u16 = 3;
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]

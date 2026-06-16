@@ -15,28 +15,35 @@ pub(crate) struct WorkerRuntimePaths {
 }
 
 pub(crate) fn worker_runtime_paths(app: &tauri::AppHandle) -> Result<WorkerRuntimePaths, String> {
-    let app_data_directory = app
-        .path()
-        .app_data_dir()
-        .map_err(|error| format!("Unable to resolve app data directory: {error}"))?;
-    let worker_directory = app_data_directory.join("worker");
     let local_app_data_directory = app
         .path()
         .app_local_data_dir()
-        .unwrap_or_else(|_| app_data_directory.clone());
+        .map_err(|error| format!("Unable to resolve local app data directory: {error}"))?;
+    let ffmpeg_directory = resolve_ffmpeg_resource_directory(app).ok();
+
+    Ok(worker_runtime_paths_from_local_data_directory(
+        local_app_data_directory,
+        ffmpeg_directory,
+    ))
+}
+
+pub(crate) fn worker_runtime_paths_from_local_data_directory(
+    local_app_data_directory: PathBuf,
+    ffmpeg_directory: Option<PathBuf>,
+) -> WorkerRuntimePaths {
+    let worker_directory = local_app_data_directory.join("worker");
     let uv_executable = local_app_data_directory
         .join("runtime")
         .join("uv")
         .join(uv_executable_name());
     let uv_state_directory = local_app_data_directory.join("uv");
-    let ffmpeg_directory = resolve_ffmpeg_resource_directory(app).ok();
 
-    Ok(WorkerRuntimePaths {
+    WorkerRuntimePaths {
         uv_executable,
         worker_directory,
         uv_state_directory,
         ffmpeg_directory,
-    })
+    }
 }
 
 pub(crate) fn uv_runtime_is_available(paths: &WorkerRuntimePaths) -> bool {
