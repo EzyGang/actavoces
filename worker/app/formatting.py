@@ -31,7 +31,7 @@ def render_diarized_transcript(
     title: str = '',
     words: Sequence[TranscriptionWord] | None = None,
 ) -> str:
-    if words:
+    if words is not None and len(words) > 0:
         utterances = speaker_labeled_utterances(words=speaker_labeled_words(words=words, turns=turns))
         return render_speaker_labeled_utterances(utterances=utterances, title=title)
 

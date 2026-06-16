@@ -6,7 +6,8 @@ use crate::artifacts::{
     speaker_labeled_words_path,
 };
 use crate::diarization::{
-    render_speaker_labeled_utterances, SpeakerLabeledUtterance, SpeakerLabeledWord,
+    render_speaker_labeled_utterances, SpeakerLabeledUtterance, SpeakerLabeledUtterancesArtifact,
+    SpeakerLabeledWordsArtifact,
 };
 use crate::domain::types::{Recording, SpeakerRenameInput};
 
@@ -121,16 +122,6 @@ struct SegmentsArtifact {
 #[serde(rename_all = "camelCase")]
 struct DiarizationArtifact {
     turns: Vec<SpeakerTurnArtifact>,
-}
-
-#[derive(Clone, Debug, serde::Deserialize, serde::Serialize)]
-struct SpeakerLabeledWordsArtifact {
-    words: Vec<SpeakerLabeledWord>,
-}
-
-#[derive(Clone, Debug, serde::Deserialize, serde::Serialize)]
-struct SpeakerLabeledUtterancesArtifact {
-    utterances: Vec<SpeakerLabeledUtterance>,
 }
 
 #[derive(Clone, Debug, serde::Deserialize)]

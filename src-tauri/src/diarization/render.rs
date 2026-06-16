@@ -21,6 +21,16 @@ pub(crate) struct SpeakerLabeledUtterance {
     pub(crate) text: String,
 }
 
+#[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
+pub(crate) struct SpeakerLabeledWordsArtifact {
+    pub(crate) words: Vec<SpeakerLabeledWord>,
+}
+
+#[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
+pub(crate) struct SpeakerLabeledUtterancesArtifact {
+    pub(crate) utterances: Vec<SpeakerLabeledUtterance>,
+}
+
 #[derive(Clone, Debug, PartialEq)]
 struct DiarizedTextGroup {
     speaker: String,

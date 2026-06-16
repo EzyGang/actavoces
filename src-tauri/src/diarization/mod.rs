@@ -16,7 +16,8 @@ use crate::artifacts::{
 };
 
 pub(crate) use render::{
-    render_speaker_labeled_utterances, SpeakerLabeledUtterance, SpeakerLabeledWord,
+    render_speaker_labeled_utterances, SpeakerLabeledUtterance, SpeakerLabeledUtterancesArtifact,
+    SpeakerLabeledWordsArtifact,
 };
 pub(crate) use setup::prepare_sortformer_diarization;
 
@@ -56,16 +57,6 @@ pub(crate) struct SpeakerTurn {
 #[derive(Clone, Debug, PartialEq, Serialize)]
 struct DiarizationArtifact {
     turns: Vec<SpeakerTurn>,
-}
-
-#[derive(Clone, Debug, PartialEq, Serialize)]
-struct SpeakerLabeledWordsArtifact {
-    words: Vec<render::SpeakerLabeledWord>,
-}
-
-#[derive(Clone, Debug, PartialEq, Serialize)]
-struct SpeakerLabeledUtterancesArtifact {
-    utterances: Vec<render::SpeakerLabeledUtterance>,
 }
 
 pub(crate) fn run_sortformer_diarization(
