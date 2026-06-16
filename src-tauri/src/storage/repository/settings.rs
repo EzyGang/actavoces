@@ -47,19 +47,14 @@ impl AppRepository {
             summary_provider_configured_for(summary_enabled, &provider_base_url, &provider_model);
         let runtime_status = self.desktop_runtime_status()?;
         let persisted_whisper_model = get_optional_value("whisperModel");
-        let recommendation_model = current_model_recommendation(
+        let model_recommendation = current_model_recommendation(
             runtime_status.cuda_available,
             persisted_whisper_model.as_deref().unwrap_or(""),
             persisted_whisper_model.is_some(),
         );
         let whisper_model = persisted_whisper_model
             .clone()
-            .unwrap_or_else(|| recommendation_model.recommended_model.clone());
-        let model_recommendation = current_model_recommendation(
-            runtime_status.cuda_available,
-            &whisper_model,
-            persisted_whisper_model.is_some(),
-        );
+            .unwrap_or_else(|| model_recommendation.recommended_model.clone());
 
         Ok(AppSettings {
             output_directory: get_value("outputDirectory", &default_records_root()),
