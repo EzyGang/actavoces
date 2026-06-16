@@ -20,6 +20,7 @@ from app.dtos import (
     TranscriptionCompleteResult,
     TranscriptionMetadata,
     TranscriptionVadOptions,
+    TranscriptionWord,
 )
 from app.events import command_event
 from app.formatting import render_diarized_transcript, render_raw_transcript, render_summary
@@ -129,6 +130,10 @@ async def handle_transcribe(command: WorkerCommand) -> list[WorkerEvent]:
         raw_segments_path(output_directory=payload.output_directory),
         {'segments': segment_payloads(segments=result.segments)},
     )
+    write_json(
+        raw_words_path(output_directory=payload.output_directory),
+        {'words': word_payloads(words=result.words)},
+    )
     write_text(
         raw_transcript_path(output_directory=payload.output_directory),
         render_raw_transcript(segments=result.segments, title=payload.title),
@@ -145,6 +150,7 @@ async def handle_transcribe(command: WorkerCommand) -> list[WorkerEvent]:
             name='transcribe.complete',
             payload=TranscribeCompletePayload(
                 segments_path=str(raw_segments_path(output_directory=payload.output_directory)),
+                words_path=str(raw_words_path(output_directory=payload.output_directory)),
                 transcript_path=str(raw_transcript_path(output_directory=payload.output_directory)),
                 warning=result.warning,
             ),
@@ -315,6 +321,10 @@ def segment_payloads(segments: list[Segment]) -> list[dict[str, int | float | st
     return [segment.model_dump() for segment in segments]
 
 
+def word_payloads(words: list[TranscriptionWord]) -> list[dict[str, int | float | str | None]]:
+    return [word.model_dump() for word in words]
+
+
 def turn_payloads(turns: list[SpeakerTurn]) -> list[dict[str, float | str]]:
     return [turn.model_dump() for turn in turns]
 
@@ -333,6 +343,10 @@ def mixed_audio_path(output_directory: Path) -> Path:
 
 def raw_segments_path(output_directory: Path) -> Path:
     return meta_path(output_directory=output_directory) / 'raw-segments.json'
+
+
+def raw_words_path(output_directory: Path) -> Path:
+    return meta_path(output_directory=output_directory) / 'raw-words.json'
 
 
 def transcription_metadata_path(output_directory: Path) -> Path:

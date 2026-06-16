@@ -6,10 +6,22 @@ from pydantic import BaseModel, Field
 from app.core.pydantic_base import AppBaseModel
 
 
+type TranscriptionProfile = Literal['conservative_vad']
+DEFAULT_TRANSCRIPTION_PROFILE: TranscriptionProfile = 'conservative_vad'
+
+
 class FasterWhisperSegment(Protocol):
     start: float
     end: float
     text: str
+    words: list[FasterWhisperWord] | None
+
+
+class FasterWhisperWord(Protocol):
+    start: float
+    end: float
+    word: str
+    probability: float | None
 
 
 class FasterWhisperInfo(Protocol):
@@ -49,6 +61,14 @@ class Segment(AppBaseModel):
     text: str = ''
 
 
+class TranscriptionWord(AppBaseModel):
+    segment_id: int
+    text: str = ''
+    start: float = 0
+    end: float = 0
+    probability: float | None = None
+
+
 class SpeakerTurn(AppBaseModel):
     speaker: str = 'Speaker'
     start: float = 0
@@ -83,20 +103,21 @@ class ModelInstallCompleteResult(AppBaseModel):
 class TranscriptionCompleteResult(AppBaseModel):
     status: Literal['complete'] = 'complete'
     segments: list[Segment]
+    words: list[TranscriptionWord] = Field(default_factory=list)
     language: str | None = None
     warning: str | None = None
 
 
 class TranscriptionVadOptions(AppBaseModel):
     enabled: bool = True
-    profile: Literal['conservative_vad'] = 'conservative_vad'
+    profile: TranscriptionProfile = DEFAULT_TRANSCRIPTION_PROFILE
     parameters: dict[str, int | float]
 
 
 class TranscriptionMetadata(AppBaseModel):
     model: str
     language: str | None = None
-    transcription_profile: Literal['conservative_vad'] = 'conservative_vad'
+    transcription_profile: TranscriptionProfile = DEFAULT_TRANSCRIPTION_PROFILE
     vad: TranscriptionVadOptions
     source_start: float | None = None
     source_end: float | None = None
@@ -117,7 +138,7 @@ class TranscribePayload(AppBaseModel):
     language: str | None = None
     compute_type: str = 'auto'
     model_storage_directory: Path | None = None
-    transcription_profile: Literal['conservative_vad'] = 'conservative_vad'
+    transcription_profile: TranscriptionProfile = DEFAULT_TRANSCRIPTION_PROFILE
 
 
 class DiarizePayload(AppBaseModel):
@@ -180,6 +201,7 @@ class ModelInstallPayload(AppBaseModel):
 
 class TranscribeCompletePayload(AppBaseModel):
     segments_path: str
+    words_path: str
     transcript_path: str
     warning: str | None = None
 

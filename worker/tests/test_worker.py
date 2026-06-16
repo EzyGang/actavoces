@@ -6,7 +6,14 @@ from pydantic_ai import Agent
 from pydantic_ai.models.test import TestModel
 from pytest_mock import MockerFixture
 
-from app.dtos import SummarizePayload, SummaryOutput
+from app.dtos import (
+    Segment,
+    SummarizePayload,
+    SummaryOutput,
+    TranscriptionMetadata,
+    TranscriptionVadOptions,
+    TranscriptionWord,
+)
 from app.events import emit
 from app.formatting import render_diarized_transcript, render_raw_transcript
 from app.handlers import handle
@@ -78,6 +85,8 @@ async def test_transcribe_run_writes_supplied_segments(tmp_path: Path) -> None:
     assert '# Raw transcript - Planning Call' in transcript
     assert 'Hello' in transcript
     assert (tmp_path / 'meta' / 'raw-segments.json').exists()
+    raw_words = loads((tmp_path / 'meta' / 'raw-words.json').read_text())
+    assert raw_words == {'words': []}
 
 
 async def test_transcribe_run_writes_transcription_metadata(tmp_path: Path) -> None:
@@ -108,6 +117,21 @@ async def test_transcribe_run_writes_transcription_metadata(tmp_path: Path) -> N
     assert metadata['vad']['parameters']['min_silence_duration_ms'] == 2000
     assert metadata['sourceStart'] == 2
     assert metadata['sourceEnd'] == 5
+
+
+def test_transcription_metadata_serializes_aliases() -> None:
+    metadata = TranscriptionMetadata(
+        model='small',
+        language='en',
+        vad=TranscriptionVadOptions(parameters={'min_silence_duration_ms': 2000}),
+        source_start=2,
+        source_end=5,
+    ).model_dump(by_alias=True)
+
+    assert metadata['transcriptionProfile'] == 'conservative_vad'
+    assert metadata['sourceStart'] == 2
+    assert metadata['sourceEnd'] == 5
+    assert metadata['vad']['profile'] == 'conservative_vad'
 
 
 async def test_transcribe_run_reports_missing_audio() -> None:
@@ -158,7 +182,17 @@ def test_faster_whisper_adapter_returns_segments_from_model() -> None:
             transcribe_calls.append(kwargs)
 
             return (
-                [SimpleNamespace(start=0.0, end=1.5, text='Hello')],
+                [
+                    SimpleNamespace(
+                        start=0.0,
+                        end=1.5,
+                        text='Hello world',
+                        words=[
+                            SimpleNamespace(start=0.0, end=0.5, word='Hello', probability=0.95),
+                            SimpleNamespace(start=0.6, end=1.5, word='world', probability=0.9),
+                        ],
+                    )
+                ],
                 SimpleNamespace(language='en'),
             )
 
@@ -172,7 +206,13 @@ def test_faster_whisper_adapter_returns_segments_from_model() -> None:
     )
 
     assert result.status == 'complete'
-    assert result.segments[0].text == 'Hello'
+    assert result.segments[0].text == 'Hello world'
+    assert result.words[0].segment_id == 0
+    assert result.words[0].text == 'Hello'
+    assert result.words[0].start == 0.0
+    assert result.words[0].end == 0.5
+    assert result.words[0].probability == 0.95
+    assert result.words[1].text == 'world'
     assert result.language == 'en'
     assert transcribe_calls == [
         {
@@ -183,9 +223,65 @@ def test_faster_whisper_adapter_returns_segments_from_model() -> None:
                 'min_silence_duration_ms': 2000,
                 'speech_pad_ms': 400,
             },
+            'word_timestamps': True,
             'language': 'en',
         }
     ]
+
+
+def test_faster_whisper_adapter_handles_missing_words() -> None:
+    class FakeModel:
+        def __init__(self, model_name: str, **kwargs: Any) -> None:
+            pass
+
+        def transcribe(self, audio_path: str, **kwargs: Any) -> tuple[list[SimpleNamespace], SimpleNamespace]:
+            return ([SimpleNamespace(start=0.0, end=1.0, text='No words')], SimpleNamespace(language='en'))
+
+    result = run_faster_whisper(
+        audio_path=Path('recording.wav'),
+        model_name='medium',
+        language='en',
+        compute_type='int8',
+        model_storage_directory=None,
+        model_factory=FakeModel,
+    )
+
+    assert result.status == 'complete'
+    assert result.segments[0].text == 'No words'
+    assert result.words == []
+
+
+async def test_transcribe_run_writes_raw_words_from_faster_whisper(mocker: MockerFixture, tmp_path: Path) -> None:
+    audio_path = tmp_path / 'recording.wav'
+    audio_path.write_bytes(b'RIFFdata')
+    result = SimpleNamespace(
+        status='complete',
+        segments=[Segment(id=0, start=0, end=1, text='Hello')],
+        words=[
+            TranscriptionWord(segment_id=0, text='Hello', start=0, end=1, probability=0.95)
+        ],
+        language='en',
+        warning=None,
+    )
+    mocker.patch('app.handlers.run_faster_whisper', return_value=result)
+
+    events = await handle(
+        WorkerCommand(
+            id='words',
+            name='transcribe.run',
+            payload={'audio_path': str(audio_path), 'output_directory': str(tmp_path)},
+        )
+    )
+
+    raw_words = loads((tmp_path / 'meta' / 'raw-words.json').read_text())
+    raw_segments = loads((tmp_path / 'meta' / 'raw-segments.json').read_text())
+
+    assert events[-1].event == 'transcribe.complete'
+    assert events[-1].payload['wordsPath'] == str(tmp_path / 'meta' / 'raw-words.json')
+    assert raw_words == {
+        'words': [{'segment_id': 0, 'text': 'Hello', 'start': 0, 'end': 1, 'probability': 0.95}]
+    }
+    assert raw_segments == {'segments': [{'id': 0, 'start': 0, 'end': 1, 'text': 'Hello'}]}
 
 
 def test_faster_whisper_cuda_fallback_uses_cpu_when_cuda_libraries_are_missing() -> None:
