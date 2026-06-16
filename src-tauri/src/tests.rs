@@ -26,8 +26,8 @@ use crate::settings::default_settings;
 use crate::storage::repository::{AppRepository, NewRecording};
 use crate::utils::default_records_root;
 use crate::worker::runtime::{
-    apply_worker_path_env, extract_model_inventory, find_worker_python_executable,
-    hash_worker_source_directory, parse_worker_events,
+    apply_worker_current_dir, apply_worker_path_env, extract_model_inventory,
+    find_worker_python_executable, hash_worker_source_directory, parse_worker_events,
     worker_runtime_paths_from_local_data_directory, WorkerRuntimePaths, WorkerRuntimeState,
 };
 
@@ -1152,8 +1152,14 @@ fn worker_uv_environment_is_scoped_to_app_paths() {
     };
     let mut command = Command::new("uv");
 
+    apply_worker_current_dir(&mut command, &paths).unwrap();
     apply_worker_path_env(&mut command, &paths).unwrap();
 
+    assert_eq!(
+        command.get_current_dir(),
+        Some(paths.worker_directory.as_path())
+    );
+    assert!(paths.worker_directory.exists());
     assert_eq!(
         command_env(&command, "UV_LINK_MODE"),
         Some("copy".to_owned())

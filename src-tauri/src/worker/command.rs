@@ -1,4 +1,5 @@
 use std::env;
+use std::fs;
 use std::io::Write;
 use std::path::PathBuf;
 use std::process::{Command, Stdio};
@@ -17,6 +18,7 @@ pub(crate) fn run_uv_sync(paths: &WorkerRuntimePaths) -> Result<(), String> {
     let python_executable = resolve_worker_python_executable(paths)?;
     let mut command = Command::new(resolve_uv_command(paths));
     hide_console_window(&mut command);
+    apply_worker_current_dir(&mut command, paths)?;
     apply_worker_path_env(&mut command, paths)?;
     let output = command
         .arg("sync")
@@ -24,7 +26,6 @@ pub(crate) fn run_uv_sync(paths: &WorkerRuntimePaths) -> Result<(), String> {
         .arg(python_executable)
         .arg("--locked")
         .arg("--no-dev")
-        .current_dir(&paths.worker_directory)
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .output()
@@ -41,6 +42,7 @@ pub(crate) fn run_uv_sync_extra(paths: &WorkerRuntimePaths, extra: &str) -> Resu
     let python_executable = resolve_worker_python_executable(paths)?;
     let mut command = Command::new(resolve_uv_command(paths));
     hide_console_window(&mut command);
+    apply_worker_current_dir(&mut command, paths)?;
     apply_worker_path_env(&mut command, paths)?;
     let output = command
         .arg("sync")
@@ -50,7 +52,6 @@ pub(crate) fn run_uv_sync_extra(paths: &WorkerRuntimePaths, extra: &str) -> Resu
         .arg("--no-dev")
         .arg("--extra")
         .arg(extra)
-        .current_dir(&paths.worker_directory)
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .output()
@@ -104,12 +105,12 @@ pub(crate) fn run_worker_command_with_paths(
         .arg("python")
         .arg("-m")
         .arg("app.main")
-        .current_dir(&paths.worker_directory)
         .env("PYTHONPATH", &paths.worker_directory)
         .env("PYANNOTE_METRICS_ENABLED", "0")
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
+    apply_worker_current_dir(&mut command_runner, paths)?;
     apply_worker_path_env(&mut command_runner, paths)?;
 
     let mut process = command_runner
@@ -181,6 +182,21 @@ pub(crate) fn apply_worker_path_env(
         .map_err(|error| format!("Unable to prepare worker PATH: {error}"))?;
 
     command.env("PATH", joined_path);
+
+    Ok(())
+}
+
+pub(crate) fn apply_worker_current_dir(
+    command: &mut Command,
+    paths: &WorkerRuntimePaths,
+) -> Result<(), String> {
+    fs::create_dir_all(&paths.worker_directory).map_err(|error| {
+        format!(
+            "Unable to create worker command directory {}: {error}",
+            paths.worker_directory.display()
+        )
+    })?;
+    command.current_dir(&paths.worker_directory);
 
     Ok(())
 }
