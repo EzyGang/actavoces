@@ -5,17 +5,14 @@ import { getAppSnapshot, stopRecording } from '../../../services/desktop/app.ser
 import { appErrorSignal } from '../../../stores/app.store';
 import type { AppSettings, AppSnapshot } from '../../../types/desktop';
 
-const initialDisplayMode = (): AppSettings['overlayDisplayMode'] => {
-  if (typeof window !== 'undefined' && window.innerWidth <= 80) {
-    return 'minimal';
-  }
-
-  return 'full';
-};
+interface RecordingOverlaySyncPayload {
+  visible: boolean;
+  displayMode: AppSettings['overlayDisplayMode'];
+}
 
 export const useRecordingOverlay = () => {
   const stopping = useSignal(false);
-  const displayMode = useSignal<AppSettings['overlayDisplayMode']>(initialDisplayMode());
+  const displayMode = useSignal<AppSettings['overlayDisplayMode']>('full');
 
   const handleStopRecording = async () => {
     stopping.value = true;
@@ -43,9 +40,16 @@ export const useRecordingOverlay = () => {
     const snapshotListener = listen<AppSnapshot>('app-snapshot-updated', (event) => {
       displayMode.value = event.payload.settings.overlayDisplayMode;
     });
+    const overlaySyncListener = listen<RecordingOverlaySyncPayload>(
+      'recording-overlay-sync',
+      (event) => {
+        displayMode.value = event.payload.visible ? event.payload.displayMode : 'none';
+      }
+    );
 
     return () => {
       void snapshotListener.then((unlisten) => unlisten());
+      void overlaySyncListener.then((unlisten) => unlisten());
     };
   }, []);
 

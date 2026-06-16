@@ -9,7 +9,8 @@ interface RecordingOverlayViewProps {
 
 export const RecordingOverlayView = ({ overlay }: RecordingOverlayViewProps): JSX.Element => (
   <main class='min-h-screen bg-bg-page text-text-primary'>
-    {overlay.status.displayMode.value === 'minimal' ? (
+    {overlay.status.displayMode.value === 'none' ? null : overlay.status.displayMode.value ===
+      'minimal' ? (
       <div class='min-h-screen flex items-center justify-center h-full p-3'>
         <StatusBadge
           label={overlay.status.stopping.value ? 'S' : 'R'}
@@ -17,7 +18,7 @@ export const RecordingOverlayView = ({ overlay }: RecordingOverlayViewProps): JS
         />
       </div>
     ) : (
-      <section class='grid h-screen grid-cols-[minmax(0,1fr)_auto] items-center gap-4 overflow-hidden border border-error-border bg-bg-card px-4'>
+      <section class='grid h-screen grid-cols-[minmax(0,1fr)_auto] items-center gap-4 overflow-hidden border border-error-border bg-bg-card px-4 max-[120px]:hidden'>
         <div class='flex min-w-0 items-center gap-3'>
           <span class='h-3 w-3 shrink-0 rounded-full bg-error' />
           <div class='flex min-w-0 flex-col gap-1.5'>

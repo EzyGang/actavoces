@@ -57,7 +57,11 @@ export const useApp = () => {
     setError,
     setSnapshot
   });
-  const updates = useUpdates({ setError });
+  const updates = useUpdates({
+    loading,
+    setError,
+    setupReady: runtime.setupReady
+  });
   const navigation = useAppNavigation({
     hasUnsavedSettings: settings.hasUnsavedSettings,
     resetSettingsDraft
@@ -98,6 +102,7 @@ export const useApp = () => {
       sortformerProgress: runtime.sortformerProgress,
       updateStatus: updates.updateStatus,
       updateAvailable: updates.updateAvailable,
+      updateNoticeVisible: updates.updateNoticeVisible,
       appVersion
     },
     status: {

@@ -18,15 +18,18 @@ use super::speaker_labels::rewrite_speaker_label;
 use super::tray::sync_tray_recording_icon;
 
 #[tauri::command]
-pub fn start_recording(
-    app: tauri::AppHandle,
-    state: tauri::State<'_, ActavocesState>,
-) -> Result<AppSnapshot, String> {
-    let mut repository = state.repository()?;
-    let mut capture_backend = state.capture_backend.lock().map_err(lock_error)?;
+pub async fn start_recording(app: tauri::AppHandle) -> Result<AppSnapshot, String> {
+    let app_for_start = app.clone();
+    let snapshot = tauri::async_runtime::spawn_blocking(move || -> Result<AppSnapshot, String> {
+        let state = app_for_start.state::<ActavocesState>();
+        let mut repository = state.repository()?;
+        let mut capture_backend = state.capture_backend.lock().map_err(lock_error)?;
 
-    start_recording_session(&mut repository, &mut *capture_backend)?;
-    let snapshot = repository.snapshot().map_err(|error| error.to_string())?;
+        start_recording_session(&mut repository, &mut *capture_backend)?;
+        repository.snapshot().map_err(|error| error.to_string())
+    })
+    .await
+    .map_err(|error| format!("Recording start task failed: {error}"))??;
 
     sync_recording_overlay(
         &app,

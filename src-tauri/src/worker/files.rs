@@ -128,7 +128,11 @@ pub(crate) fn worker_virtualenv_is_scoped(paths: &WorkerRuntimePaths) -> bool {
         return false;
     }
 
-    let expected_root = paths.worker_directory.join(".uv").join("python");
+    if path_is_reparse_point(&home_path) {
+        return false;
+    }
+
+    let expected_root = paths.uv_state_directory.join("python");
 
     match (
         normalize_existing_path(&home_path),
@@ -169,6 +173,22 @@ pub(crate) fn copy_directory(source: &Path, target: &Path) -> Result<(), String>
 fn normalize_existing_path(path: &Path) -> Result<PathBuf, String> {
     fs::canonicalize(path)
         .map_err(|error| format!("Unable to resolve path {}: {error}", path.display()))
+}
+
+#[cfg(windows)]
+fn path_is_reparse_point(path: &Path) -> bool {
+    use std::os::windows::fs::MetadataExt;
+
+    const FILE_ATTRIBUTE_REPARSE_POINT: u32 = 0x0400;
+
+    fs::symlink_metadata(path)
+        .map(|metadata| metadata.file_attributes() & FILE_ATTRIBUTE_REPARSE_POINT != 0)
+        .unwrap_or(false)
+}
+
+#[cfg(not(windows))]
+fn path_is_reparse_point(_path: &Path) -> bool {
+    false
 }
 
 fn pyvenv_home(content: &str) -> Option<&str> {

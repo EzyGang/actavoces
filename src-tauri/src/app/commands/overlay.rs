@@ -1,6 +1,14 @@
-use tauri::{LogicalSize, Manager, PhysicalPosition, PhysicalSize, Size, WebviewUrl};
+use serde::Serialize;
+use tauri::{Emitter, LogicalSize, Manager, PhysicalPosition, PhysicalSize, Size, WebviewUrl};
 
 use crate::domain::types::{OverlayDisplayMode, OverlayPosition};
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct RecordingOverlaySyncPayload {
+    visible: bool,
+    display_mode: OverlayDisplayMode,
+}
 
 pub fn create_recording_overlay(app: &tauri::App) -> tauri::Result<()> {
     tauri::WebviewWindowBuilder::new(
@@ -30,6 +38,16 @@ pub fn sync_recording_overlay(
     let Some(overlay) = app.get_webview_window("recording-overlay") else {
         return Ok(());
     };
+
+    overlay
+        .emit(
+            "recording-overlay-sync",
+            RecordingOverlaySyncPayload {
+                visible,
+                display_mode,
+            },
+        )
+        .map_err(|error| error.to_string())?;
 
     if !visible || display_mode == OverlayDisplayMode::None {
         return overlay.hide().map_err(|error| error.to_string());
