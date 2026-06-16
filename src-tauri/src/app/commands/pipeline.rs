@@ -418,6 +418,14 @@ fn apply_complete_event(
                 event,
                 "transcriptPath",
             )?;
+            upsert_ready_artifact_from_event(
+                repository,
+                &recording.id,
+                ArtifactKind::RawWords,
+                "Raw words",
+                event,
+                "wordsPath",
+            )?;
         }
         PipelineStageId::Diarization => {
             upsert_ready_artifact_from_event(

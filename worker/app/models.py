@@ -1,18 +1,20 @@
 import ctypes
 import sys
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 import ctranslate2
 
 from app.dtos import (
     FailedResult,
     FasterWhisperModelFactory,
+    FasterWhisperWord,
     ModelInstallCompleteResult,
     ModelInstallPayload,
     NeedsSetupResult,
     Segment,
     TranscriptionCompleteResult,
+    TranscriptionWord,
 )
 
 
@@ -55,7 +57,7 @@ def run_faster_whisper(
         return NeedsSetupResult(payload={'dependency': 'faster-whisper', 'model': model_name})
 
     try:
-        segments, detected_language = transcribe_with_model(
+        segments, words, detected_language = transcribe_with_model(
             model_class=model_class,
             model_name=model_name,
             audio_path=audio_path,
@@ -65,11 +67,11 @@ def run_faster_whisper(
             transcription_profile=transcription_profile,
         )
 
-        return TranscriptionCompleteResult(segments=segments, language=detected_language)
+        return TranscriptionCompleteResult(segments=segments, words=words, language=detected_language)
     except Exception as error:
         if compute_type != 'cpu' and cuda_library_error(error=error):
             try:
-                segments, detected_language = transcribe_with_model(
+                segments, words, detected_language = transcribe_with_model(
                     model_class=model_class,
                     model_name=model_name,
                     audio_path=audio_path,
@@ -81,6 +83,7 @@ def run_faster_whisper(
 
                 return TranscriptionCompleteResult(
                     segments=segments,
+                    words=words,
                     language=detected_language,
                     warning='CUDA libraries are unavailable; CPU fallback was used.',
                 )
@@ -200,6 +203,7 @@ def transcribe_kwargs(language: str | None, transcription_profile: str) -> dict[
     kwargs: dict[str, Any] = {
         'vad_filter': True,
         'vad_parameters': vad_parameters(transcription_profile=transcription_profile),
+        'word_timestamps': True,
     }
 
     if language and language != 'auto':
@@ -223,18 +227,31 @@ def transcribe_with_model(
     compute_type: str,
     model_storage_directory: Path | None,
     transcription_profile: str,
-) -> tuple[list[Segment], str | None]:
+) -> tuple[list[Segment], list[TranscriptionWord], str | None]:
     model = model_class(model_name, **model_kwargs(compute_type=compute_type, storage_path=model_storage_directory))
     raw_segments, info = model.transcribe(
         str(audio_path),
         **transcribe_kwargs(language=language, transcription_profile=transcription_profile),
     )
-    segments = [
-        Segment(id=index, start=segment.start, end=segment.end, text=segment.text)
-        for index, segment in enumerate(raw_segments)
-    ]
+    segments: list[Segment] = []
+    words: list[TranscriptionWord] = []
 
-    return segments, info.language
+    for index, segment in enumerate(raw_segments):
+        segments.append(Segment(id=index, start=segment.start, end=segment.end, text=segment.text))
+        segment_words = cast(list[FasterWhisperWord] | None, getattr(segment, 'words', None))
+
+        for word in segment_words or []:
+            words.append(
+                TranscriptionWord(
+                    segment_id=index,
+                    text=word.word,
+                    start=word.start,
+                    end=word.end,
+                    probability=getattr(word, 'probability', None),
+                )
+            )
+
+    return segments, words, info.language
 
 
 def cuda_library_error(error: Exception) -> bool:

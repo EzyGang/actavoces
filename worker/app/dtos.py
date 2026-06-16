@@ -10,6 +10,14 @@ class FasterWhisperSegment(Protocol):
     start: float
     end: float
     text: str
+    words: list[FasterWhisperWord] | None
+
+
+class FasterWhisperWord(Protocol):
+    start: float
+    end: float
+    word: str
+    probability: float | None
 
 
 class FasterWhisperInfo(Protocol):
@@ -49,6 +57,14 @@ class Segment(AppBaseModel):
     text: str = ''
 
 
+class TranscriptionWord(AppBaseModel):
+    segment_id: int
+    text: str = ''
+    start: float = 0
+    end: float = 0
+    probability: float | None = None
+
+
 class SpeakerTurn(AppBaseModel):
     speaker: str = 'Speaker'
     start: float = 0
@@ -83,6 +99,7 @@ class ModelInstallCompleteResult(AppBaseModel):
 class TranscriptionCompleteResult(AppBaseModel):
     status: Literal['complete'] = 'complete'
     segments: list[Segment]
+    words: list[TranscriptionWord] = Field(default_factory=list)
     language: str | None = None
     warning: str | None = None
 
@@ -180,6 +197,7 @@ class ModelInstallPayload(AppBaseModel):
 
 class TranscribeCompletePayload(AppBaseModel):
     segments_path: str
+    words_path: str
     transcript_path: str
     warning: str | None = None
 

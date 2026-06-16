@@ -96,6 +96,12 @@ pub(crate) fn capture_artifacts_with_readiness(
             false,
         ),
         artifact(
+            ArtifactKind::RawWords,
+            "Raw words",
+            raw_words_path(path),
+            false,
+        ),
+        artifact(
             ArtifactKind::Diarization,
             "Diarization turns",
             diarization_path(path),
@@ -185,6 +191,10 @@ pub(crate) fn raw_transcript_path(artifact_directory: &Path) -> PathBuf {
 
 pub(crate) fn raw_segments_path(artifact_directory: &Path) -> PathBuf {
     meta_directory(artifact_directory).join("raw-segments.json")
+}
+
+pub(crate) fn raw_words_path(artifact_directory: &Path) -> PathBuf {
+    meta_directory(artifact_directory).join("raw-words.json")
 }
 
 pub(crate) fn diarization_path(artifact_directory: &Path) -> PathBuf {

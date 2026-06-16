@@ -16,6 +16,7 @@ export type ArtifactKind =
   | 'systemAudio'
   | 'rawTranscript'
   | 'segments'
+  | 'rawWords'
   | 'diarization'
   | 'diarizedTranscript'
   | 'summary'

@@ -49,6 +49,7 @@ export const artifactItems = [
   'meta/recording.wav',
   'meta/microphone.wav',
   'meta/raw-segments.json',
+  'meta/raw-words.json',
   'meta/diarization.json',
   'meta/summary.md',
   'meta/metadata.json',

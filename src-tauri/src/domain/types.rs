@@ -192,6 +192,7 @@ pub enum ArtifactKind {
     SystemAudio,
     RawTranscript,
     Segments,
+    RawWords,
     Diarization,
     DiarizedTranscript,
     Summary,

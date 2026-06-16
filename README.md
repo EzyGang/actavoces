@@ -127,6 +127,7 @@ meta/
   recording.wav
   microphone.wav
   raw-segments.json
+  raw-words.json
   diarization.json
   summary.md
   metadata.json
