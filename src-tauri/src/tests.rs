@@ -28,7 +28,8 @@ use crate::utils::default_records_root;
 use crate::worker::runtime::{
     apply_worker_current_dir, apply_worker_path_env, extract_model_inventory,
     find_worker_python_executable, hash_worker_source_directory, parse_worker_events,
-    worker_runtime_paths_from_local_data_directory, WorkerRuntimePaths, WorkerRuntimeState,
+    resolve_worker_virtualenv_python_executable, worker_runtime_paths_from_local_data_directory,
+    WorkerRuntimePaths, WorkerRuntimeState,
 };
 
 static TEST_PATH_COUNTER: AtomicU64 = AtomicU64::new(0);
@@ -1230,6 +1231,28 @@ fn worker_python_resolution_uses_concrete_patch_installation() {
     assert_ne!(resolved, older_executable);
 }
 
+#[test]
+fn worker_virtualenv_python_resolution_uses_synced_environment() {
+    let root = test_artifact_path("worker-venv-python-resolution");
+    let paths = WorkerRuntimePaths {
+        uv_executable: root.join("runtime").join("uv.exe"),
+        worker_directory: root.join("worker"),
+        uv_state_directory: root.join("uv"),
+        ffmpeg_directory: None,
+    };
+    let executable =
+        create_test_virtualenv_python_executable(&paths.worker_directory.join(".venv"));
+
+    let resolved = resolve_worker_virtualenv_python_executable(&paths).unwrap();
+
+    assert_eq!(
+        resolved,
+        fs::canonicalize(executable.parent().unwrap())
+            .unwrap()
+            .join(executable.file_name().unwrap())
+    );
+}
+
 fn settings_update(output_directory: String) -> AppSettingsUpdate {
     AppSettingsUpdate {
         output_directory,
@@ -1283,10 +1306,25 @@ fn create_test_python_executable(directory: &Path) -> std::path::PathBuf {
     executable
 }
 
+fn create_test_virtualenv_python_executable(directory: &Path) -> std::path::PathBuf {
+    let executable = directory.join(test_virtualenv_python_executable_relative_path());
+    fs::create_dir_all(executable.parent().unwrap()).unwrap();
+    fs::write(&executable, "python").unwrap();
+
+    executable
+}
+
 fn test_python_executable_relative_path() -> std::path::PathBuf {
     match cfg!(windows) {
         true => std::path::PathBuf::from("python.exe"),
         false => std::path::PathBuf::from("bin").join("python3.14"),
+    }
+}
+
+fn test_virtualenv_python_executable_relative_path() -> std::path::PathBuf {
+    match cfg!(windows) {
+        true => std::path::PathBuf::from("Scripts").join("python.exe"),
+        false => std::path::PathBuf::from("bin").join("python"),
     }
 }
 

@@ -10,7 +10,9 @@ use crate::utils::unix_timestamp;
 use crate::worker::events::parse_worker_events;
 use crate::worker::paths::{resolve_worker_directory, WorkerRuntimePaths};
 use crate::worker::process::hide_console_window;
-use crate::worker::python::resolve_worker_python_executable;
+use crate::worker::python::{
+    resolve_worker_python_executable, resolve_worker_virtualenv_python_executable,
+};
 
 pub(crate) static WORKER_RUNTIME_PATHS: OnceLock<WorkerRuntimePaths> = OnceLock::new();
 
@@ -90,19 +92,15 @@ pub(crate) fn run_worker_command_with_paths(
     command_name: &str,
     payload: serde_json::Value,
 ) -> Result<Vec<WorkerEvent>, String> {
-    let python_executable = resolve_worker_python_executable(paths)?;
+    let python_executable = resolve_worker_virtualenv_python_executable(paths)?;
     let command = serde_json::json!({
         "id": format!("rust-{}", unix_timestamp()),
         "name": command_name,
         "payload": payload,
     });
-    let mut command_runner = Command::new(resolve_uv_command(paths));
+    let mut command_runner = Command::new(python_executable);
     hide_console_window(&mut command_runner);
     command_runner
-        .arg("run")
-        .arg("--python")
-        .arg(python_executable)
-        .arg("python")
         .arg("-m")
         .arg("app.main")
         .env("PYTHONPATH", &paths.worker_directory)
