@@ -26,7 +26,9 @@ pub(crate) use crate::worker::paths::worker_runtime_paths_from_local_data_direct
 pub(crate) use crate::worker::paths::WorkerRuntimePaths;
 pub(crate) use crate::worker::progress::persist_worker_setup_progress;
 #[cfg(test)]
-pub(crate) use crate::worker::python::find_worker_python_executable;
+pub(crate) use crate::worker::python::{
+    find_worker_python_executable, resolve_worker_virtualenv_python_executable,
+};
 #[cfg(test)]
 pub(crate) use crate::worker::source_hash::hash_worker_source_directory;
 

@@ -89,6 +89,24 @@ pub(crate) fn find_worker_python_executable(
     Ok(candidates.into_iter().map(|(_, path)| path).next())
 }
 
+pub(crate) fn resolve_worker_virtualenv_python_executable(
+    paths: &WorkerRuntimePaths,
+) -> Result<PathBuf, String> {
+    let executable = paths
+        .worker_directory
+        .join(".venv")
+        .join(worker_virtualenv_python_relative_path());
+
+    if executable.exists() {
+        return canonicalize_python_executable(&executable);
+    }
+
+    Err(format!(
+        "Worker virtualenv Python was not found at {}",
+        executable.display()
+    ))
+}
+
 fn install_worker_python(paths: &WorkerRuntimePaths) -> Result<(), String> {
     let mut command = Command::new(resolve_uv_command(paths));
     hide_console_window(&mut command);
@@ -134,6 +152,13 @@ fn worker_python_executable_relative_path() -> PathBuf {
     match cfg!(windows) {
         true => PathBuf::from("python.exe"),
         false => PathBuf::from("bin").join(format!("python{WORKER_PYTHON_VERSION}")),
+    }
+}
+
+fn worker_virtualenv_python_relative_path() -> PathBuf {
+    match cfg!(windows) {
+        true => PathBuf::from("Scripts").join("python.exe"),
+        false => PathBuf::from("bin").join("python"),
     }
 }
 
