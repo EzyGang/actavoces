@@ -1,7 +1,6 @@
 use std::env;
-use std::fs;
 use std::io::Write;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::process::{Command, Stdio};
 use std::sync::OnceLock;
 
@@ -10,10 +9,9 @@ use crate::utils::unix_timestamp;
 use crate::worker::events::parse_worker_events;
 use crate::worker::paths::{resolve_worker_directory, WorkerRuntimePaths};
 use crate::worker::process::hide_console_window;
+use crate::worker::python::resolve_worker_python_executable;
 
 pub(crate) static WORKER_RUNTIME_PATHS: OnceLock<WorkerRuntimePaths> = OnceLock::new();
-
-const WORKER_PYTHON_VERSION: &str = "3.14";
 
 pub(crate) fn run_uv_sync(paths: &WorkerRuntimePaths) -> Result<(), String> {
     let python_executable = resolve_worker_python_executable(paths)?;
@@ -160,6 +158,7 @@ pub(crate) fn apply_worker_path_env(
         )
         .env("UV_PYTHON_NO_REGISTRY", "1")
         .env("UV_PYTHON_INSTALL_REGISTRY", "0")
+        .env("UV_LINK_MODE", "copy")
         .env("UV_MANAGED_PYTHON", "1")
         .env(
             "UV_PROJECT_ENVIRONMENT",
@@ -178,77 +177,6 @@ pub(crate) fn apply_worker_path_env(
     command.env("PATH", joined_path);
 
     Ok(())
-}
-
-pub(crate) fn resolve_worker_python_executable(
-    paths: &WorkerRuntimePaths,
-) -> Result<PathBuf, String> {
-    install_worker_python(paths)?;
-
-    let mut command = Command::new(resolve_uv_command(paths));
-    hide_console_window(&mut command);
-    apply_worker_path_env(&mut command, paths)?;
-    let output = command
-        .arg("python")
-        .arg("find")
-        .arg(WORKER_PYTHON_VERSION)
-        .current_dir(&paths.worker_directory)
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .output()
-        .map_err(|error| format!("Unable to find worker Python: {error}"))?;
-
-    if !output.status.success() {
-        return Err(worker_command_error(
-            "Unable to find worker Python",
-            &output,
-        ));
-    }
-
-    canonicalize_python_executable(Path::new(String::from_utf8_lossy(&output.stdout).trim()))
-}
-
-fn install_worker_python(paths: &WorkerRuntimePaths) -> Result<(), String> {
-    let mut command = Command::new(resolve_uv_command(paths));
-    hide_console_window(&mut command);
-    apply_worker_path_env(&mut command, paths)?;
-    let output = command
-        .arg("python")
-        .arg("install")
-        .arg(WORKER_PYTHON_VERSION)
-        .arg("--no-registry")
-        .arg("--no-bin")
-        .current_dir(&paths.worker_directory)
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .output()
-        .map_err(|error| format!("Unable to install worker Python: {error}"))?;
-
-    if output.status.success() {
-        return Ok(());
-    }
-
-    Err(worker_command_error(
-        "Unable to install worker Python",
-        &output,
-    ))
-}
-
-fn canonicalize_python_executable(executable: &Path) -> Result<PathBuf, String> {
-    let parent = executable
-        .parent()
-        .ok_or_else(|| "Worker Python executable parent is unavailable".to_owned())?;
-    let file_name = executable
-        .file_name()
-        .ok_or_else(|| "Worker Python executable name is unavailable".to_owned())?;
-    let canonical_parent = fs::canonicalize(parent).map_err(|error| {
-        format!(
-            "Unable to resolve worker Python directory {}: {error}",
-            parent.display()
-        )
-    })?;
-
-    Ok(canonical_parent.join(file_name))
 }
 
 pub(crate) fn worker_command_error(context: &str, output: &std::process::Output) -> String {

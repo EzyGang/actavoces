@@ -19,9 +19,7 @@ pub(crate) fn worker_runtime_paths(app: &tauri::AppHandle) -> Result<WorkerRunti
         .path()
         .app_data_dir()
         .map_err(|error| format!("Unable to resolve app data directory: {error}"))?;
-    let worker_directory = app_data_directory
-        .join("worker")
-        .join(worker_runtime_version());
+    let worker_directory = app_data_directory.join("worker");
     let local_app_data_directory = app
         .path()
         .app_local_data_dir()
@@ -30,7 +28,7 @@ pub(crate) fn worker_runtime_paths(app: &tauri::AppHandle) -> Result<WorkerRunti
         .join("runtime")
         .join("uv")
         .join(uv_executable_name());
-    let uv_state_directory = local_app_data_directory.join("uv-state");
+    let uv_state_directory = local_app_data_directory.join("uv");
     let ffmpeg_directory = resolve_ffmpeg_resource_directory(app).ok();
 
     Ok(WorkerRuntimePaths {
@@ -117,10 +115,6 @@ pub(crate) fn ffmpeg_platform_name() -> &'static str {
         ("linux", "aarch64") => "aarch64-unknown-linux-gnu",
         _ => "unknown",
     }
-}
-
-pub(crate) fn worker_runtime_version() -> String {
-    env!("CARGO_PKG_VERSION").to_owned()
 }
 
 pub(crate) fn uv_executable_name() -> &'static str {

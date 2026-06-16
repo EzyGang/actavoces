@@ -1,40 +1,32 @@
 use crate::domain::types::*;
-
-#[allow(unused_imports)]
-pub(crate) use crate::worker::command::{
-    apply_worker_path_env, resolve_uv_command, run_uv_sync, run_uv_sync_extra, run_worker_command,
-    run_worker_command_with_paths, worker_command_error, WORKER_RUNTIME_PATHS,
+use crate::worker::command::{
+    run_uv_sync, run_uv_sync_extra, run_worker_command_with_paths, WORKER_RUNTIME_PATHS,
 };
-#[allow(unused_imports)]
+use crate::worker::files::{
+    prepare_uv_executable, prepare_worker_directory, prepare_worker_virtualenv,
+};
+use crate::worker::manifest::{worker_bootstrap_is_ready, write_worker_bootstrap_manifest};
+use crate::worker::paths::worker_runtime_paths;
+use crate::worker::progress::{
+    emit_worker_setup_progress, refresh_runtime_capabilities_with_paths,
+};
+use crate::worker::source_hash::worker_source_hash;
+
+#[cfg(test)]
+pub(crate) use crate::worker::command::apply_worker_path_env;
+pub(crate) use crate::worker::command::run_worker_command;
+#[cfg(test)]
+pub(crate) use crate::worker::events::parse_worker_events;
 pub(crate) use crate::worker::events::{
     diarization_setup_message, extract_model_inventory, extract_runtime_capabilities,
-    model_install_message, parse_worker_events,
+    model_install_message,
 };
-#[allow(unused_imports)]
-pub(crate) use crate::worker::files::{
-    copy_directory, copy_file, prepare_uv_executable, prepare_worker_directory,
-    prepare_worker_virtualenv, worker_virtualenv_is_scoped,
-};
-#[allow(unused_imports)]
-pub(crate) use crate::worker::manifest::{
-    read_worker_bootstrap_manifest, worker_bootstrap_is_ready, write_worker_bootstrap_manifest,
-    WorkerBootstrapManifest,
-};
-#[allow(unused_imports)]
-pub(crate) use crate::worker::paths::{
-    ffmpeg_platform_name, resolve_ffmpeg_resource_directory, resolve_uv_resource_executable,
-    resolve_worker_directory, resolve_worker_resource_directory, uv_executable_name,
-    uv_runtime_is_available, worker_runtime_paths, worker_runtime_version, WorkerRuntimePaths,
-};
-#[allow(unused_imports)]
-pub(crate) use crate::worker::progress::{
-    emit_worker_setup_progress, persist_worker_setup_progress,
-    refresh_runtime_capabilities_with_paths,
-};
-#[allow(unused_imports)]
-pub(crate) use crate::worker::source_hash::{
-    hash_directory, hash_file, hash_worker_source_directory, worker_source_hash,
-};
+pub(crate) use crate::worker::paths::WorkerRuntimePaths;
+pub(crate) use crate::worker::progress::persist_worker_setup_progress;
+#[cfg(test)]
+pub(crate) use crate::worker::python::find_worker_python_executable;
+#[cfg(test)]
+pub(crate) use crate::worker::source_hash::hash_worker_source_directory;
 
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub(crate) struct WorkerRuntimeState {
