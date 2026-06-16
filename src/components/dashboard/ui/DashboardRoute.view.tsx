@@ -38,6 +38,35 @@ export const DashboardRoute = ({ app }: DashboardRouteProps): JSX.Element => (
       </article>
     </section>
 
+    {app.data.updateNoticeVisible.value ? (
+      <section class='flex flex-col gap-4 border border-border-base bg-bg-card p-5'>
+        <div class='flex items-center justify-between gap-4'>
+          <div class='flex flex-col gap-1'>
+            <h2 class='font-semibold text-xl'>Updates</h2>
+            <p class='text-sm text-text-muted'>{app.data.updateStatus.value}</p>
+          </div>
+          <div class='flex gap-2'>
+            <Button
+              class='h-9 px-3'
+              disabled={app.status.updateChecking.value || app.status.updateInstalling.value}
+              onClick={app.actions.checkForUpdates}
+              variant='ghost'
+            >
+              Check
+            </Button>
+            <Button
+              class='h-9 px-3'
+              disabled={app.status.updateInstalling.value || !app.data.updateAvailable.value}
+              onClick={app.actions.installUpdate}
+              variant='secondary'
+            >
+              Install
+            </Button>
+          </div>
+        </div>
+      </section>
+    ) : null}
+
     {app.data.snapshot.value.settings.diarizationBackend === 'pyannote' &&
     (app.data.snapshot.value.settings.diarizationSetupSkipped ||
       !app.data.snapshot.value.settings.diarizationRuntimeReady) ? (

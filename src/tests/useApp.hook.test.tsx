@@ -1,4 +1,5 @@
 import { open } from '@tauri-apps/plugin-dialog';
+import { check } from '@tauri-apps/plugin-updater';
 import { act, renderHook, waitFor } from '@testing-library/preact';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { useApp } from '../components/app-shell/hooks/useApp.hook';
@@ -173,7 +174,10 @@ describe('useApp hook', () => {
     vi.mocked(renameRecordingTitle).mockReset();
     vi.mocked(renameSpeakerLabel).mockReset();
     vi.mocked(bootstrapWorkerRuntime).mockReset();
+    vi.mocked(bootstrapWorkerRuntime).mockResolvedValue(makeSnapshot());
     vi.mocked(updateAppSettings).mockReset();
+    vi.mocked(check).mockReset();
+    vi.mocked(check).mockResolvedValue(null);
     vi.mocked(open).mockReset();
     resetSignals();
   });
@@ -277,6 +281,92 @@ describe('useApp hook', () => {
     await waitFor(() => {
       expect(bootstrapWorkerRuntime).toHaveBeenCalled();
     });
+  });
+
+  it('checks for updates once after the main app is ready', async () => {
+    Object.defineProperty(window, '__TAURI_INTERNALS__', {
+      configurable: true,
+      value: {}
+    });
+    appSnapshotSignal.value = makeSnapshot({
+      desktop: {
+        ...makeSnapshot().desktop,
+        workerSetupStatus: 'missing',
+        workerSetupStep: '',
+        workerSetupError: null
+      },
+      settings: {
+        ...baseSettings,
+        databasePath: ''
+      }
+    });
+
+    vi.mocked(getAppSnapshot).mockResolvedValue(makeSnapshot());
+
+    renderHook(() => useApp());
+
+    expect(check).not.toHaveBeenCalled();
+
+    await waitFor(() => {
+      expect(check).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  it('hides the dashboard update notice after a successful current-version check', async () => {
+    Object.defineProperty(window, '__TAURI_INTERNALS__', {
+      configurable: true,
+      value: {}
+    });
+    vi.mocked(getAppSnapshot).mockResolvedValue(makeSnapshot());
+    vi.mocked(check).mockResolvedValue(null);
+
+    const { result } = renderHook(() => useApp());
+
+    expect(result.current.data.updateNoticeVisible.value).toBe(true);
+
+    await waitFor(() => {
+      expect(result.current.data.updateNoticeVisible.value).toBe(false);
+    });
+    expect(result.current.data.updateStatus.value).toBe('ActaVoces is up to date.');
+  });
+
+  it('keeps the dashboard update notice visible when an update is available', async () => {
+    Object.defineProperty(window, '__TAURI_INTERNALS__', {
+      configurable: true,
+      value: {}
+    });
+    const update = {
+      version: '0.2.0',
+      downloadAndInstall: vi.fn()
+    };
+
+    vi.mocked(getAppSnapshot).mockResolvedValue(makeSnapshot());
+    vi.mocked(check).mockResolvedValue(update as unknown as Awaited<ReturnType<typeof check>>);
+
+    const { result } = renderHook(() => useApp());
+
+    await waitFor(() => {
+      expect(result.current.data.updateAvailable.value).toBe(update);
+    });
+    expect(result.current.data.updateNoticeVisible.value).toBe(true);
+    expect(result.current.data.updateStatus.value).toBe('Version 0.2.0 is available.');
+  });
+
+  it('keeps the dashboard update notice visible when update checks fail', async () => {
+    Object.defineProperty(window, '__TAURI_INTERNALS__', {
+      configurable: true,
+      value: {}
+    });
+
+    vi.mocked(getAppSnapshot).mockResolvedValue(makeSnapshot());
+    vi.mocked(check).mockRejectedValue(new Error('update server unavailable'));
+
+    const { result } = renderHook(() => useApp());
+
+    await waitFor(() => {
+      expect(result.current.data.updateStatus.value).toBe('update server unavailable');
+    });
+    expect(result.current.data.updateNoticeVisible.value).toBe(true);
   });
 
   it('starts recording and applies the returned snapshot', async () => {

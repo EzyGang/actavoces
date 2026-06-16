@@ -40,33 +40,6 @@ export const SettingsRoute = ({ app }: SettingsRouteProps): JSX.Element => (
       </div>
     ) : null}
 
-    <section class='flex flex-col gap-4 border border-border-base bg-bg-card p-5'>
-      <div class='flex items-center justify-between gap-4'>
-        <div class='flex flex-col gap-1'>
-          <h2 class='font-semibold text-xl'>Updates</h2>
-          <p class='text-sm text-text-muted'>{app.data.updateStatus.value}</p>
-        </div>
-        <div class='flex gap-2'>
-          <Button
-            class='h-9 px-3'
-            disabled={app.status.updateChecking.value || app.status.updateInstalling.value}
-            onClick={app.actions.checkForUpdates}
-            variant='ghost'
-          >
-            Check
-          </Button>
-          <Button
-            class='h-9 px-3'
-            disabled={app.status.updateInstalling.value || !app.data.updateAvailable.value}
-            onClick={app.actions.installUpdate}
-            variant='secondary'
-          >
-            Install
-          </Button>
-        </div>
-      </div>
-    </section>
-
     <section class='grid gap-4 xl:grid-cols-2'>
       <SettingsGeneralCapturePanel app={app} />
       <SettingsTranscriptionSpeakersPanel app={app} />
