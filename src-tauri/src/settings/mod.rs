@@ -29,6 +29,7 @@ pub(crate) fn default_settings(database_path: &Path) -> AppSettings {
             user_overridden: false,
         },
         transcription_language: "auto".to_owned(),
+        transcription_context: String::new(),
         compute_type: "auto".to_owned(),
         model_storage_directory: default_model_storage_root(),
         diarization_backend: DiarizationBackend::Sortformer,
@@ -87,6 +88,7 @@ pub(crate) fn settings_pairs(
             "transcriptionLanguage",
             input.transcription_language.clone(),
         ),
+        ("transcriptionContext", input.transcription_context.clone()),
         ("computeType", input.compute_type.clone()),
         (
             "modelStorageDirectory",

@@ -75,6 +75,7 @@ impl AppRepository {
             whisper_model,
             model_recommendation,
             transcription_language: get_value("transcriptionLanguage", "auto"),
+            transcription_context: get_value("transcriptionContext", ""),
             compute_type: get_value("computeType", "auto"),
             model_storage_directory: get_value(
                 "modelStorageDirectory",

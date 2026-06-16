@@ -74,6 +74,7 @@ const baseSettings: AppSettings = {
     userOverridden: false
   },
   transcriptionLanguage: 'auto',
+  transcriptionContext: '',
   computeType: 'auto',
   modelStorageDirectory: '/tmp/actavoces/models',
   diarizationBackend: 'sortformer',
@@ -608,6 +609,60 @@ describe('useApp hook', () => {
     );
     expect(result.current.settings.captureSelectFields[3].value).toBe('minimal');
     expect(result.current.status.hasUnsavedSettings.value).toBe(false);
+  });
+
+  it('adds and removes transcription glossary entries before saving settings', async () => {
+    vi.mocked(getAppSnapshot).mockResolvedValue(makeSnapshot());
+    vi.mocked(updateAppSettings).mockImplementation(async (input) =>
+      makeSnapshot({
+        settings: {
+          ...baseSettings,
+          transcriptionContext: input.transcriptionContext
+        }
+      })
+    );
+
+    const { result } = renderHook(() => useApp());
+
+    await waitFor(() => {
+      expect(result.current.settings.glossaryField.entries).toEqual([]);
+    });
+    await act(async () => {
+      result.current.settings.glossaryField.onInput({
+        currentTarget: {
+          value: ' ActaVoces '
+        }
+      } as Parameters<typeof result.current.settings.glossaryField.onInput>[0]);
+      result.current.settings.glossaryField.onKeyDown({
+        key: 'Enter',
+        preventDefault: vi.fn()
+      } as unknown as KeyboardEvent & { currentTarget: HTMLInputElement });
+    });
+    await act(async () => {
+      result.current.settings.glossaryField.onInput({
+        currentTarget: {
+          value: 'Kaneo'
+        }
+      } as Parameters<typeof result.current.settings.glossaryField.onInput>[0]);
+      result.current.settings.glossaryField.onAdd();
+    });
+    await act(async () => {
+      result.current.settings.glossaryField.entries[1].onRemove();
+    });
+
+    expect(result.current.settings.glossaryField.entries.map((entry) => entry.value)).toEqual([
+      'ActaVoces'
+    ]);
+
+    await act(async () => {
+      await result.current.actions.saveSettings();
+    });
+
+    expect(updateAppSettings).toHaveBeenCalledWith(
+      expect.objectContaining({
+        transcriptionContext: 'ActaVoces'
+      })
+    );
   });
 
   it('selects folder settings through the native dialog', async () => {

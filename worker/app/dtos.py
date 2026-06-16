@@ -152,6 +152,7 @@ class TranscribePayload(AppBaseModel):
     title: str = ''
     model: str = 'medium'
     language: str | None = None
+    transcription_context: str = ''
     compute_type: str = 'auto'
     model_storage_directory: Path | None = None
     transcription_profile: TranscriptionProfile = DEFAULT_TRANSCRIPTION_PROFILE

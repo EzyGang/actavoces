@@ -55,6 +55,45 @@ export const SettingsTranscriptionSpeakersPanel = ({ app }: SettingsPanelProps):
         </label>
       ))}
     </div>
+    <div class='flex flex-col gap-3 border border-border-base bg-bg-input p-3 text-sm'>
+      <label class='flex flex-col gap-2'>
+        <span class='text-text-muted'>{app.settings.glossaryField.label}</span>
+        <div class='flex gap-2'>
+          <input
+            class='h-11 min-w-0 flex-1 border border-border-base bg-bg-card px-3 font-mono text-xs outline-none focus:border-border-focus'
+            onInput={app.settings.glossaryField.onInput}
+            onKeyDown={app.settings.glossaryField.onKeyDown}
+            placeholder={app.settings.glossaryField.placeholder}
+            type='text'
+            value={app.settings.glossaryField.value}
+          />
+          <Button class='h-11 px-3' onClick={app.settings.glossaryField.onAdd} variant='secondary'>
+            Add
+          </Button>
+        </div>
+        <span class='text-text-muted text-xs'>{app.settings.glossaryField.hint}</span>
+      </label>
+      {app.settings.glossaryField.entries.length > 0 ? (
+        <div class='flex flex-wrap gap-2'>
+          {app.settings.glossaryField.entries.map((entry) => (
+            <span
+              class='inline-flex items-center gap-2 border border-border-base bg-bg-card px-2 py-1 font-mono text-xs'
+              key={entry.value}
+            >
+              {entry.value}
+              <button
+                aria-label={`Remove ${entry.value}`}
+                class='text-text-muted hover:text-text-primary'
+                onClick={entry.onRemove}
+                type='button'
+              >
+                X
+              </button>
+            </span>
+          ))}
+        </div>
+      ) : null}
+    </div>
     <details class='border border-border-base bg-bg-input p-3'>
       <summary class='cursor-pointer text-text-secondary text-sm'>Advanced speaker options</summary>
       <div class='grid gap-3 pt-3 md:grid-cols-3'>

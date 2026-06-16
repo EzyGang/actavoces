@@ -5,8 +5,8 @@ use std::process::Command;
 use std::sync::atomic::{AtomicU64, Ordering};
 
 use crate::app::commands::{
-    rename_recording_outputs, resume_pipeline_jobs, rewrite_speaker_label, start_recording_session,
-    stop_recording_session,
+    normalized_transcription_context, rename_recording_outputs, resume_pipeline_jobs,
+    rewrite_speaker_label, start_recording_session, stop_recording_session,
 };
 use crate::artifacts::{
     artifact_directory, capture_artifacts_with_readiness, diarization_path,
@@ -396,6 +396,40 @@ fn settings_update_persists_overlay_display_mode() {
     let settings = repository.settings().unwrap();
 
     assert_eq!(settings.overlay_display_mode, OverlayDisplayMode::Minimal);
+}
+
+#[test]
+fn settings_update_persists_transcription_context() {
+    let database_path = test_database_path("transcription-context-settings");
+    let mut repository = AppRepository::open(&database_path).unwrap();
+    let mut update = settings_update(
+        test_artifact_path("transcription-context-records")
+            .display()
+            .to_string(),
+    );
+
+    assert_eq!(repository.settings().unwrap().transcription_context, "");
+
+    update.transcription_context = "ActaVoces\nProject Orion".to_owned();
+
+    repository.update_settings(update).unwrap();
+
+    let settings = repository.settings().unwrap();
+
+    assert_eq!(settings.transcription_context, "ActaVoces\nProject Orion");
+}
+
+#[test]
+fn transcription_context_normalization_trims_deduplicates_and_bounds() {
+    let oversized = "a".repeat(4_100);
+    let context = normalized_transcription_context(&format!(
+        "\n ActaVoces \n\nKaneo\nActaVoces\n{oversized}"
+    ))
+    .unwrap();
+
+    assert!(context.starts_with("ActaVoces\nKaneo\n"));
+    assert_eq!(context.chars().count(), 4_000);
+    assert_eq!(normalized_transcription_context("\n  \n"), None);
 }
 
 #[test]
@@ -794,6 +828,82 @@ fn resume_pipeline_runs_worker_events_and_persists_artifacts() {
         .iter()
         .any(|artifact| artifact.kind == ArtifactKind::DiarizedTranscript && artifact.ready));
     assert!(observed_diarization_words);
+}
+
+#[test]
+fn resume_pipeline_sends_transcription_context_when_configured() {
+    let database_path = test_database_path("pipeline-transcription-context");
+    let artifact_path = test_artifact_path("pipeline-transcription-context-recording");
+    let mut repository = AppRepository::open(&database_path).unwrap();
+    let mut capture_backend = FileAudioCaptureBackend::default();
+    let recording = NewRecording {
+        id: "recording-transcription-context".to_owned(),
+        title: "Meeting".to_owned(),
+        started_at: "1".to_owned(),
+        artifact_directory: artifact_path.display().to_string(),
+    };
+
+    repository
+        .set_setting("transcriptionContext", " ActaVoces \n\nKaneo\nActaVoces")
+        .unwrap();
+    capture_backend
+        .start(&recording.id, &repository.settings().unwrap())
+        .unwrap();
+    repository.create_recording(recording.clone()).unwrap();
+    let capture_result = capture_backend.stop(&recording.id, &artifact_path).unwrap();
+    repository
+        .finish_recording(
+            &recording.id,
+            "2".to_owned(),
+            1,
+            capture_result.errors,
+            &capture_result.artifacts,
+        )
+        .unwrap();
+
+    let mut observed_transcription_context = None;
+
+    resume_pipeline_jobs(
+        &mut repository,
+        |command, payload| match command {
+            "transcribe.run" => {
+                let output_directory = std::path::PathBuf::from(
+                    payload
+                        .get("outputDirectory")
+                        .and_then(serde_json::Value::as_str)
+                        .unwrap(),
+                );
+                observed_transcription_context = payload
+                    .get("transcriptionContext")
+                    .and_then(serde_json::Value::as_str)
+                    .map(|context| context.to_owned());
+                fs::write(
+                    raw_segments_path(&output_directory),
+                    "{\"segments\":[{\"start\":0,\"end\":1,\"text\":\"Hello\"}]}\n",
+                )
+                .unwrap();
+                fs::write(raw_words_path(&output_directory), "{\"words\":[]}\n").unwrap();
+                fs::write(raw_transcript_path(&output_directory), "# Raw\n\nHello\n").unwrap();
+
+                Ok(vec![worker_event(
+                    "transcribe.complete",
+                    serde_json::json!({
+                        "segmentsPath": raw_segments_path(&output_directory),
+                        "transcriptPath": raw_transcript_path(&output_directory),
+                        "wordsPath": raw_words_path(&output_directory),
+                    }),
+                )])
+            }
+            other => Err(format!("unexpected worker command: {other}")),
+        },
+        |_| Ok(()),
+    )
+    .unwrap();
+
+    assert_eq!(
+        observed_transcription_context,
+        Some("ActaVoces\nKaneo".to_owned())
+    );
 }
 
 #[test]
@@ -1347,6 +1457,7 @@ fn settings_update(output_directory: String) -> AppSettingsUpdate {
         sample_rate: 48_000,
         whisper_model: "medium".to_owned(),
         transcription_language: "auto".to_owned(),
+        transcription_context: String::new(),
         compute_type: "auto".to_owned(),
         model_storage_directory: test_artifact_path("models").display().to_string(),
         diarization_backend: DiarizationBackend::Pyannote,

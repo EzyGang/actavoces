@@ -34,6 +34,7 @@ const baseSettings: AppSettings = {
     userOverridden: false
   },
   transcriptionLanguage: 'auto',
+  transcriptionContext: '',
   computeType: 'auto',
   modelStorageDirectory: '/tmp/actavoces/models',
   diarizationBackend: 'sortformer',

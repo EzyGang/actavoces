@@ -186,6 +186,7 @@ impl AppRepository {
         self.upsert_setting("systemAudioSource", &settings.system_audio_source)?;
         self.upsert_setting("sampleRate", &settings.sample_rate.to_string())?;
         self.upsert_setting("transcriptionLanguage", &settings.transcription_language)?;
+        self.upsert_setting("transcriptionContext", &settings.transcription_context)?;
         self.upsert_setting("computeType", &settings.compute_type)?;
         self.upsert_setting("modelStorageDirectory", &settings.model_storage_directory)?;
         self.upsert_setting(
