@@ -252,6 +252,7 @@ fn pyvenv_home(content: &str) -> Option<&str> {
     None
 }
 
+#[cfg(any(test, windows))]
 pub(crate) fn rewrite_pyvenv_home(content: &str, home: &Path) -> String {
     let replacement = format!("home = {}", home.display());
     let mut updated = Vec::new();
