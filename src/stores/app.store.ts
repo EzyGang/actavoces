@@ -69,7 +69,8 @@ const initialSnapshot: AppSnapshot = {
     summaryEnabled: false,
     providerBaseUrl: 'https://api.openai.com/v1',
     providerModel: '',
-    summaryPrompt: 'Summarize decisions, action items, risks, and unanswered questions.'
+    summaryPrompt:
+      'Summarize the conversation. Then provide bullet lists for decisions and action items.'
   }
 };
 

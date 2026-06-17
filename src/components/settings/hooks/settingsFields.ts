@@ -22,12 +22,14 @@ import { selectFields } from './settingsSelectFields';
 export const buildSettingsFields = (
   draft: Signal<AppSettingsUpdate>,
   recordingHotkey: Signal<boolean>,
-  glossaryInput: Signal<string>
+  glossaryInput: Signal<string>,
+  onDashboardGlossaryChange?: (draft: AppSettingsUpdate) => void
 ) => {
   const inputHandlers = createInputHandlers(draft);
 
   return {
     folderFields: folderFields(draft),
+    dashboardGlossaryField: glossaryField(draft, glossaryInput, onDashboardGlossaryChange),
     glossaryField: glossaryField(draft, glossaryInput),
     hotkeyField: hotkeyField(draft, recordingHotkey),
     huggingFaceTokenField: {
@@ -48,14 +50,18 @@ export const buildSettingsFields = (
 
 const glossaryField = (
   draft: Signal<AppSettingsUpdate>,
-  glossaryInput: Signal<string>
+  glossaryInput: Signal<string>,
+  onChange?: (draft: AppSettingsUpdate) => void
 ): SettingsGlossaryField => {
   const entries = glossaryEntriesFromContext(draft.value.transcriptionContext);
   const updateEntries = (nextEntries: string[]) => {
-    draft.value = {
+    const nextDraft = {
       ...draft.value,
       transcriptionContext: contextFromGlossaryEntries(normalizeGlossaryEntries(nextEntries))
     };
+
+    draft.value = nextDraft;
+    onChange?.(nextDraft);
   };
   const addEntry = () => {
     const nextEntry = glossaryInput.value.trim();

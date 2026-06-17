@@ -42,9 +42,15 @@ export const useSettings = ({ setError, setSnapshot }: UseSettingsInput) => {
     glossaryInput.value = '';
   };
 
-  const saveSettings = async () => {
-    if (validationErrors.value.length > 0) {
-      setError(validationErrors.value.join(' '));
+  const persistSettings = async (nextDraft: AppSettingsUpdate) => {
+    const errors = validateSettingsDraft(
+      nextDraft,
+      appSnapshotSignal.value.settings.providerApiKeyConfigured,
+      appSnapshotSignal.value.desktop.cudaAvailable
+    );
+
+    if (errors.length > 0) {
+      setError(errors.join(' '));
 
       return;
     }
@@ -53,7 +59,7 @@ export const useSettings = ({ setError, setSnapshot }: UseSettingsInput) => {
     setError(null);
 
     try {
-      const snapshot = await updateAppSettings(draft.value);
+      const snapshot = await updateAppSettings(nextDraft);
 
       setSnapshot(snapshot);
       resetDraft(snapshot.settings);
@@ -62,6 +68,10 @@ export const useSettings = ({ setError, setSnapshot }: UseSettingsInput) => {
     } finally {
       savingSettings.value = false;
     }
+  };
+
+  const saveSettings = async () => {
+    await persistSettings(draft.value);
   };
 
   const clearProviderApiKey = async () => {
@@ -136,7 +146,9 @@ export const useSettings = ({ setError, setSnapshot }: UseSettingsInput) => {
     validationErrors,
     hasUnsavedSettings,
     resetDraft,
-    fields: buildSettingsFields(draft, recordingHotkey, glossaryInput),
+    fields: buildSettingsFields(draft, recordingHotkey, glossaryInput, (nextDraft) => {
+      void persistSettings(nextDraft);
+    }),
     actions: {
       saveSettings,
       clearProviderApiKey,

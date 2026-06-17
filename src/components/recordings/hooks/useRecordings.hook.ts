@@ -5,6 +5,7 @@ import {
   openLocalPath,
   renameRecordingTitle,
   renameSpeakerLabel,
+  rerunSummaryJob,
   retryRecordingJobs,
   startRecording,
   stopRecording,
@@ -14,6 +15,7 @@ import { appSnapshotSignal } from '../../../stores/app.store';
 import type { AppSnapshot, Recording } from '../../../types/desktop';
 import { errorMessage } from '../../app-shell/hooks/appRuntime.helpers';
 import {
+  canRerunSummary,
   canRetryRecording,
   recordingPipelineStatus,
   recordingProgress,
@@ -108,6 +110,19 @@ export const useRecordings = ({ loading, setError, setSnapshot }: UseRecordingsI
       setSnapshot(await retryRecordingJobs(recording.id));
     } catch (error) {
       setError(errorMessage(error, 'Unable to retry recording jobs'));
+    } finally {
+      loading.value = false;
+    }
+  };
+
+  const rerunSummary = async (recording: Recording) => {
+    loading.value = true;
+    setError(null);
+
+    try {
+      setSnapshot(await rerunSummaryJob(recording.id));
+    } catch (error) {
+      setError(errorMessage(error, 'Unable to rerun summary'));
     } finally {
       loading.value = false;
     }
@@ -216,11 +231,16 @@ export const useRecordings = ({ loading, setError, setSnapshot }: UseRecordingsI
 
     return {
       canRetry: canRetryRecording(recording),
+      canRerunSummary:
+        appSnapshotSignal.value.settings.summaryEnabled && canRerunSummary(recording),
       onOpenFolder: () => {
         void openPath(recording.artifactDirectory);
       },
       onRetry: () => {
         void retry(recording);
+      },
+      onRerunSummary: () => {
+        void rerunSummary(recording);
       }
     };
   });
@@ -235,12 +255,13 @@ export const useRecordings = ({ loading, setError, setSnapshot }: UseRecordingsI
       speakerRenameDraft,
       openPath,
       retry,
+      rerunSummary,
       remove,
       renameTitle,
       renameSpeaker
     }),
     groupedJobRows: groupedJobRows(openPath, retry),
-    recentRecordingRows: recentRecordingRows(openPath, retry),
+    recentRecordingRows: recentRecordingRows(openPath, retry, rerunSummary),
     activeJobs,
     latestRecordingProgress,
     latestRecordingPipelineStatus,
@@ -260,6 +281,7 @@ const recordingRows = ({
   speakerRenameDraft,
   openPath,
   retry,
+  rerunSummary,
   remove,
   renameTitle,
   renameSpeaker
@@ -270,6 +292,7 @@ const recordingRows = ({
   speakerRenameDraft: Signal<string>;
   openPath: (path: string) => Promise<void>;
   retry: (recording: Recording) => Promise<void>;
+  rerunSummary: (recording: Recording) => Promise<void>;
   remove: (recording: Recording) => Promise<void>;
   renameTitle: (recording: Recording) => Promise<void>;
   renameSpeaker: (recording: Recording, speaker: string) => Promise<void>;
@@ -329,6 +352,8 @@ const recordingRows = ({
       return {
         recording,
         canRetry: canRetryRecording(recording),
+        canRerunSummary:
+          appSnapshotSignal.value.settings.summaryEnabled && canRerunSummary(recording),
         titleRow,
         speakerRows,
         onOpenFolder: () => {
@@ -336,6 +361,9 @@ const recordingRows = ({
         },
         onRetry: () => {
           void retry(recording);
+        },
+        onRerunSummary: () => {
+          void rerunSummary(recording);
         },
         onDelete: () => {
           void remove(recording);
@@ -346,7 +374,8 @@ const recordingRows = ({
 
 const recentRecordingRows = (
   openPath: (path: string) => Promise<void>,
-  retry: (recording: Recording) => Promise<void>
+  retry: (recording: Recording) => Promise<void>,
+  rerunSummary: (recording: Recording) => Promise<void>
 ) =>
   useComputed(() =>
     appSnapshotSignal.value.recordings.slice(0, 5).map((recording) => ({
@@ -354,11 +383,16 @@ const recentRecordingRows = (
       progress: recordingProgress(recording),
       pipelineStatus: recordingPipelineStatus(recording),
       canRetry: canRetryRecording(recording),
+      canRerunSummary:
+        appSnapshotSignal.value.settings.summaryEnabled && canRerunSummary(recording),
       onOpenFolder: () => {
         void openPath(recording.artifactDirectory);
       },
       onRetry: () => {
         void retry(recording);
+      },
+      onRerunSummary: () => {
+        void rerunSummary(recording);
       }
     }))
   );

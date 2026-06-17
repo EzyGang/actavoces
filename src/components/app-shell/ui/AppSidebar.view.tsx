@@ -1,3 +1,4 @@
+import { IconFolderOpen, IconRefresh } from '@tabler/icons-react';
 import type { JSX } from 'preact';
 import { Button } from '../../shared/ui/Button.view';
 import { StatusBadge } from '../../shared/ui/StatusBadge.view';
@@ -14,7 +15,16 @@ export const AppSidebar = ({ app }: AppSidebarProps): JSX.Element => (
       {app.data.recentRecordingRows.value.length > 0 ? (
         <div class='flex flex-col gap-3'>
           {app.data.recentRecordingRows.value.map(
-            ({ recording, progress, pipelineStatus, canRetry, onOpenFolder, onRetry }) => (
+            ({
+              recording,
+              progress,
+              pipelineStatus,
+              canRetry,
+              canRerunSummary,
+              onOpenFolder,
+              onRetry,
+              onRerunSummary
+            }) => (
               <article
                 class='flex flex-col gap-3 border border-border-base bg-bg-input p-3'
                 key={recording.id}
@@ -47,16 +57,32 @@ export const AppSidebar = ({ app }: AppSidebarProps): JSX.Element => (
                   {app.data.formatTimestamp(recording.startedAt)}
                 </span>
                 <div class='flex gap-2'>
-                  <Button class='h-8 px-3' onClick={onOpenFolder} variant='ghost'>
-                    Open
+                  <Button
+                    aria-label='Open recording folder'
+                    class='h-8 w-8 p-0!'
+                    onClick={onOpenFolder}
+                    title='Open recording folder'
+                    variant='ghost'
+                  >
+                    <IconFolderOpen aria-hidden='true' className='h-4 w-4' />
+                  </Button>
+                  <Button
+                    aria-label='Retry failed jobs'
+                    class='h-8 w-8 p-0!'
+                    disabled={app.status.loading.value || !canRetry}
+                    onClick={onRetry}
+                    title='Retry failed jobs'
+                    variant='ghost'
+                  >
+                    <IconRefresh aria-hidden='true' className='h-4 w-4' />
                   </Button>
                   <Button
                     class='h-8 px-3'
-                    disabled={app.status.loading.value || !canRetry}
-                    onClick={onRetry}
+                    disabled={app.status.loading.value || !canRerunSummary}
+                    onClick={onRerunSummary}
                     variant='ghost'
                   >
-                    Retry
+                    Rerun summary
                   </Button>
                 </div>
               </article>

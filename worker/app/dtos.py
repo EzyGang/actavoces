@@ -96,7 +96,7 @@ class SummaryOutput(BaseModel):
     summary: str = Field(
         description=(
             'Summary of a conversation. No limits. Markdown format preffered. '
-            'Overall information, action items, risks, and unanswered questions and so on.'
+            'Include the overall conversation summary, decisions, and action items.'
         )
     )
 

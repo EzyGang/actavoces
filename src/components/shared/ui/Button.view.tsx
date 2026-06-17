@@ -3,9 +3,11 @@ import type { ComponentChildren, JSX, MouseEventHandler } from 'preact';
 
 interface ButtonProps {
   children: ComponentChildren;
+  'aria-label'?: string;
   disabled?: boolean;
   variant?: 'primary' | 'secondary' | 'ghost';
   onClick?: MouseEventHandler<HTMLButtonElement>;
+  title?: string;
   type?: 'button' | 'submit';
   class?: string;
 }
@@ -19,13 +21,16 @@ const VARIANT_CLASS: Record<NonNullable<ButtonProps['variant']>, string> = {
 
 export const Button = ({
   children,
+  'aria-label': ariaLabel,
   disabled = false,
   variant = 'secondary',
   onClick,
+  title,
   type = 'button',
   class: classProp
 }: ButtonProps): JSX.Element => (
   <button
+    aria-label={ariaLabel}
     class={clsx(
       'inline-flex h-11 items-center justify-center gap-2 px-4 font-semibold text-xs uppercase tracking-wider transition duration-fast disabled:cursor-not-allowed disabled:opacity-40',
       VARIANT_CLASS[variant],
@@ -33,6 +38,7 @@ export const Button = ({
     )}
     disabled={disabled}
     onClick={onClick}
+    title={title}
     type={type}
   >
     {children}

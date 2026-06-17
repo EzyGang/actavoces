@@ -121,6 +121,26 @@ pub fn retry_recording_jobs(
 }
 
 #[tauri::command]
+pub fn rerun_summary_job(
+    app: tauri::AppHandle,
+    input: RecordingRetryInput,
+    state: tauri::State<'_, ActavocesState>,
+) -> Result<AppSnapshot, String> {
+    let mut repository = state.repository()?;
+
+    repository
+        .reset_summary_job(&input.recording_id)
+        .map_err(|error| error.to_string())?;
+
+    let snapshot = repository.snapshot().map_err(|error| error.to_string())?;
+
+    emit_snapshot_update(&app, &snapshot);
+    spawn_pipeline_processing(app);
+
+    Ok(snapshot)
+}
+
+#[tauri::command]
 pub fn rename_recording_title(
     app: tauri::AppHandle,
     input: RecordingRenameInput,

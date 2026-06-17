@@ -60,6 +60,75 @@ impl AppRepository {
         )
     }
 
+    pub(crate) fn reset_summary_job(&mut self, recording_id: &str) -> rusqlite::Result<()> {
+        let recording = self.recording_by_id(recording_id)?.ok_or_else(|| {
+            rusqlite::Error::InvalidParameterName("Recording not found".to_owned())
+        })?;
+
+        if !matches!(
+            recording.status,
+            RecordingStatus::Processing | RecordingStatus::Complete
+        ) {
+            return Err(rusqlite::Error::InvalidParameterName(
+                "Only processed recordings can rerun summary".to_owned(),
+            ));
+        }
+
+        let transcription_ready = recording.stages.iter().any(|stage| {
+            stage.id == PipelineStageId::Transcription
+                && stage.status == PipelineStageStatus::Complete
+        });
+        let diarization_ready = recording.stages.iter().any(|stage| {
+            stage.id == PipelineStageId::Diarization
+                && matches!(
+                    stage.status,
+                    PipelineStageStatus::Complete | PipelineStageStatus::Skipped
+                )
+        });
+
+        if !transcription_ready || !diarization_ready {
+            return Err(rusqlite::Error::InvalidParameterName(
+                "Summary cannot rerun before transcript artifacts are ready".to_owned(),
+            ));
+        }
+
+        let transaction = self.connection.transaction()?;
+
+        transaction.execute(
+            "
+            UPDATE recordings
+            SET status = ?1
+            WHERE id = ?2
+            ",
+            params![enum_value(RecordingStatus::Processing)?, recording_id],
+        )?;
+
+        transaction.execute(
+            "
+            UPDATE pipeline_jobs
+            SET status = ?1,
+                progress = 0,
+                message = ?2
+            WHERE recording_id = ?3
+                AND stage = ?4
+            ",
+            params![
+                enum_value(PipelineStageStatus::Pending)?,
+                "Summary rerun queued",
+                recording_id,
+                enum_value(PipelineStageId::Summary)?,
+            ],
+        )?;
+        transaction.commit()?;
+
+        self.append_event(
+            recording_id,
+            PipelineStageId::Summary,
+            PipelineStageStatus::Pending,
+            "Summary rerun queued",
+        )
+    }
+
     pub(crate) fn update_job(
         &mut self,
         job_id: &str,

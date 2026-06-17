@@ -1,3 +1,4 @@
+import { IconFolderOpen, IconRefresh } from '@tabler/icons-react';
 import type { JSX } from 'preact';
 import type { useApp } from '../../app-shell/hooks/useApp.hook';
 import { Button } from '../../shared/ui/Button.view';
@@ -94,22 +95,26 @@ export const DashboardRoute = ({ app }: DashboardRouteProps): JSX.Element => (
               {app.data.latestRecordingActions.value &&
               app.data.latestRecordingPipelineStatus.value.status === 'complete' ? (
                 <Button
-                  class='h-9 px-3'
+                  aria-label='Open recording folder'
+                  class='h-9 w-9 p-0!'
                   disabled={app.status.loading.value}
                   onClick={app.data.latestRecordingActions.value.onOpenFolder}
+                  title='Open recording folder'
                   variant='ghost'
                 >
-                  Open
+                  <IconFolderOpen aria-hidden='true' className='h-4 w-4' />
                 </Button>
               ) : null}
               {app.data.latestRecordingActions.value?.canRetry ? (
                 <Button
-                  class='h-9 px-3'
+                  aria-label='Retry failed jobs'
+                  class='h-9 w-9 p-0!'
                   disabled={app.status.loading.value}
                   onClick={app.data.latestRecordingActions.value.onRetry}
+                  title='Retry failed jobs'
                   variant='ghost'
                 >
-                  Retry
+                  <IconRefresh aria-hidden='true' className='h-4 w-4' />
                 </Button>
               ) : null}
             </div>
@@ -141,7 +146,24 @@ export const DashboardRoute = ({ app }: DashboardRouteProps): JSX.Element => (
                       <span class='font-mono text-text-muted text-[11px] uppercase tracking-wider'>
                         {index + 1}
                       </span>
-                      <StatusBadge label={stage.status} status={stage.status} />
+                      <div class='flex items-center gap-2'>
+                        {stage.id === 'summary' ? (
+                          <Button
+                            aria-label='Rerun summary'
+                            class='h-8 w-8 p-0!'
+                            disabled={
+                              app.status.loading.value ||
+                              !app.data.latestRecordingActions.value?.canRerunSummary
+                            }
+                            onClick={app.data.latestRecordingActions.value?.onRerunSummary}
+                            title='Rerun summary'
+                            variant='ghost'
+                          >
+                            <IconRefresh aria-hidden='true' className='h-4 w-4' />
+                          </Button>
+                        ) : null}
+                        <StatusBadge label={stage.status} status={stage.status} />
+                      </div>
                     </div>
                     <h2 class='font-semibold text-sm'>{stage.label}</h2>
                     <p class='text-text-muted text-xs'>{stage.message}</p>
@@ -214,7 +236,13 @@ export const DashboardRoute = ({ app }: DashboardRouteProps): JSX.Element => (
             </div>
             <div class='flex justify-between gap-4 border-border-base border-b pb-3'>
               <span class='text-text-muted'>Overlay</span>
-              <span>{app.data.snapshot.value.desktop.overlayVisible ? 'Visible' : 'Hidden'}</span>
+              <span>
+                {app.data.snapshot.value.settings.overlayDisplayMode === 'none'
+                  ? 'Off'
+                  : app.data.snapshot.value.settings.overlayDisplayMode === 'minimal'
+                    ? 'Minimal'
+                    : 'Full'}
+              </span>
             </div>
             <div class='flex justify-between gap-4 border-border-base border-b pb-3'>
               <span class='text-text-muted'>Hotkey</span>
@@ -246,29 +274,86 @@ export const DashboardRoute = ({ app }: DashboardRouteProps): JSX.Element => (
         </article>
 
         <article class='flex min-w-0 flex-col gap-4 border border-border-base bg-bg-card p-5'>
-          <h2 class='font-semibold text-xl'>Storage</h2>
+          <div class='flex items-center justify-between gap-4'>
+            <h2 class='font-semibold text-xl'>Glossary</h2>
+            <span class='font-semibold text-3xl'>
+              {app.settings.dashboardGlossaryField.entries.length}
+            </span>
+          </div>
           <div class='flex flex-col gap-3 text-sm'>
-            <div class='flex flex-col gap-1 border-border-base border-b pb-3'>
-              <span class='text-text-muted'>Records folder</span>
-              <span class='wrap-break-word font-mono text-xs'>
-                {app.data.snapshot.value.settings.outputDirectory}
+            <label class='flex flex-col gap-2'>
+              <span class='text-text-muted'>Transcription hints</span>
+              <div class='flex gap-2'>
+                <input
+                  class='h-11 min-w-0 flex-1 border border-border-base bg-bg-input px-3 font-mono text-xs outline-none focus:border-border-focus'
+                  disabled={app.status.savingSettings.value}
+                  onInput={app.settings.dashboardGlossaryField.onInput}
+                  onKeyDown={app.settings.dashboardGlossaryField.onKeyDown}
+                  placeholder={app.settings.dashboardGlossaryField.placeholder}
+                  type='text'
+                  value={app.settings.dashboardGlossaryField.value}
+                />
+                <Button
+                  class='h-11 px-3'
+                  disabled={app.status.savingSettings.value}
+                  onClick={app.settings.dashboardGlossaryField.onAdd}
+                  variant='secondary'
+                >
+                  Add
+                </Button>
+              </div>
+              <span class='text-text-muted text-xs'>
+                {app.settings.dashboardGlossaryField.hint}
               </span>
-            </div>
-            <div class='flex flex-col gap-1 border-border-base border-b pb-3'>
-              <span class='text-text-muted'>Database</span>
-              <span class='wrap-break-word font-mono text-xs'>
-                {app.data.snapshot.value.settings.databasePath}
-              </span>
-            </div>
-            <div class='flex flex-col gap-1'>
-              <span class='text-text-muted'>Model folder</span>
-              <span class='wrap-break-word font-mono text-xs'>
-                {app.data.snapshot.value.settings.modelStorageDirectory}
-              </span>
-            </div>
+            </label>
+            {app.settings.dashboardGlossaryField.entries.length > 0 ? (
+              <div class='flex flex-wrap gap-2'>
+                {app.settings.dashboardGlossaryField.entries.map((entry) => (
+                  <span
+                    class='inline-flex items-center gap-2 border border-border-base bg-bg-input px-2 py-1 font-mono text-xs'
+                    key={entry.value}
+                  >
+                    {entry.value}
+                    <button
+                      aria-label={`Remove ${entry.value}`}
+                      class='text-text-muted hover:text-text-primary'
+                      disabled={app.status.savingSettings.value}
+                      onClick={entry.onRemove}
+                      type='button'
+                    >
+                      X
+                    </button>
+                  </span>
+                ))}
+              </div>
+            ) : null}
           </div>
         </article>
       </div>
+
+      <article class='flex min-w-0 flex-col gap-4 border border-border-base bg-bg-card p-5'>
+        <h2 class='font-semibold text-xl'>Storage</h2>
+        <div class='grid gap-3 text-sm lg:grid-cols-3'>
+          <div class='flex flex-col gap-1 border-border-base border-b pb-3 lg:border-r lg:border-b-0 lg:pr-3 lg:pb-0'>
+            <span class='text-text-muted'>Records folder</span>
+            <span class='wrap-break-word font-mono text-xs'>
+              {app.data.snapshot.value.settings.outputDirectory}
+            </span>
+          </div>
+          <div class='flex flex-col gap-1 border-border-base border-b pb-3 lg:border-r lg:border-b-0 lg:pr-3 lg:pb-0'>
+            <span class='text-text-muted'>Database</span>
+            <span class='wrap-break-word font-mono text-xs'>
+              {app.data.snapshot.value.settings.databasePath}
+            </span>
+          </div>
+          <div class='flex flex-col gap-1'>
+            <span class='text-text-muted'>Model folder</span>
+            <span class='wrap-break-word font-mono text-xs'>
+              {app.data.snapshot.value.settings.modelStorageDirectory}
+            </span>
+          </div>
+        </div>
+      </article>
     </section>
   </div>
 );

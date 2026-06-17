@@ -9,6 +9,23 @@ export const canRetryRecording = (recording: Recording): boolean =>
       stage.id !== 'recording' && (stage.status === 'failed' || stage.status === 'needsSetup')
   );
 
+export const canRerunSummary = (recording: Recording): boolean => {
+  const transcription = recording.stages.find((stage) => stage.id === 'transcription');
+  const diarization = recording.stages.find((stage) => stage.id === 'diarization');
+  const summary = recording.stages.find((stage) => stage.id === 'summary');
+
+  if (!transcription || !diarization || !summary) {
+    return false;
+  }
+
+  return (
+    transcription.status === 'complete' &&
+    (diarization.status === 'complete' || diarization.status === 'skipped') &&
+    summary.status !== 'pending' &&
+    summary.status !== 'running'
+  );
+};
+
 const stageProgressWeight = (stage: PipelineStage): number => {
   if (stage.status === 'complete' || stage.status === 'skipped') {
     return 100;

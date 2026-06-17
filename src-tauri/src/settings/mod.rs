@@ -5,7 +5,7 @@ use std::path::Path;
 use crate::domain::types::*;
 use crate::utils::{default_model_storage_root, default_records_root, option_number_to_string};
 pub(crate) const DEFAULT_SUMMARY_PROMPT: &str =
-    "Summarize decisions, action items, risks, and unanswered questions.";
+    "Summarize the conversation. Then provide bullet lists for decisions and action items.";
 pub(crate) const SUMMARY_PROVIDER_API_KEY_SETTING: &str = "providerApiKey";
 pub(crate) const HUGGING_FACE_TOKEN_SETTING: &str = "huggingFaceToken";
 

@@ -117,6 +117,7 @@ pub fn run() {
             app::commands::recordings::delete_recording,
             app::commands::recordings::open_local_path,
             app::commands::recordings::retry_recording_jobs,
+            app::commands::recordings::rerun_summary_job,
             app::commands::recordings::rename_recording_title,
             app::commands::recordings::rename_speaker_label,
             app::commands::recordings::toggle_recording_from_shortcut,

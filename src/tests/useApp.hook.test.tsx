@@ -9,6 +9,7 @@ import {
   openLocalPath,
   renameRecordingTitle,
   renameSpeakerLabel,
+  rerunSummaryJob,
   retryRecordingJobs,
   startRecording,
   stopRecording,
@@ -46,6 +47,7 @@ vi.mock('../services/desktop/app.service', () => ({
   refreshModelInventory: vi.fn(),
   renameRecordingTitle: vi.fn(),
   renameSpeakerLabel: vi.fn(),
+  rerunSummaryJob: vi.fn(),
   retryRecordingJobs: vi.fn(),
   setupDiarizationRuntime: vi.fn(),
   skipDiarizationSetup: vi.fn(),
@@ -176,6 +178,7 @@ describe('useApp hook', () => {
     vi.mocked(openLocalPath).mockReset();
     vi.mocked(startRecording).mockReset();
     vi.mocked(stopRecording).mockReset();
+    vi.mocked(rerunSummaryJob).mockReset();
     vi.mocked(retryRecordingJobs).mockReset();
     vi.mocked(renameRecordingTitle).mockReset();
     vi.mocked(renameSpeakerLabel).mockReset();

@@ -14,7 +14,7 @@ from app.dtos import (
 
 type SummaryResult = NeedsSetupResult | FailedResult | SummaryCompleteResult
 
-DEFAULT_SUMMARY_PROMPT = 'Summarize decisions, action items, risks, and unanswered questions.'
+DEFAULT_SUMMARY_PROMPT = 'Summarize the conversation. Then provide bullet lists for decisions and action items.'
 TITLE_INSTRUCTION = 'Create a concise meeting title from the transcript.'
 
 
