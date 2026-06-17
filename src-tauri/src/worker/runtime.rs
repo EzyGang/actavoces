@@ -4,6 +4,7 @@ use crate::worker::command::{
 };
 use crate::worker::files::{
     prepare_uv_executable, prepare_worker_directory, prepare_worker_virtualenv,
+    repair_worker_virtualenv_python_home,
 };
 use crate::worker::manifest::{worker_bootstrap_is_ready, write_worker_bootstrap_manifest};
 use crate::worker::paths::worker_runtime_paths;
@@ -21,6 +22,8 @@ pub(crate) use crate::worker::events::{
     diarization_setup_message, extract_model_inventory, extract_runtime_capabilities,
     model_install_message,
 };
+#[cfg(test)]
+pub(crate) use crate::worker::files::rewrite_pyvenv_home;
 #[cfg(test)]
 pub(crate) use crate::worker::paths::worker_runtime_paths_from_local_data_directory;
 pub(crate) use crate::worker::paths::WorkerRuntimePaths;
@@ -102,6 +105,7 @@ pub(crate) fn run_worker_bootstrap(
         None,
     )?;
     run_uv_sync(&paths)?;
+    repair_worker_virtualenv_python_home(&paths)?;
 
     emit_worker_setup_progress(
         app,
