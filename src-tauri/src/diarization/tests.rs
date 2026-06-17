@@ -1,12 +1,15 @@
 use crate::artifacts::{
-    diarized_transcript_path, speaker_labeled_utterances_path, speaker_labeled_words_path,
+    diarization_path, diarized_transcript_path, meta_directory, speaker_labeled_utterances_path,
+    speaker_labeled_words_path,
 };
 use crate::diarization::render::{
     render_diarized_transcript, speaker_labeled_utterances, speaker_labeled_words,
 };
+use crate::diarization::smoothing::smooth_turns;
 use crate::diarization::{
     render_speaker_labeled_utterances, run_single_speaker_diarization, single_speaker_turns,
-    SpeakerLabeledUtterance, SpeakerTurn, TranscriptSegment, TranscriptWord,
+    write_diarization_output, SpeakerLabeledUtterance, SpeakerTurn, TranscriptSegment,
+    TranscriptWord,
 };
 
 #[test]
@@ -64,6 +67,103 @@ fn local_diarization_writes_speaker_labeled_artifacts() {
             .unwrap()
             .contains("[00:00 - 00:01] Hello")
     );
+    let diarization = std::fs::read_to_string(diarization_path(&artifact_path)).unwrap();
+    assert!(!diarization.contains("rawTurns"));
+    assert!(!diarization.contains("smoothing"));
+}
+
+#[test]
+fn smoothing_merges_same_speaker_turns_across_tiny_gap() {
+    assert_eq!(
+        smooth_turns(&[turn("Speaker 1", 0.0, 1.0), turn("Speaker 1", 1.1, 2.0)]),
+        vec![turn("Speaker 1", 0.0, 2.0)]
+    );
+}
+
+#[test]
+fn smoothing_removes_short_speaker_island() {
+    assert_eq!(
+        smooth_turns(&[
+            turn("Speaker 1", 0.0, 1.0),
+            turn("Speaker 2", 1.05, 1.25),
+            turn("Speaker 1", 1.3, 2.0),
+        ]),
+        vec![turn("Speaker 1", 0.0, 2.0)]
+    );
+}
+
+#[test]
+fn smoothing_reduces_rapid_speaker_flips() {
+    assert_eq!(
+        smooth_turns(&[
+            turn("Speaker 1", 0.0, 1.0),
+            turn("Speaker 2", 1.01, 1.2),
+            turn("Speaker 1", 1.21, 1.4),
+            turn("Speaker 2", 1.41, 2.0),
+        ]),
+        vec![turn("Speaker 1", 0.0, 1.4), turn("Speaker 2", 1.41, 2.0)]
+    );
+}
+
+#[test]
+fn smoothing_preserves_legitimate_short_backchannel() {
+    assert_eq!(
+        smooth_turns(&[
+            turn("Speaker 1", 0.0, 1.0),
+            turn("Speaker 2", 1.05, 1.6),
+            turn("Speaker 1", 1.65, 2.5),
+        ]),
+        vec![
+            turn("Speaker 1", 0.0, 1.0),
+            turn("Speaker 2", 1.05, 1.6),
+            turn("Speaker 1", 1.65, 2.5),
+        ]
+    );
+}
+
+#[test]
+fn sortformer_output_writes_smoothed_turns_and_raw_metadata() {
+    let artifact_path = std::env::temp_dir().join("actavoces-smoothed-local-diarization");
+    let _ = std::fs::remove_dir_all(&artifact_path);
+    std::fs::create_dir_all(meta_directory(&artifact_path)).unwrap();
+    let raw_turns = vec![
+        turn("Speaker 1", 0.0, 1.0),
+        turn("Speaker 2", 1.05, 1.25),
+        turn("Speaker 1", 1.3, 2.0),
+    ];
+    let turns = smooth_turns(&raw_turns);
+
+    write_diarization_output(
+        &artifact_path,
+        &[TranscriptSegment {
+            start: 0.0,
+            end: 2.0,
+            text: "Hello yes continue".to_owned(),
+        }],
+        &[
+            word("Hello", 0.0, 0.5),
+            word("yes", 1.1, 1.2),
+            word("continue", 1.4, 1.8),
+        ],
+        turns,
+        Some(raw_turns),
+        "Planning Call",
+    )
+    .unwrap();
+
+    let artifact: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(diarization_path(&artifact_path)).unwrap())
+            .unwrap();
+    let transcript = std::fs::read_to_string(diarized_transcript_path(&artifact_path)).unwrap();
+
+    assert_eq!(artifact["turns"].as_array().unwrap().len(), 1);
+    assert_eq!(artifact["rawTurns"].as_array().unwrap().len(), 3);
+    assert_eq!(
+        artifact["smoothing"]["policy"].as_str().unwrap(),
+        "diarization_turn_smoothing_v1"
+    );
+    assert!(transcript.contains("## Speaker 1"));
+    assert!(!transcript.contains("## Speaker 2"));
 }
 
 #[test]

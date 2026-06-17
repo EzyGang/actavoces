@@ -1,9 +1,12 @@
 from collections.abc import Awaitable, Callable
 from pathlib import Path
+from typing import Any
 
 from app.diarization import check_pyannote_setup, diarization_dependency, run_pyannote_diarization, single_speaker_turns
+from app.diarization_smoothing import smoothing_metadata
 from app.dtos import (
     DiarizationCheckPayload,
+    DiarizationOutput,
     DiarizeCompletePayload,
     DiarizePayload,
     FailedResult,
@@ -163,6 +166,7 @@ async def handle_transcribe(command: WorkerCommand) -> list[WorkerEvent]:
 
 async def handle_diarize(command: WorkerCommand) -> list[WorkerEvent]:
     payload = DiarizePayload.model_validate(command.payload)
+    raw_turns: list[SpeakerTurn] = []
     turns = payload.turns or single_speaker_turns(
         segments=payload.segments,
         speaker_count_mode=payload.speaker_count_mode,
@@ -179,8 +183,9 @@ async def handle_diarize(command: WorkerCommand) -> list[WorkerEvent]:
             max_speakers=payload.max_speakers,
         )
 
-        if isinstance(result, list):
-            turns = result
+        if isinstance(result, DiarizationOutput):
+            turns = result.turns
+            raw_turns = result.raw_turns
         elif isinstance(result, FailedResult):
             return [command_event(command=command, name='command.failed', payload=result.payload)]
         else:
@@ -202,7 +207,10 @@ async def handle_diarize(command: WorkerCommand) -> list[WorkerEvent]:
     prepare_output_directories(output_directory=payload.output_directory)
     labeled_words = speaker_labeled_words(words=payload.words, turns=turns)
     utterances = speaker_labeled_utterances(words=labeled_words)
-    write_json(diarization_path(output_directory=payload.output_directory), {'turns': turn_payloads(turns=turns)})
+    write_json(
+        diarization_path(output_directory=payload.output_directory),
+        diarization_payload(turns=turns, raw_turns=raw_turns),
+    )
     if labeled_words:
         write_json(
             speaker_labeled_words_path(output_directory=payload.output_directory),
@@ -350,6 +358,16 @@ def word_payloads(words: list[TranscriptionWord]) -> list[dict[str, int | float 
 
 def turn_payloads(turns: list[SpeakerTurn]) -> list[dict[str, float | str]]:
     return [turn.model_dump() for turn in turns]
+
+
+def diarization_payload(turns: list[SpeakerTurn], raw_turns: list[SpeakerTurn]) -> dict[str, Any]:
+    payload: dict[str, Any] = {'turns': turn_payloads(turns=turns)}
+
+    if raw_turns:
+        payload['rawTurns'] = turn_payloads(turns=raw_turns)
+        payload['smoothing'] = smoothing_metadata()
+
+    return payload
 
 
 def speaker_labeled_word_payloads(words: list[SpeakerLabeledWord]) -> list[dict[str, int | float | str | None]]:

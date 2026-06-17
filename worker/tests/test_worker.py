@@ -6,8 +6,10 @@ from pydantic_ai import Agent
 from pydantic_ai.models.test import TestModel
 from pytest_mock import MockerFixture
 
+from app.diarization_smoothing import smooth_turns
 from app.dtos import (
     Segment,
+    SpeakerTurn,
     SummarizePayload,
     SummaryOutput,
     TranscriptionMetadata,
@@ -41,21 +43,26 @@ class MockPyannoteTurn:
 
 
 class MockPyannoteAnnotation:
+    def __init__(self, tracks: list[tuple[float, float, str]] | None = None) -> None:
+        self.tracks = tracks or [(0, 1, 'SPEAKER_00'), (1, 2, 'SPEAKER_01')]
+
     def itertracks(self, yield_label: bool = False) -> list[tuple[MockPyannoteTurn, None, str]]:
-        return [
-            (MockPyannoteTurn(0, 1), None, 'SPEAKER_00'),
-            (MockPyannoteTurn(1, 2), None, 'SPEAKER_01'),
-        ]
+        return [(MockPyannoteTurn(start, end), None, speaker) for start, end, speaker in self.tracks]
 
 
 class MockPyannotePipeline:
-    def __init__(self) -> None:
+    def __init__(self, tracks: list[tuple[float, float, str]] | None = None) -> None:
         self.calls: list[dict[str, int]] = []
+        self.tracks = tracks
 
     def __call__(self, audio_path: str, **kwargs: int) -> MockPyannoteAnnotation:
         self.calls.append(kwargs)
 
-        return MockPyannoteAnnotation()
+        return MockPyannoteAnnotation(tracks=self.tracks)
+
+
+def speaker_turn(speaker: str, start: float, end: float) -> SpeakerTurn:
+    return SpeakerTurn(speaker=speaker, start=start, end=end)
 
 
 async def test_health_check_returns_ok_event() -> None:
@@ -539,6 +546,47 @@ def test_diarized_transcript_uses_nearest_turn_for_no_overlap_words() -> None:
     assert '[00:05 - 00:06] between' in transcript
 
 
+def test_turn_smoothing_merges_same_speaker_turns_across_tiny_gap() -> None:
+    assert smooth_turns(turns=[speaker_turn('Speaker 1', 0, 1), speaker_turn('Speaker 1', 1.1, 2)]) == [
+        speaker_turn('Speaker 1', 0, 2)
+    ]
+
+
+def test_turn_smoothing_removes_short_speaker_island() -> None:
+    assert smooth_turns(
+        turns=[
+            speaker_turn('Speaker 1', 0, 1),
+            speaker_turn('Speaker 2', 1.05, 1.25),
+            speaker_turn('Speaker 1', 1.3, 2),
+        ]
+    ) == [speaker_turn('Speaker 1', 0, 2)]
+
+
+def test_turn_smoothing_reduces_rapid_speaker_flips() -> None:
+    assert smooth_turns(
+        turns=[
+            speaker_turn('Speaker 1', 0, 1),
+            speaker_turn('Speaker 2', 1.01, 1.2),
+            speaker_turn('Speaker 1', 1.21, 1.4),
+            speaker_turn('Speaker 2', 1.41, 2),
+        ]
+    ) == [speaker_turn('Speaker 1', 0, 1.4), speaker_turn('Speaker 2', 1.41, 2)]
+
+
+def test_turn_smoothing_preserves_legitimate_short_backchannel() -> None:
+    assert smooth_turns(
+        turns=[
+            speaker_turn('Speaker 1', 0, 1),
+            speaker_turn('Speaker 2', 1.05, 1.6),
+            speaker_turn('Speaker 1', 1.65, 2.5),
+        ]
+    ) == [
+        speaker_turn('Speaker 1', 0, 1),
+        speaker_turn('Speaker 2', 1.05, 1.6),
+        speaker_turn('Speaker 1', 1.65, 2.5),
+    ]
+
+
 async def test_diarize_run_completes_exact_single_speaker(tmp_path: Path) -> None:
     events = await handle(
         WorkerCommand(
@@ -561,7 +609,9 @@ async def test_diarize_run_completes_exact_single_speaker(tmp_path: Path) -> Non
     transcript = (tmp_path / 'diarized-transcript.md').read_text()
     assert '# Diarized transcript - Planning Call' in transcript
     assert 'Speaker 1' in transcript
-    assert (tmp_path / 'meta' / 'diarization.json').exists()
+    diarization = loads((tmp_path / 'meta' / 'diarization.json').read_text())
+    assert 'rawTurns' not in diarization
+    assert 'smoothing' not in diarization
 
 
 async def test_diarize_run_writes_speaker_labeled_artifacts(tmp_path: Path) -> None:
@@ -646,6 +696,51 @@ async def test_pyannote_diarize_run_writes_normalized_speakers(tmp_path: Path, m
     assert 'Speaker 1' in (tmp_path / 'diarized-transcript.md').read_text()
     assert 'Speaker 2' in (tmp_path / 'diarized-transcript.md').read_text()
     assert pipeline.calls == [{'min_speakers': 1, 'max_speakers': 2}]
+
+
+async def test_pyannote_diarize_run_writes_smoothed_turns_and_raw_metadata(
+    tmp_path: Path, mocker: MockerFixture
+) -> None:
+    audio_path = tmp_path / 'recording.wav'
+    audio_path.write_bytes(b'RIFFdata')
+    pipeline = MockPyannotePipeline(
+        tracks=[
+            (0, 1, 'SPEAKER_00'),
+            (1.05, 1.25, 'SPEAKER_01'),
+            (1.3, 2, 'SPEAKER_00'),
+        ]
+    )
+    factory = SimpleNamespace(from_pretrained=lambda checkpoint, token: pipeline)
+    mocker.patch('app.diarization.pyannote_pipeline_factory', factory)
+    mocker.patch('app.diarization.shutil.which', return_value='ffmpeg')
+
+    events = await handle(
+        WorkerCommand(
+            id='pyannote-smoothed-run',
+            name='diarize.run',
+            payload={
+                'audioPath': str(audio_path),
+                'outputDirectory': str(tmp_path),
+                'backend': 'pyannote',
+                'apiKey': 'hf_secret',
+                'segments': [{'start': 0, 'end': 2, 'text': 'Hello yes continue'}],
+                'words': [
+                    {'segmentId': 0, 'text': 'Hello', 'start': 0, 'end': 0.5},
+                    {'segmentId': 0, 'text': 'yes', 'start': 1.1, 'end': 1.2},
+                    {'segmentId': 0, 'text': 'continue', 'start': 1.4, 'end': 1.8},
+                ],
+            },
+        )
+    )
+    diarization = loads((tmp_path / 'meta' / 'diarization.json').read_text())
+    transcript = (tmp_path / 'diarized-transcript.md').read_text()
+
+    assert events[-1].event == 'diarize.complete'
+    assert len(diarization['turns']) == 1
+    assert len(diarization['rawTurns']) == 3
+    assert diarization['smoothing']['policy'] == 'diarization_turn_smoothing_v1'
+    assert '## Speaker 1' in transcript
+    assert '## Speaker 2' not in transcript
 
 
 def test_summary_prompt_assembly_keeps_prompt_and_transcript() -> None:
