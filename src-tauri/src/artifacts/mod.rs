@@ -214,7 +214,7 @@ pub(crate) fn diarized_transcript_path(artifact_directory: &Path) -> PathBuf {
 }
 
 pub(crate) fn summary_path(artifact_directory: &Path) -> PathBuf {
-    meta_directory(artifact_directory).join("summary.md")
+    artifact_directory.join("summary.md")
 }
 
 pub(crate) fn metadata_path(artifact_directory: &Path) -> PathBuf {

@@ -844,7 +844,7 @@ async def test_summarize_writes_provider_summary(mocker: MockerFixture, tmp_path
     events = await handle(command)
 
     assert events[-1].event == 'summarize.complete'
-    assert 'Meeting notes' in (tmp_path / 'meta' / 'summary.md').read_text()
+    assert 'Meeting notes' in (tmp_path / 'summary.md').read_text()
 
 
 def test_build_summary_agent_uses_openai_compatible_provider() -> None:

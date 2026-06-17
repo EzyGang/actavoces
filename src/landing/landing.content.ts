@@ -51,7 +51,7 @@ export const artifactItems = [
   'meta/raw-segments.json',
   'meta/raw-words.json',
   'meta/diarization.json',
-  'meta/summary.md',
+  'summary.md',
   'meta/metadata.json',
   'meta/job-log.jsonl'
 ];

@@ -423,7 +423,7 @@ def diarized_transcript_path(output_directory: Path) -> Path:
 
 
 def summary_path(output_directory: Path) -> Path:
-    return meta_path(output_directory=output_directory) / 'summary.md'
+    return output_directory / 'summary.md'
 
 
 COMMAND_HANDLERS: dict[str, CommandHandler] = {
