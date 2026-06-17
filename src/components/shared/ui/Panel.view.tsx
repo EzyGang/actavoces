@@ -28,6 +28,12 @@ const SURFACE_CLASS: Record<NonNullable<PanelProps['surface']>, string> = {
   input: 'bg-bg-input'
 };
 
+const ELEMENT: Record<NonNullable<PanelProps['as']>, 'article' | 'div' | 'section'> = {
+  article: 'article',
+  div: 'div',
+  section: 'section'
+};
+
 export const Panel = ({
   as = 'article',
   children,
@@ -36,6 +42,7 @@ export const Panel = ({
   padding = 'lg',
   surface = 'card'
 }: PanelProps): JSX.Element => {
+  const Tag = ELEMENT[as];
   const panelClass = clsx(
     'flex min-w-0 flex-col border border-border-base',
     SURFACE_CLASS[surface],
@@ -44,13 +51,5 @@ export const Panel = ({
     classProp
   );
 
-  if (as === 'section') {
-    return <section class={panelClass}>{children}</section>;
-  }
-
-  if (as === 'div') {
-    return <div class={panelClass}>{children}</div>;
-  }
-
-  return <article class={panelClass}>{children}</article>;
+  return <Tag class={panelClass}>{children}</Tag>;
 };

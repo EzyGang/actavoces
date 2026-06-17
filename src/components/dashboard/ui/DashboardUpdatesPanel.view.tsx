@@ -14,7 +14,7 @@ export const DashboardUpdatesPanel = ({
   notice,
   status
 }: DashboardUpdatesPanelProps): JSX.Element => (
-  <Panel as='section'>
+  <Panel>
     <div class='flex items-center justify-between gap-4'>
       <div class='flex flex-col gap-1'>
         <h2 class='font-semibold text-xl'>Updates</h2>
