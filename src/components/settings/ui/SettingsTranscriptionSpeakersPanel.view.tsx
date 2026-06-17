@@ -4,6 +4,7 @@ import { Button } from '../../shared/ui/Button.view';
 import { Collapsible } from '../../shared/ui/Collapsible.view';
 import { Field } from '../../shared/ui/Field.view';
 import { Input } from '../../shared/ui/Input.view';
+import { Panel } from '../../shared/ui/Panel.view';
 import { Select } from '../../shared/ui/Select.view';
 import { StatusBadge } from '../../shared/ui/StatusBadge.view';
 
@@ -12,7 +13,7 @@ interface SettingsPanelProps {
 }
 
 export const SettingsTranscriptionSpeakersPanel = ({ app }: SettingsPanelProps): JSX.Element => (
-  <article class='flex flex-col gap-4 border border-border-base bg-bg-card p-5'>
+  <Panel>
     <h2 class='font-semibold text-xl'>Transcription and speakers</h2>
     <div class='grid gap-3 md:grid-cols-2'>
       {app.settings.selectFields.map((field) => (
@@ -225,5 +226,5 @@ export const SettingsTranscriptionSpeakersPanel = ({ app }: SettingsPanelProps):
         </div>
       ) : null}
     </div>
-  </article>
+  </Panel>
 );

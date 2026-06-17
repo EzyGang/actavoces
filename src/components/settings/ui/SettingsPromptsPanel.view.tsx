@@ -1,6 +1,7 @@
 import type { JSX } from 'preact';
 import type { useApp } from '../../app-shell/hooks/useApp.hook';
 import { Field } from '../../shared/ui/Field.view';
+import { Panel } from '../../shared/ui/Panel.view';
 import { Textarea } from '../../shared/ui/Textarea.view';
 
 interface SettingsPanelProps {
@@ -8,7 +9,7 @@ interface SettingsPanelProps {
 }
 
 export const SettingsPromptsPanel = ({ app }: SettingsPanelProps): JSX.Element => (
-  <article class='flex flex-col gap-4 border border-border-base bg-bg-card p-5'>
+  <Panel>
     <h2 class='font-semibold text-xl'>Prompts</h2>
     {app.settings.textareaFields.map((field) => (
       <Field key={field.key}>
@@ -16,5 +17,5 @@ export const SettingsPromptsPanel = ({ app }: SettingsPanelProps): JSX.Element =
         <Textarea class='min-h-28 resize-y' onInput={field.onInput} value={field.value} />
       </Field>
     ))}
-  </article>
+  </Panel>
 );

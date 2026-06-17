@@ -1,5 +1,5 @@
 import type { JSX } from 'preact';
-import { DashboardRoute } from '../../dashboard/ui/DashboardRoute.view';
+import { DashboardContainer } from '../../dashboard/containers/Dashboard.container';
 import { JobsRoute } from '../../jobs/ui/JobsRoute.view';
 import { RecordingsSection } from '../../recordings/ui/RecordingsSection.view';
 import { SettingsRoute } from '../../settings/ui/SettingsRoute.view';
@@ -102,7 +102,9 @@ export const AppView = ({ app }: AppViewProps): JSX.Element =>
                   </section>
                 ) : null}
 
-                {app.status.activeRoute.value === 'dashboard' ? <DashboardRoute app={app} /> : null}
+                {app.status.activeRoute.value === 'dashboard' ? (
+                  <DashboardContainer app={app} />
+                ) : null}
                 {app.status.activeRoute.value === 'recordings' ? (
                   <RecordingsSection app={app} />
                 ) : null}

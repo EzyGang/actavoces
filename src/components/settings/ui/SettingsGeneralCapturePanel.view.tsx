@@ -3,6 +3,7 @@ import type { useApp } from '../../app-shell/hooks/useApp.hook';
 import { Button } from '../../shared/ui/Button.view';
 import { Field } from '../../shared/ui/Field.view';
 import { Input } from '../../shared/ui/Input.view';
+import { Panel } from '../../shared/ui/Panel.view';
 import { Select } from '../../shared/ui/Select.view';
 import { Switch } from '../../shared/ui/Switch.view';
 
@@ -11,7 +12,7 @@ interface SettingsPanelProps {
 }
 
 export const SettingsGeneralCapturePanel = ({ app }: SettingsPanelProps): JSX.Element => (
-  <article class='flex flex-col gap-4 border border-border-base bg-bg-card p-5'>
+  <Panel>
     <h2 class='font-semibold text-xl'>General and capture</h2>
     <div class='grid gap-3 md:grid-cols-2'>
       {app.settings.folderFields.map((field) => (
@@ -62,5 +63,5 @@ export const SettingsGeneralCapturePanel = ({ app }: SettingsPanelProps): JSX.El
     >
       Launch at login
     </Switch>
-  </article>
+  </Panel>
 );

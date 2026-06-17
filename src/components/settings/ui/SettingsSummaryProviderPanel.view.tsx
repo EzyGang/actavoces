@@ -3,6 +3,7 @@ import type { useApp } from '../../app-shell/hooks/useApp.hook';
 import { Button } from '../../shared/ui/Button.view';
 import { Field } from '../../shared/ui/Field.view';
 import { Input } from '../../shared/ui/Input.view';
+import { Panel } from '../../shared/ui/Panel.view';
 import { Switch } from '../../shared/ui/Switch.view';
 
 interface SettingsPanelProps {
@@ -10,7 +11,7 @@ interface SettingsPanelProps {
 }
 
 export const SettingsSummaryProviderPanel = ({ app }: SettingsPanelProps): JSX.Element => (
-  <article class='flex flex-col gap-4 border border-border-base bg-bg-card p-5'>
+  <Panel>
     <h2 class='font-semibold text-xl'>Summary provider</h2>
     <Switch
       checked={app.settings.toggles.summaryEnabled.checked}
@@ -47,5 +48,5 @@ export const SettingsSummaryProviderPanel = ({ app }: SettingsPanelProps): JSX.E
         Clear key
       </Button>
     </div>
-  </article>
+  </Panel>
 );
