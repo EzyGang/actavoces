@@ -1,12 +1,11 @@
 import type { Signal } from '@preact/signals';
-import type { JSX } from 'preact';
 import { appSnapshotSignal } from '../../../stores/app.store';
 import type { AppSettingsUpdate } from '../../../types/desktop';
 import type { SettingsSelectField } from './settings.helpers';
 
 export const selectFields = (
   draft: Signal<AppSettingsUpdate>,
-  onChange: (key: keyof AppSettingsUpdate) => JSX.GenericEventHandler<HTMLSelectElement>
+  onValueChange: (key: keyof AppSettingsUpdate) => (value: string) => void
 ): SettingsSelectField[] => [
   {
     key: 'whisperModel',
@@ -18,7 +17,7 @@ export const selectFields = (
       { value: 'large-v3', label: 'large-v3' },
       { value: 'distil-large-v3', label: 'distil-large-v3' }
     ],
-    onChange: onChange('whisperModel')
+    onValueChange: onValueChange('whisperModel')
   },
   {
     key: 'transcriptionLanguage',
@@ -31,9 +30,9 @@ export const selectFields = (
       { value: 'uk', label: 'Ukrainian' },
       { value: 'es', label: 'Spanish' }
     ],
-    onChange: onChange('transcriptionLanguage')
+    onValueChange: onValueChange('transcriptionLanguage')
   },
-  computeTypeField(draft, onChange),
+  computeTypeField(draft, onValueChange),
   {
     key: 'diarizationBackend',
     label: 'Diarization backend (speaker labels)',
@@ -42,21 +41,25 @@ export const selectFields = (
       { value: 'sortformer', label: 'Sortformer' },
       { value: 'pyannote', label: 'pyannote' }
     ],
-    onChange: onChange('diarizationBackend'),
+    onValueChange: onValueChange('diarizationBackend'),
     hint: diarizationHint(draft.value.diarizationBackend)
-  },
-  {
-    key: 'speakerCountMode',
-    label: 'Speaker count',
-    value: draft.value.speakerCountMode,
-    options: [
-      { value: 'automatic', label: 'Automatic' },
-      { value: 'exact', label: 'Exact' },
-      { value: 'range', label: 'Range' }
-    ],
-    onChange: onChange('speakerCountMode')
   }
 ];
+
+export const speakerCountField = (
+  draft: Signal<AppSettingsUpdate>,
+  onValueChange: (key: keyof AppSettingsUpdate) => (value: string) => void
+): SettingsSelectField => ({
+  key: 'speakerCountMode',
+  label: 'Speaker count',
+  value: draft.value.speakerCountMode,
+  options: [
+    { value: 'automatic', label: 'Automatic' },
+    { value: 'exact', label: 'Exact' },
+    { value: 'range', label: 'Range' }
+  ],
+  onValueChange: onValueChange('speakerCountMode')
+});
 
 const diarizationHint = (
   backend: AppSettingsUpdate['diarizationBackend']
@@ -78,7 +81,7 @@ const diarizationHint = (
 
 const computeTypeField = (
   draft: Signal<AppSettingsUpdate>,
-  onChange: (key: keyof AppSettingsUpdate) => JSX.GenericEventHandler<HTMLSelectElement>
+  onValueChange: (key: keyof AppSettingsUpdate) => (value: string) => void
 ): SettingsSelectField => ({
   key: 'computeType',
   label: 'Compute type',
@@ -89,7 +92,7 @@ const computeTypeField = (
     { value: 'cuda', label: 'CUDA' },
     { value: 'metal', label: 'Metal' }
   ],
-  onChange: onChange('computeType'),
+  onValueChange: onValueChange('computeType'),
   hint: {
     tone: 'warning',
     title: 'CUDA processing requires NVIDIA libraries.',

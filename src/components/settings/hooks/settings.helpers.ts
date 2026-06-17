@@ -59,7 +59,7 @@ export interface SettingsSelectField {
   label: string;
   value: string;
   options: SettingsSelectOption[];
-  onChange: JSX.GenericEventHandler<HTMLSelectElement>;
+  onValueChange: (value: string) => void;
   hint?: SettingsFieldHint;
 }
 
@@ -78,6 +78,11 @@ interface SettingsFieldHint {
 interface SettingsFieldHintLink {
   href: string;
   label: string;
+}
+
+export interface SettingsToggleField {
+  checked: boolean;
+  onCheckedChange: (checked: boolean) => void;
 }
 
 export const buildSettingsUpdate = (settings: AppSettings): AppSettingsUpdate => ({

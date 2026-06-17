@@ -2,6 +2,8 @@ import { IconFolderOpen, IconRefresh } from '@tabler/icons-react';
 import type { JSX } from 'preact';
 import type { useApp } from '../../app-shell/hooks/useApp.hook';
 import { Button } from '../../shared/ui/Button.view';
+import { Field } from '../../shared/ui/Field.view';
+import { Input } from '../../shared/ui/Input.view';
 import { StatusBadge } from '../../shared/ui/StatusBadge.view';
 
 interface DashboardRouteProps {
@@ -281,11 +283,11 @@ export const DashboardRoute = ({ app }: DashboardRouteProps): JSX.Element => (
             </span>
           </div>
           <div class='flex flex-col gap-3 text-sm'>
-            <label class='flex flex-col gap-2'>
-              <span class='text-text-muted'>Transcription hints</span>
+            <Field class='text-sm'>
+              <Field.Label>Transcription hints</Field.Label>
               <div class='flex gap-2'>
-                <input
-                  class='h-11 min-w-0 flex-1 border border-border-base bg-bg-input px-3 font-mono text-xs outline-none focus:border-border-focus'
+                <Input
+                  class='min-w-0 flex-1'
                   disabled={app.status.savingSettings.value}
                   onInput={app.settings.dashboardGlossaryField.onInput}
                   onKeyDown={app.settings.dashboardGlossaryField.onKeyDown}
@@ -302,10 +304,8 @@ export const DashboardRoute = ({ app }: DashboardRouteProps): JSX.Element => (
                   Add
                 </Button>
               </div>
-              <span class='text-text-muted text-xs'>
-                {app.settings.dashboardGlossaryField.hint}
-              </span>
-            </label>
+              <Field.Description>{app.settings.dashboardGlossaryField.hint}</Field.Description>
+            </Field>
             {app.settings.dashboardGlossaryField.entries.length > 0 ? (
               <div class='flex flex-wrap gap-2'>
                 {app.settings.dashboardGlossaryField.entries.map((entry) => (
@@ -314,15 +314,15 @@ export const DashboardRoute = ({ app }: DashboardRouteProps): JSX.Element => (
                     key={entry.value}
                   >
                     {entry.value}
-                    <button
+                    <Button
                       aria-label={`Remove ${entry.value}`}
-                      class='text-text-muted hover:text-text-primary'
+                      class='h-auto p-0! text-text-muted hover:text-text-primary'
                       disabled={app.status.savingSettings.value}
                       onClick={entry.onRemove}
-                      type='button'
+                      variant='ghost'
                     >
                       X
-                    </button>
+                    </Button>
                   </span>
                 ))}
               </div>

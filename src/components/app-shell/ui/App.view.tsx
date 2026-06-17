@@ -62,19 +62,19 @@ export const AppView = ({ app }: AppViewProps): JSX.Element =>
           <nav class='flex min-h-0 flex-col justify-between gap-4 overflow-y-auto border-border-base border-r bg-bg-page p-3'>
             <div class='flex flex-col gap-2'>
               {app.navigation.map((item) => (
-                <button
+                <Button
                   aria-current={item.isActive ? 'page' : undefined}
                   class={
                     item.isActive
-                      ? 'border border-text-primary bg-text-primary px-3 py-3 text-left font-semibold text-bg-page text-xs uppercase tracking-wider'
-                      : 'border border-border-base bg-bg-card px-3 py-3 text-left font-semibold text-text-secondary text-xs uppercase tracking-wider hover:border-text-muted hover:bg-bg-hover hover:text-text-primary'
+                      ? 'h-auto justify-start border-text-primary bg-text-primary px-3 py-3 text-left text-bg-page'
+                      : 'h-auto justify-start bg-bg-card px-3 py-3 text-left text-text-secondary hover:border-text-muted hover:bg-bg-hover hover:text-text-primary'
                   }
                   key={item.route}
                   onClick={item.onSelect}
-                  type='button'
+                  variant='secondary'
                 >
                   {item.label}
-                </button>
+                </Button>
               ))}
             </div>
 
