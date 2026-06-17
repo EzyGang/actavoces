@@ -32,7 +32,8 @@ use crate::worker::runtime::{
     apply_worker_current_dir, apply_worker_path_env, extract_model_inventory,
     find_worker_python_executable, hash_worker_source_directory, model_install_payload,
     model_install_step, parse_worker_events, resolve_worker_virtualenv_python_executable,
-    worker_runtime_paths_from_local_data_directory, WorkerRuntimePaths, WorkerRuntimeState,
+    rewrite_pyvenv_home, worker_runtime_paths_from_local_data_directory, WorkerRuntimePaths,
+    WorkerRuntimeState,
 };
 
 static TEST_PATH_COUNTER: AtomicU64 = AtomicU64::new(0);
@@ -1448,6 +1449,21 @@ fn worker_virtualenv_python_resolution_uses_synced_environment() {
         fs::canonicalize(executable.parent().unwrap())
             .unwrap()
             .join(executable.file_name().unwrap())
+    );
+}
+
+#[test]
+fn worker_virtualenv_home_rewrite_uses_concrete_python_installation() {
+    let content = "home = C:\\Users\\user\\AppData\\Local\\com.ezygang.actavoces\\uv\\python\\cpython-3.14-windows-x86_64-none\nimplementation = CPython\n";
+    let concrete_home = Path::new(
+        "C:\\Users\\user\\AppData\\Local\\com.ezygang.actavoces\\uv\\python\\cpython-3.14.6-windows-x86_64-none",
+    );
+
+    let updated = rewrite_pyvenv_home(content, concrete_home);
+
+    assert_eq!(
+        updated,
+        "home = C:\\Users\\user\\AppData\\Local\\com.ezygang.actavoces\\uv\\python\\cpython-3.14.6-windows-x86_64-none\nimplementation = CPython\n"
     );
 }
 

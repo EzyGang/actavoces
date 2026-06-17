@@ -4,7 +4,8 @@ import shutil
 from pathlib import Path
 from typing import Any, Protocol
 
-from app.dtos import FailedResult, NeedsSetupResult, Segment, SpeakerTurn
+from app.diarization_smoothing import smooth_turns
+from app.dtos import DiarizationOutput, FailedResult, NeedsSetupResult, Segment, SpeakerTurn
 
 
 PYANNOTE_PIPELINE = 'pyannote/speaker-diarization-community-1'
@@ -23,7 +24,7 @@ except ImportError:
     pass
 
 
-type DiarizationResult = NeedsSetupResult | FailedResult | list[SpeakerTurn]
+type DiarizationResult = NeedsSetupResult | FailedResult | DiarizationOutput
 
 
 def single_speaker_turns(
@@ -91,7 +92,9 @@ def run_pyannote_diarization(
     except Exception as error:
         return FailedResult(payload={'error': str(error)})
 
-    return normalize_pyannote_turns(output=output)
+    raw_turns = normalize_pyannote_turns(output=output)
+
+    return DiarizationOutput(turns=smooth_turns(turns=raw_turns), raw_turns=raw_turns)
 
 
 def speaker_kwargs(

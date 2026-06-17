@@ -111,6 +111,11 @@ class FailedResult(AppBaseModel):
     payload: dict[str, Any]
 
 
+class DiarizationOutput(AppBaseModel):
+    turns: list[SpeakerTurn]
+    raw_turns: list[SpeakerTurn]
+
+
 class ModelInstallCompleteResult(AppBaseModel):
     status: Literal['complete'] = 'complete'
     payload: dict[str, Any]

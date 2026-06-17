@@ -42,6 +42,11 @@ pub fn rewrite_speaker_label(
             changed = true;
         }
     }
+    for turn in &mut diarization.raw_turns {
+        if turn.speaker == current {
+            turn.speaker = replacement.to_owned();
+        }
+    }
 
     if !changed {
         return Err(format!("Speaker label not found: {current}"));
@@ -122,6 +127,10 @@ struct SegmentsArtifact {
 #[serde(rename_all = "camelCase")]
 struct DiarizationArtifact {
     turns: Vec<SpeakerTurnArtifact>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    raw_turns: Vec<SpeakerTurnArtifact>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    smoothing: Option<serde_json::Value>,
 }
 
 #[derive(Clone, Debug, serde::Deserialize)]

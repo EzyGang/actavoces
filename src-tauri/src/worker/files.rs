@@ -6,6 +6,8 @@ use crate::worker::paths::{
     resolve_uv_resource_executable, resolve_worker_resource_directory, WorkerRuntimePaths,
 };
 use crate::worker::process::hide_console_window;
+#[cfg(windows)]
+use crate::worker::python::find_worker_python_executable;
 
 pub(crate) fn prepare_worker_directory(
     app: &tauri::AppHandle,
@@ -115,6 +117,48 @@ pub(crate) fn prepare_worker_virtualenv(paths: &WorkerRuntimePaths) -> Result<()
     })
 }
 
+#[cfg(windows)]
+pub(crate) fn repair_worker_virtualenv_python_home(
+    paths: &WorkerRuntimePaths,
+) -> Result<(), String> {
+    let pyvenv_path = paths.worker_directory.join(".venv").join("pyvenv.cfg");
+    let content = fs::read_to_string(&pyvenv_path).map_err(|error| {
+        format!(
+            "Unable to read worker virtualenv config {}: {error}",
+            pyvenv_path.display()
+        )
+    })?;
+    let Some(home) = pyvenv_home(&content) else {
+        return Ok(());
+    };
+    let home_path = PathBuf::from(home);
+
+    if !path_is_reparse_point(&home_path) {
+        return Ok(());
+    }
+
+    let python_executable = find_worker_python_executable(paths)?
+        .ok_or_else(|| "Worker Python installation was not found".to_owned())?;
+    let python_home = python_executable
+        .parent()
+        .ok_or_else(|| "Worker Python executable parent is unavailable".to_owned())?;
+    let updated = rewrite_pyvenv_home(&content, python_home);
+
+    fs::write(&pyvenv_path, updated).map_err(|error| {
+        format!(
+            "Unable to write worker virtualenv config {}: {error}",
+            pyvenv_path.display()
+        )
+    })
+}
+
+#[cfg(not(windows))]
+pub(crate) fn repair_worker_virtualenv_python_home(
+    _paths: &WorkerRuntimePaths,
+) -> Result<(), String> {
+    Ok(())
+}
+
 pub(crate) fn worker_virtualenv_is_scoped(paths: &WorkerRuntimePaths) -> bool {
     let pyvenv_path = paths.worker_directory.join(".venv").join("pyvenv.cfg");
     let content = match fs::read_to_string(pyvenv_path) {
@@ -206,6 +250,34 @@ fn pyvenv_home(content: &str) -> Option<&str> {
     }
 
     None
+}
+
+#[cfg(any(test, windows))]
+pub(crate) fn rewrite_pyvenv_home(content: &str, home: &Path) -> String {
+    let replacement = format!("home = {}", home.display());
+    let mut updated = Vec::new();
+    let mut replaced = false;
+
+    for line in content.lines() {
+        match line.split_once('=') {
+            Some((key, _)) if key.trim() == "home" => {
+                updated.push(replacement.clone());
+                replaced = true;
+            }
+            _ => updated.push(line.to_owned()),
+        }
+    }
+
+    if !replaced {
+        updated.insert(0, replacement);
+    }
+
+    let mut next_content = updated.join("\n");
+    if content.ends_with('\n') {
+        next_content.push('\n');
+    }
+
+    next_content
 }
 
 pub(crate) fn copy_file(source: &Path, target: &Path) -> Result<(), String> {
