@@ -6,6 +6,7 @@ pub(crate) const SHORT_ISLAND_SECONDS: f64 = 0.45;
 pub(crate) const BACKCHANNEL_PRESERVE_SECONDS: f64 = 0.55;
 pub(crate) const RAPID_FLIP_WINDOW_SECONDS: f64 = 1.25;
 
+#[must_use]
 pub(crate) fn smooth_turns(turns: &[SpeakerTurn]) -> Vec<SpeakerTurn> {
     let mut smoothed = normalized_turns(turns);
     merge_same_speaker_tiny_gaps(&mut smoothed);

@@ -30,11 +30,7 @@ def smoothing_metadata() -> dict[str, float | str]:
 
 def normalized_turns(turns: list[SpeakerTurn]) -> list[SpeakerTurn]:
     return sorted(
-        [
-            SpeakerTurn(speaker=turn.speaker, start=turn.start, end=turn.end)
-            for turn in turns
-            if turn.start < turn.end and turn.speaker.strip()
-        ],
+        [turn.model_copy() for turn in turns if turn.start < turn.end and turn.speaker.strip()],
         key=lambda turn: (turn.start, turn.end, turn.speaker),
     )
 
