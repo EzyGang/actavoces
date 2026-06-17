@@ -17,7 +17,7 @@ import {
   type SettingsTextareaField,
   type SettingsTextField
 } from './settings.helpers';
-import { selectFields } from './settingsSelectFields';
+import { selectFields, speakerCountField } from './settingsSelectFields';
 
 export const buildSettingsFields = (
   draft: Signal<AppSettingsUpdate>,
@@ -43,6 +43,7 @@ export const buildSettingsFields = (
     captureSelectFields: captureSelectFields(draft, inputHandlers.select),
     numberFields: numberFields(draft, inputHandlers.number, inputHandlers.optionalNumber),
     selectFields: selectFields(draft, inputHandlers.select),
+    speakerCountField: speakerCountField(draft, inputHandlers.select),
     textareaFields: textareaFields(draft, inputHandlers.textarea),
     toggles: toggles(draft)
   };
@@ -137,14 +138,12 @@ const createInputHandlers = (draft: Signal<AppSettingsUpdate>) => ({
         [key]: event.currentTarget.value
       };
     },
-  select:
-    (key: keyof AppSettingsUpdate): JSX.GenericEventHandler<HTMLSelectElement> =>
-    (event) => {
-      draft.value = {
-        ...draft.value,
-        [key]: event.currentTarget.value
-      };
-    }
+  select: (key: keyof AppSettingsUpdate) => (value: string) => {
+    draft.value = {
+      ...draft.value,
+      [key]: value
+    };
+  }
 });
 
 const folderFields = (draft: Signal<AppSettingsUpdate>): SettingsFolderField[] => [
@@ -220,7 +219,7 @@ const textFields = (
 
 const captureSelectFields = (
   draft: Signal<AppSettingsUpdate>,
-  onChange: (key: keyof AppSettingsUpdate) => JSX.GenericEventHandler<HTMLSelectElement>
+  onValueChange: (key: keyof AppSettingsUpdate) => (value: string) => void
 ): SettingsSelectField[] => [
   {
     key: 'microphoneDevice',
@@ -230,7 +229,7 @@ const captureSelectFields = (
       appSnapshotSignal.value.captureDevices.microphones,
       draft.value.microphoneDevice
     ),
-    onChange: onChange('microphoneDevice')
+    onValueChange: onValueChange('microphoneDevice')
   },
   {
     key: 'systemAudioSource',
@@ -240,7 +239,7 @@ const captureSelectFields = (
       appSnapshotSignal.value.captureDevices.systemSources,
       draft.value.systemAudioSource
     ),
-    onChange: onChange('systemAudioSource')
+    onValueChange: onValueChange('systemAudioSource')
   },
   {
     key: 'overlayPosition',
@@ -252,7 +251,7 @@ const captureSelectFields = (
       { value: 'bottomLeft', label: 'Bottom left' },
       { value: 'bottomRight', label: 'Bottom right' }
     ],
-    onChange: onChange('overlayPosition')
+    onValueChange: onValueChange('overlayPosition')
   },
   {
     key: 'overlayDisplayMode',
@@ -263,7 +262,7 @@ const captureSelectFields = (
       { value: 'minimal', label: 'Minimal' },
       { value: 'none', label: 'None' }
     ],
-    onChange: onChange('overlayDisplayMode')
+    onValueChange: onValueChange('overlayDisplayMode')
   }
 ];
 
@@ -313,29 +312,29 @@ const textareaFields = (
 const toggles = (draft: Signal<AppSettingsUpdate>) => ({
   closeToTray: {
     checked: draft.value.closeToTray,
-    onInput: ((event) => {
+    onCheckedChange: (checked: boolean) => {
       draft.value = {
         ...draft.value,
-        closeToTray: event.currentTarget.checked
+        closeToTray: checked
       };
-    }) satisfies JSX.InputEventHandler<HTMLInputElement>
+    }
   },
   launchAtLogin: {
     checked: draft.value.launchAtLogin,
-    onInput: ((event) => {
+    onCheckedChange: (checked: boolean) => {
       draft.value = {
         ...draft.value,
-        launchAtLogin: event.currentTarget.checked
+        launchAtLogin: checked
       };
-    }) satisfies JSX.InputEventHandler<HTMLInputElement>
+    }
   },
   summaryEnabled: {
     checked: draft.value.summaryEnabled,
-    onInput: ((event) => {
+    onCheckedChange: (checked: boolean) => {
       draft.value = {
         ...draft.value,
-        summaryEnabled: event.currentTarget.checked
+        summaryEnabled: checked
       };
-    }) satisfies JSX.InputEventHandler<HTMLInputElement>
+    }
   }
 });

@@ -593,11 +593,7 @@ describe('useApp hook', () => {
       expect(result.current.settings.captureSelectFields[3].key).toBe('overlayDisplayMode');
     });
     await act(async () => {
-      result.current.settings.captureSelectFields[3].onChange({
-        currentTarget: {
-          value: 'minimal'
-        }
-      } as Event & { currentTarget: HTMLSelectElement });
+      result.current.settings.captureSelectFields[3].onValueChange('minimal');
     });
     expect(result.current.status.hasUnsavedSettings.value).toBe(true);
 

@@ -2,6 +2,8 @@ import type { JSX } from 'preact';
 import type { useApp } from '../../app-shell/hooks/useApp.hook';
 import { AppLogo } from '../../shared/ui/AppLogo.view';
 import { Button } from '../../shared/ui/Button.view';
+import { Field } from '../../shared/ui/Field.view';
+import { Input } from '../../shared/ui/Input.view';
 
 interface SetupRouteProps {
   app: ReturnType<typeof useApp>;
@@ -60,15 +62,14 @@ export const SetupRoute = ({ app }: SetupRouteProps): JSX.Element => (
               </a>
             </span>
           </div>
-          <label class='flex flex-col gap-2 text-sm'>
-            <span>Hugging Face token</span>
-            <input
-              class='h-11 border border-border-base bg-bg-input px-3 font-mono text-xs text-text-primary outline-none focus:border-border-focus'
+          <Field>
+            <Field.Label class='text-warning'>Hugging Face token</Field.Label>
+            <Input
               onInput={app.settings.huggingFaceTokenField.onInput}
               type='password'
               value={app.settings.huggingFaceTokenField.value}
             />
-          </label>
+          </Field>
         </section>
       ) : null}
 

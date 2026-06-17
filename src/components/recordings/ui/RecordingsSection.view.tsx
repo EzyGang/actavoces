@@ -1,6 +1,8 @@
 import type { JSX } from 'preact';
 import type { useApp } from '../../app-shell/hooks/useApp.hook';
 import { Button } from '../../shared/ui/Button.view';
+import { Form } from '../../shared/ui/Form.view';
+import { Input } from '../../shared/ui/Input.view';
 import { StatusBadge } from '../../shared/ui/StatusBadge.view';
 
 interface RecordingsSectionProps {
@@ -26,14 +28,14 @@ export const RecordingsSection = ({ app }: RecordingsSectionProps): JSX.Element 
               <div class='flex flex-col gap-2'>
                 <div class='flex items-center gap-3'>
                   {titleRow.isRenaming ? (
-                    <form
+                    <Form
                       class='flex min-w-0 flex-1 items-center gap-2'
                       onSubmit={titleRow.onSubmit}
                     >
-                      <input
+                      <Input
                         aria-label='Recording title'
                         autofocus
-                        class='h-9 min-w-0 flex-1 border border-border-focus bg-bg-input px-2 font-semibold text-base text-text-primary outline-none'
+                        class='h-9 min-w-0 flex-1 px-2 font-semibold text-base'
                         disabled={app.status.loading.value}
                         onInput={titleRow.onInput}
                         value={titleRow.value}
@@ -54,17 +56,17 @@ export const RecordingsSection = ({ app }: RecordingsSectionProps): JSX.Element 
                       >
                         Cancel
                       </Button>
-                    </form>
+                    </Form>
                   ) : (
-                    <button
-                      class='min-w-0 truncate text-left font-semibold text-base text-text-primary hover:text-accent-light'
+                    <Button
+                      class='h-auto min-w-0 justify-start truncate p-0! text-left font-semibold text-base text-text-primary normal-case tracking-normal hover:bg-transparent hover:text-accent-light'
                       disabled={app.status.loading.value}
                       onClick={titleRow.onStart}
                       title='Rename recording'
-                      type='button'
+                      variant='ghost'
                     >
                       {recording.title}
-                    </button>
+                    </Button>
                   )}
                   <StatusBadge label={recording.status} status={recording.status} />
                 </div>
@@ -78,14 +80,14 @@ export const RecordingsSection = ({ app }: RecordingsSectionProps): JSX.Element 
                   <div class='flex flex-wrap gap-2 pt-2'>
                     {speakerRows.map((speaker) =>
                       speaker.isRenaming ? (
-                        <form
+                        <Form
                           class='flex items-center gap-2'
                           key={speaker.name}
                           onSubmit={speaker.onRenameSubmit}
                         >
-                          <input
+                          <Input
                             aria-label={`Rename ${speaker.name}`}
-                            class='h-8 min-w-36 border border-border-focus bg-bg-input px-2 font-mono text-text-primary text-xs outline-none'
+                            class='h-8 min-w-36 px-2'
                             disabled={app.status.loading.value}
                             onInput={speaker.onRenameInput}
                             value={speaker.renameValue}
@@ -106,18 +108,18 @@ export const RecordingsSection = ({ app }: RecordingsSectionProps): JSX.Element 
                           >
                             Cancel
                           </Button>
-                        </form>
+                        </Form>
                       ) : (
-                        <button
-                          class='border border-border-base bg-bg-input px-2 py-1 font-mono text-text-secondary text-xs hover:border-border-focus hover:text-text-primary'
+                        <Button
+                          class='h-auto border-border-base bg-bg-input px-2 py-1 font-mono font-normal text-text-secondary text-xs normal-case tracking-normal hover:border-border-focus hover:text-text-primary'
                           disabled={app.status.loading.value}
                           key={speaker.name}
                           onClick={speaker.onStartRename}
                           title='Rename speaker'
-                          type='button'
+                          variant='secondary'
                         >
                           {speaker.name}
-                        </button>
+                        </Button>
                       )
                     )}
                   </div>

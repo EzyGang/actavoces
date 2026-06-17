@@ -1,6 +1,11 @@
 import type { JSX } from 'preact';
 import type { useApp } from '../../app-shell/hooks/useApp.hook';
 import { Button } from '../../shared/ui/Button.view';
+import { Collapsible } from '../../shared/ui/Collapsible.view';
+import { Field } from '../../shared/ui/Field.view';
+import { Input } from '../../shared/ui/Input.view';
+import { Panel } from '../../shared/ui/Panel.view';
+import { Select } from '../../shared/ui/Select.view';
 import { StatusBadge } from '../../shared/ui/StatusBadge.view';
 
 interface SettingsPanelProps {
@@ -8,23 +13,13 @@ interface SettingsPanelProps {
 }
 
 export const SettingsTranscriptionSpeakersPanel = ({ app }: SettingsPanelProps): JSX.Element => (
-  <article class='flex flex-col gap-4 border border-border-base bg-bg-card p-5'>
+  <Panel>
     <h2 class='font-semibold text-xl'>Transcription and speakers</h2>
     <div class='grid gap-3 md:grid-cols-2'>
       {app.settings.selectFields.map((field) => (
-        <label class='flex flex-col gap-2 text-sm' key={field.key}>
-          <span class='text-text-muted'>{field.label}</span>
-          <select
-            class='h-11 border border-border-base bg-bg-input px-3 font-mono text-xs outline-none focus:border-border-focus'
-            onChange={field.onChange}
-            value={field.value}
-          >
-            {field.options.map((option) => (
-              <option key={option.value} value={option.value}>
-                {option.label}
-              </option>
-            ))}
-          </select>
+        <Field key={field.key}>
+          <Field.Label>{field.label}</Field.Label>
+          <Select onValueChange={field.onValueChange} options={field.options} value={field.value} />
           {field.hint ? (
             <span
               class={
@@ -52,27 +47,28 @@ export const SettingsTranscriptionSpeakersPanel = ({ app }: SettingsPanelProps):
               ) : null}
             </span>
           ) : null}
-        </label>
+        </Field>
       ))}
     </div>
     <div class='flex flex-col gap-3 border border-border-base bg-bg-input p-3 text-sm'>
-      <label class='flex flex-col gap-2'>
-        <span class='text-text-muted'>{app.settings.glossaryField.label}</span>
+      <Field class='text-sm'>
+        <Field.Label>{app.settings.glossaryField.label}</Field.Label>
         <div class='flex gap-2'>
-          <input
-            class='h-11 min-w-0 flex-1 border border-border-base bg-bg-card px-3 font-mono text-xs outline-none focus:border-border-focus'
+          <Input
+            class='min-w-0 flex-1'
             onInput={app.settings.glossaryField.onInput}
             onKeyDown={app.settings.glossaryField.onKeyDown}
             placeholder={app.settings.glossaryField.placeholder}
             type='text'
             value={app.settings.glossaryField.value}
+            surface='card'
           />
           <Button class='h-11 px-3' onClick={app.settings.glossaryField.onAdd} variant='secondary'>
             Add
           </Button>
         </div>
-        <span class='text-text-muted text-xs'>{app.settings.glossaryField.hint}</span>
-      </label>
+        <Field.Description>{app.settings.glossaryField.hint}</Field.Description>
+      </Field>
       {app.settings.glossaryField.entries.length > 0 ? (
         <div class='flex flex-wrap gap-2'>
           {app.settings.glossaryField.entries.map((entry) => (
@@ -81,68 +77,78 @@ export const SettingsTranscriptionSpeakersPanel = ({ app }: SettingsPanelProps):
               key={entry.value}
             >
               {entry.value}
-              <button
+              <Button
                 aria-label={`Remove ${entry.value}`}
-                class='text-text-muted hover:text-text-primary'
+                class='h-auto p-0! text-text-muted hover:text-text-primary'
                 onClick={entry.onRemove}
-                type='button'
+                variant='ghost'
               >
                 X
-              </button>
+              </Button>
             </span>
           ))}
         </div>
       ) : null}
     </div>
-    <details class='border border-border-base bg-bg-input p-3'>
-      <summary class='cursor-pointer text-text-secondary text-sm'>Advanced speaker options</summary>
-      <div class='grid gap-3 pt-3 md:grid-cols-3'>
+    <Collapsible>
+      <Collapsible.Trigger>Advanced speaker options</Collapsible.Trigger>
+      <Collapsible.Panel class='grid gap-3 md:grid-cols-3'>
+        <Field>
+          <Field.Label>{app.settings.speakerCountField.label}</Field.Label>
+          <Select
+            onValueChange={app.settings.speakerCountField.onValueChange}
+            options={app.settings.speakerCountField.options}
+            value={app.settings.speakerCountField.value}
+          />
+        </Field>
         {app.settings.numberFields.slice(1).map((field) => (
-          <label class='flex flex-col gap-2 text-sm' key={field.key}>
-            <span class='text-text-muted'>{field.label}</span>
-            <input
-              class='h-11 border border-border-base bg-bg-card px-3 font-mono text-xs outline-none focus:border-border-focus'
+          <Field key={field.key}>
+            <Field.Label>{field.label}</Field.Label>
+            <Input
               min='0'
               onInput={field.onInput}
               type='number'
               value={field.value}
+              surface='card'
             />
-          </label>
+          </Field>
         ))}
-      </div>
-    </details>
-    <div class='flex flex-col gap-3 border border-border-base bg-bg-input p-3 text-sm'>
-      <label class='flex flex-col gap-2'>
-        <span class='text-text-muted'>{app.settings.huggingFaceTokenField.label}</span>
-        <input
-          class='h-11 border border-border-base bg-bg-card px-3 font-mono text-xs outline-none focus:border-border-focus'
-          onInput={app.settings.huggingFaceTokenField.onInput}
-          type='password'
-          value={app.settings.huggingFaceTokenField.value}
-        />
-      </label>
-      <div class='flex items-center justify-between gap-3'>
-        <div class='flex flex-col gap-1'>
-          <span class='text-text-muted'>Hugging Face token status</span>
-          <span>
-            {app.data.snapshot.value.settings.huggingFaceTokenConfigured
-              ? 'Saved in local database'
-              : 'Missing'}
-          </span>
+      </Collapsible.Panel>
+    </Collapsible>
+    {app.settings.draft.value.diarizationBackend === 'pyannote' ? (
+      <div class='flex flex-col gap-3 border border-border-base bg-bg-input p-3 text-sm'>
+        <Field>
+          <Field.Label>{app.settings.huggingFaceTokenField.label}</Field.Label>
+          <Input
+            onInput={app.settings.huggingFaceTokenField.onInput}
+            type='password'
+            value={app.settings.huggingFaceTokenField.value}
+            surface='card'
+          />
+        </Field>
+        <div class='flex items-center justify-between gap-3'>
+          <div class='flex flex-col gap-1'>
+            <span class='text-text-muted'>Hugging Face token status</span>
+            <span>
+              {app.data.snapshot.value.settings.huggingFaceTokenConfigured
+                ? 'Saved in local database'
+                : 'Missing'}
+            </span>
+          </div>
+          <Button
+            class='h-9 px-3'
+            disabled={
+              app.status.savingSettings.value ||
+              !app.data.snapshot.value.settings.huggingFaceTokenConfigured
+            }
+            onClick={app.actions.clearHuggingFaceToken}
+            variant='ghost'
+          >
+            Clear token
+          </Button>
         </div>
-        <Button
-          class='h-9 px-3'
-          disabled={
-            app.status.savingSettings.value ||
-            !app.data.snapshot.value.settings.huggingFaceTokenConfigured
-          }
-          onClick={app.actions.clearHuggingFaceToken}
-          variant='ghost'
-        >
-          Clear token
-        </Button>
       </div>
-    </div>
+    ) : null}
     <div class='flex flex-col gap-3 border border-border-base bg-bg-input p-3 text-sm'>
       <div class='flex items-center justify-between gap-3'>
         <div class='flex flex-col gap-1'>
@@ -220,5 +226,5 @@ export const SettingsTranscriptionSpeakersPanel = ({ app }: SettingsPanelProps):
         </div>
       ) : null}
     </div>
-  </article>
+  </Panel>
 );

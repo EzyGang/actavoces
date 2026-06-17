@@ -1,3 +1,4 @@
+import { Button as BaseButton } from '@base-ui/react/button';
 import { clsx } from 'clsx';
 import type { ComponentChildren, JSX, MouseEventHandler } from 'preact';
 
@@ -29,10 +30,10 @@ export const Button = ({
   type = 'button',
   class: classProp
 }: ButtonProps): JSX.Element => (
-  <button
+  <BaseButton
     aria-label={ariaLabel}
-    class={clsx(
-      'inline-flex h-11 items-center justify-center gap-2 px-4 font-semibold text-xs uppercase tracking-wider transition duration-fast disabled:cursor-not-allowed disabled:opacity-40',
+    className={clsx(
+      'inline-flex h-11 items-center justify-center gap-2 px-4 font-semibold text-xs uppercase tracking-wider transition duration-fast focus-visible:ring-2 focus-visible:ring-border-focus focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-40',
       VARIANT_CLASS[variant],
       classProp
     )}
@@ -42,5 +43,5 @@ export const Button = ({
     type={type}
   >
     {children}
-  </button>
+  </BaseButton>
 );

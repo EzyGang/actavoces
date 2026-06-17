@@ -1,3 +1,4 @@
+import { IconFolderOpen, IconRefresh } from '@tabler/icons-react';
 import type { JSX } from 'preact';
 import type { useApp } from '../../app-shell/hooks/useApp.hook';
 import { Button } from '../../shared/ui/Button.view';
@@ -53,20 +54,24 @@ export const JobsRoute = ({ app }: JobsRouteProps): JSX.Element => (
                 </div>
                 <div class='flex items-center gap-2 lg:justify-self-end'>
                   <Button
-                    class='h-9 px-3'
+                    aria-label='Open recording folder'
+                    class='h-9 w-9 p-0!'
                     disabled={app.status.loading.value}
                     onClick={onOpenFolder}
+                    title='Open recording folder'
                     variant='ghost'
                   >
-                    Open folder
+                    <IconFolderOpen aria-hidden='true' className='h-4 w-4' />
                   </Button>
                   <Button
-                    class='h-9 px-3'
+                    aria-label='Retry failed jobs'
+                    class='h-9 w-9 p-0!'
                     disabled={app.status.loading.value || !canRetry}
                     onClick={onRetry}
+                    title='Retry failed jobs'
                     variant='ghost'
                   >
-                    Retry failed jobs
+                    <IconRefresh aria-hidden='true' className='h-4 w-4' />
                   </Button>
                 </div>
               </div>
