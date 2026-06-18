@@ -5,11 +5,9 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/EzyGang/actavoces/actions/workflows/ci.yml">
-    <img src="https://github.com/EzyGang/actavoces/actions/workflows/ci.yml/badge.svg" alt="CI">
-  </a>
-  <img src="https://img.shields.io/badge/license-AGPL--3.0--or--later-green" alt="AGPL-3.0-or-later">
-  <img src="https://img.shields.io/github/v/release/EzyGang/actavoces" alt="GitHub release">
+  <img src="https://img.shields.io/github/actions/workflow/status/EzyGang/actavoces/ci.yml?style=for-the-badge" alt="CI">
+  <img src="https://img.shields.io/badge/license-AGPL--3.0--or--later-green?style=for-the-badge" alt="AGPL-3.0-or-later">
+  <img src="https://img.shields.io/github/v/release/EzyGang/actavoces?style=for-the-badge" alt="GitHub release">
 </p>
 
 ---
