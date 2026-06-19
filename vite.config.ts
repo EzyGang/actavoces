@@ -1,9 +1,17 @@
+import { execSync } from 'node:child_process';
 import preact from '@preact/preset-vite';
 import tailwindcss from '@tailwindcss/vite';
 import { defineConfig } from 'vite';
 
-// @ts-expect-error process is a nodejs global
 const host = process.env.TAURI_DEV_HOST;
+
+function getLatestTag(): string {
+  try {
+    return execSync('git describe --tags --abbrev=0').toString().trim();
+  } catch {
+    return '0.0.0';
+  }
+}
 
 // https://vite.dev/config/
 export default defineConfig(({ mode }) => ({
@@ -13,6 +21,9 @@ export default defineConfig(({ mode }) => ({
   //
   // 1. prevent Vite from obscuring rust errors
   clearScreen: false,
+  define: {
+    __LANDING_LATEST_TAG__: JSON.stringify(getLatestTag())
+  },
   // 2. tauri expects a fixed port, fail if that port is not available
   server: {
     port: 1420,

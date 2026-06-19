@@ -1,8 +1,11 @@
+declare const __LANDING_LATEST_TAG__: string;
+
 export const repositoryUrl = 'https://github.com/EzyGang/actavoces';
 export const releasesUrl = 'https://github.com/EzyGang/actavoces/releases';
 export const issuesUrl = 'https://github.com/EzyGang/actavoces/issues';
 export const feedbackUrl = 'https://insigh.to/b/actavoces';
 export const creatorUrl = 'https://x.com/galtozzy';
+export const appVersion = __LANDING_LATEST_TAG__;
 
 export const featureCards = [
   {
