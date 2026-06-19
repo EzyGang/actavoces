@@ -1,9 +1,22 @@
+import { execSync } from 'child_process';
 import preact from '@preact/preset-vite';
 import tailwindcss from '@tailwindcss/vite';
 import { defineConfig } from 'vite';
 
-// @ts-expect-error process is a nodejs global
 const host = process.env.TAURI_DEV_HOST;
+
+/** Fetch the latest GitHub tag from the local git repository. */
+function getLatestTag(): string {
+  try {
+    const tag = execSync('git describe --tags --abbrev=0', {
+      encoding: 'utf-8',
+      timeout: 5000
+    }).trim();
+    return tag || 'latest';
+  } catch {
+    return 'latest';
+  }
+}
 
 // https://vite.dev/config/
 export default defineConfig(({ mode }) => ({
@@ -36,6 +49,9 @@ export default defineConfig(({ mode }) => ({
       'react-dom': 'preact/compat'
     }
   },
+  define: mode === 'landing'
+    ? { __LATEST_VERSION__: JSON.stringify(getLatestTag()) }
+    : undefined,
   build: mode === 'landing'
     ? {
         outDir: 'dist-landing',
