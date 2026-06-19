@@ -11,6 +11,7 @@ import { AppLogo } from '../components/shared/ui/AppLogo.view';
 import '../App.css';
 import dashboardScreenshot from '../../screenshots/1.png';
 import {
+  appVersion,
   artifactItems,
   creatorUrl,
   downloadRows,
@@ -113,9 +114,12 @@ export const LandingPage = (): JSX.Element => (
           </div>
         </div>
         <aside class='flex flex-col gap-5 border border-border-base bg-bg-card p-5'>
-          <span class='font-mono text-text-muted text-[11px] uppercase tracking-wider'>
-            Current status
-          </span>
+          <div class='flex flex-col gap-1'>
+            <span class='font-mono text-text-muted text-[11px] uppercase tracking-wider'>
+              Current status
+            </span>
+            <span class='font-mono text-xs text-success'>{appVersion}</span>
+          </div>
           <p class='text-text-secondary text-sm leading-6'>
             ActaVoces is used today. Windows has the most runtime, macOS has lighter runtime, and
             Linux lacks active QA.
