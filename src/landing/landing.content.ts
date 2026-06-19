@@ -1,4 +1,4 @@
-export const appVersion: string = __APP_VERSION__;
+export const appVersion: string = LANDING_APP_VERSION;
 
 export const repositoryUrl = 'https://github.com/EzyGang/actavoces';
 export const releasesUrl = 'https://github.com/EzyGang/actavoces/releases';

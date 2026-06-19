@@ -114,12 +114,12 @@ export const LandingPage = (): JSX.Element => (
           </div>
         </div>
         <aside class='flex flex-col gap-5 border border-border-base bg-bg-card p-5'>
-          <div class='flex flex-col gap-1'>
-            <span class='font-mono text-text-muted text-[11px] uppercase tracking-wider'>
-              Current status
-            </span>
-            <span class='font-mono text-xs text-success'>{appVersion}</span>
-          </div>
+          <span class='font-mono text-text-muted text-[11px] uppercase tracking-wider'>
+            Current status
+          </span>
+          <span class='self-start border border-border-base bg-bg-card px-3 py-1 font-mono text-[11px] text-text-muted uppercase tracking-wider'>
+            v{appVersion}
+          </span>
           <p class='text-text-secondary text-sm leading-6'>
             ActaVoces is used today. Windows has the most runtime, macOS has lighter runtime, and
             Linux lacks active QA.
