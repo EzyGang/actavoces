@@ -20,6 +20,7 @@ import {
   issuesUrl,
   releasesUrl,
   repositoryUrl,
+  tagVersion,
   workflowSteps
 } from './landing.content';
 
@@ -115,6 +116,9 @@ export const LandingPage = (): JSX.Element => (
         <aside class='flex flex-col gap-5 border border-border-base bg-bg-card p-5'>
           <span class='font-mono text-text-muted text-[11px] uppercase tracking-wider'>
             Current status
+          </span>
+          <span class='w-fit border border-border-base bg-bg-card px-3 py-1 font-mono text-text-secondary text-[11px] uppercase tracking-wider'>
+            {tagVersion}
           </span>
           <p class='text-text-secondary text-sm leading-6'>
             ActaVoces is used today. Windows has the most runtime, macOS has lighter runtime, and
