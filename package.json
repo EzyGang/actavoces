@@ -25,7 +25,7 @@
     "dev": "vite",
     "build": "pnpm tauri build",
     "build:web": "pnpm type-check && vite build",
-    "build:landing": "LANDING_APP_VERSION=$(node scripts/get-latest-release-tag.mjs) pnpm type-check && LANDING_APP_VERSION=$(node scripts/get-latest-release-tag.mjs) vite build --mode landing && node -e \"require('node:fs').renameSync('dist-landing/landing.html', 'dist-landing/index.html')\"",
+    "build:landing": "TAG=$(node scripts/get-latest-release-tag.mjs) && LANDING_APP_VERSION=$TAG pnpm type-check && LANDING_APP_VERSION=$TAG vite build --mode landing && node -e \"require('node:fs').renameSync('dist-landing/landing.html', 'dist-landing/index.html')\"",
     "preview": "vite preview",
     "tauri": "tauri",
     "lint": "biome check --error-on-warnings ./src",
