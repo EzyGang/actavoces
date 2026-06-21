@@ -7,23 +7,36 @@ const host = process.env.TAURI_DEV_HOST;
 
 // https://vite.dev/config/
 export default defineConfig(async ({ mode }) => {
-  let currentVersionTag: string | null = null;
+  const define: Record<string, string> = {};
 
   if (mode === 'landing') {
+    let currentVersionTag: string | null = null;
+
     try {
+      const headers: Record<string, string> = {
+        Accept: 'application/vnd.github+json'
+      };
+      // @ts-expect-error process is a nodejs global
+      const token: string | undefined = process.env.GITHUB_TOKEN;
+      if (token !== undefined) {
+        headers.Authorization = `Bearer ${token}`;
+      }
       const response = await fetch(
         'https://api.github.com/repos/EzyGang/actavoces/tags',
-        { headers: { Accept: 'application/vnd.github+json' }, signal: AbortSignal.timeout(5000) }
+        { headers, signal: AbortSignal.timeout(5000) }
       );
       if (response.ok) {
         const tags: Array<{ name: string }> = await response.json();
-        if (tags.length > 0) {
-          currentVersionTag = tags[0].name;
+        const releaseTag = tags.find((t) => /^v\d/.test(t.name));
+        if (releaseTag !== undefined) {
+          currentVersionTag = releaseTag.name;
         }
       }
     } catch {
       // fall back to null if API unreachable
     }
+
+    define.__ACTAVOCES_VERSION__ = JSON.stringify(currentVersionTag);
   }
 
   return {
@@ -56,9 +69,7 @@ export default defineConfig(async ({ mode }) => {
         'react-dom': 'preact/compat'
       }
     },
-    define: {
-      __ACTAVOCES_VERSION__: JSON.stringify(currentVersionTag)
-    },
+    define,
     build: mode === 'landing'
       ? {
           outDir: 'dist-landing',
