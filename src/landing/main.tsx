@@ -1,5 +1,5 @@
 import { render } from 'preact';
-import { LandingPage } from './LandingPage.view';
+import { LandingPageContainer } from './containers/LandingPage.container';
 
 const root = document.getElementById('root');
 
@@ -7,4 +7,4 @@ if (root === null) {
   throw new Error('Root element not found');
 }
 
-render(<LandingPage />, root);
+render(<LandingPageContainer />, root);

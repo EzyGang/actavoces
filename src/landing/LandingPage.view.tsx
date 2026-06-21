@@ -23,7 +23,15 @@ import {
   workflowSteps
 } from './landing.content';
 
-export const LandingPage = (): JSX.Element => (
+interface LandingPageProps {
+  landing: {
+    data: { version: string | null };
+    status: { loading: boolean; error: string | null };
+    actions: Record<string, never>;
+  };
+}
+
+export const LandingPage = ({ landing }: LandingPageProps): JSX.Element => (
   <main class='min-h-screen bg-bg-page text-text-primary'>
     <header class='sticky top-0 z-20 border-border-base border-b bg-bg-page/95 backdrop-blur'>
       <nav class='mx-auto flex max-w-7xl items-center justify-between gap-4 px-5 py-4 lg:px-8'>
@@ -116,6 +124,22 @@ export const LandingPage = (): JSX.Element => (
           <span class='font-mono text-text-muted text-[11px] uppercase tracking-wider'>
             Current status
           </span>
+          {landing.status.loading ? (
+            <span class='font-mono text-text-muted text-[10px] uppercase tracking-wider'>
+              Checking latest release…
+            </span>
+          ) : null}
+          {!landing.status.loading && landing.data.version ? (
+            <a
+              class='inline-flex items-center gap-2 text-text-primary underline-offset-4 hover:underline'
+              href={releasesUrl}
+              rel='noreferrer'
+              target='_blank'
+            >
+              <span class='h-1.5 w-1.5 rounded-full bg-success' />
+              <span class='font-mono text-text-secondary text-xs'>{landing.data.version}</span>
+            </a>
+          ) : null}
           <p class='text-text-secondary text-sm leading-6'>
             ActaVoces is used today. Windows has the most runtime, macOS has lighter runtime, and
             Linux lacks active QA.
