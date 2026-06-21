@@ -4,6 +4,8 @@ export const issuesUrl = 'https://github.com/EzyGang/actavoces/issues';
 export const feedbackUrl = 'https://insigh.to/b/actavoces';
 export const creatorUrl = 'https://x.com/galtozzy';
 
+export const landingAppVersion: string = __LANDING_APP_VERSION__;
+
 export const featureCards = [
   {
     label: 'Capture',

@@ -4,6 +4,8 @@ import { defineConfig } from 'vite';
 
 // @ts-expect-error process is a nodejs global
 const host = process.env.TAURI_DEV_HOST;
+// @ts-expect-error process is a nodejs global
+const landingAppVersion = process.env.LANDING_APP_VERSION ?? '0.0.0-dev';
 
 // https://vite.dev/config/
 export default defineConfig(({ mode }) => ({
@@ -42,6 +44,11 @@ export default defineConfig(({ mode }) => ({
         rollupOptions: {
           input: 'landing.html'
         }
+      }
+    : undefined,
+  define: mode === 'landing'
+    ? {
+        __LANDING_APP_VERSION__: JSON.stringify(landingAppVersion)
       }
     : undefined
 }));
