@@ -13,6 +13,7 @@ import dashboardScreenshot from '../../screenshots/1.png';
 import {
   artifactItems,
   creatorUrl,
+  currentVersionTag,
   downloadRows,
   faqItems,
   featureCards,
@@ -116,6 +117,16 @@ export const LandingPage = (): JSX.Element => (
           <span class='font-mono text-text-muted text-[11px] uppercase tracking-wider'>
             Current status
           </span>
+          {currentVersionTag !== null && (
+            <div class='flex items-center gap-2'>
+              <span class='font-mono text-text-muted text-[11px] uppercase tracking-wider'>
+                Release
+              </span>
+              <span class='font-mono text-sm font-semibold text-accent'>
+                {currentVersionTag}
+              </span>
+            </div>
+          )}
           <p class='text-text-secondary text-sm leading-6'>
             ActaVoces is used today. Windows has the most runtime, macOS has lighter runtime, and
             Linux lacks active QA.
