@@ -2,6 +2,24 @@
 
 Project-wide reference guide. Ingest once and treat as implicit context for future work in this repository.
 
+## Development Environment
+
+Prerequisites for a fresh checkout:
+
+- Node.js 22 with `pnpm`
+- Rust stable with Cargo
+- Tauri v2 system dependencies for the target OS
+- Python 3.14
+- `uv`
+- OS microphone and audio-capture permissions
+
+Initial setup:
+
+```bash
+pnpm install
+pnpm sync:py
+```
+
 ## Core Principles
 
 - Read the relevant folder structure before implementing changes.
@@ -277,7 +295,7 @@ for (const obj of objs) {
 Stores are plain objects with signals. Do not use classes, getters, or setters.
 
 ```ts
-import { signal, type Signal } from '@preact/signals';
+import { signal, type Signal } from "@preact/signals";
 
 interface FeatureStore {
   data: Signal<string[]>;
@@ -286,7 +304,7 @@ interface FeatureStore {
 
 export const featureStore: FeatureStore = {
   data: signal([]),
-  loading: signal(false)
+  loading: signal(false),
 };
 ```
 
@@ -354,7 +372,7 @@ Service files live in `src/services/<domain>/`.
 Always use flexbox with `gap` for sibling spacing. Do not use `space-y-*` or child margins for layout spacing.
 
 ```tsx
-<div class='flex flex-col gap-4'>
+<div class="flex flex-col gap-4">
   <Item />
   <Item />
 </div>
