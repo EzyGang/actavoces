@@ -10,6 +10,7 @@ import type { JSX } from 'preact';
 import { AppLogo } from '../components/shared/ui/AppLogo.view';
 import '../App.css';
 import dashboardScreenshot from '../../screenshots/1.png';
+import type { useLandingVersion } from './hooks/useLandingVersion.hook';
 import {
   artifactItems,
   creatorUrl,
@@ -23,7 +24,11 @@ import {
   workflowSteps
 } from './landing.content';
 
-export const LandingPage = (): JSX.Element => (
+interface LandingPageProps {
+  landing: ReturnType<typeof useLandingVersion>;
+}
+
+export const LandingPage = ({ landing }: LandingPageProps): JSX.Element => (
   <main class='min-h-screen bg-bg-page text-text-primary'>
     <header class='sticky top-0 z-20 border-border-base border-b bg-bg-page/95 backdrop-blur'>
       <nav class='mx-auto flex max-w-7xl items-center justify-between gap-4 px-5 py-4 lg:px-8'>
@@ -120,6 +125,18 @@ export const LandingPage = (): JSX.Element => (
             ActaVoces is used today. Windows has the most runtime, macOS has lighter runtime, and
             Linux lacks active QA.
           </p>
+          <div class='flex items-center gap-2'>
+            <span class='font-mono text-text-muted text-[11px] uppercase tracking-wider'>
+              Version
+            </span>
+            {landing.status.loading.value ? (
+              <span class='font-mono text-text-muted text-xs'>Loading...</span>
+            ) : landing.status.error.value !== null ? (
+              <span class='font-mono text-text-muted text-xs'>Unavailable</span>
+            ) : (
+              <span class='font-mono text-emerald text-xs'>{landing.status.version.value}</span>
+            )}
+          </div>
           <div class='grid gap-2 text-sm'>
             <a
               class='inline-flex items-center gap-2 text-text-primary underline-offset-4 hover:underline'
