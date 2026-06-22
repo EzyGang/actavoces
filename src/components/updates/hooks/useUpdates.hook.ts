@@ -34,6 +34,26 @@ export const useUpdates = ({ loading, setError, setupReady }: UseUpdatesInput) =
   const initialCheckRequested = useSignal(false);
   const updateNoticeVisible = useComputed(() => updateCheckStatus.value !== 'current');
 
+  const applyUpdateCheckResult = (update: Update | null, notify: boolean) => {
+    updateAvailable.value = update;
+    updateCheckStatus.value = update ? 'available' : 'current';
+    updateStatus.value = update
+      ? `Version ${update.version} is available.`
+      : 'ActaVoces is up to date.';
+
+    if (notify) {
+      updateToast.value = { message: updateStatus.value };
+    }
+  };
+
+  const checkForAvailableUpdate = async (notify: boolean) => {
+    const update = await check();
+
+    applyUpdateCheckResult(update, notify);
+
+    return update;
+  };
+
   const runUpdateCheck = async (notify: boolean) => {
     if (!isTauriRuntime()) {
       updateCheckStatus.value = 'failed';
@@ -47,17 +67,7 @@ export const useUpdates = ({ loading, setError, setupReady }: UseUpdatesInput) =
     setError(null);
 
     try {
-      const update = await check();
-
-      updateAvailable.value = update;
-      updateCheckStatus.value = update ? 'available' : 'current';
-      updateStatus.value = update
-        ? `Version ${update.version} is available.`
-        : 'ActaVoces is up to date.';
-
-      if (notify) {
-        updateToast.value = { message: updateStatus.value };
-      }
+      await checkForAvailableUpdate(notify);
     } catch (error) {
       const message = errorMessage(error, 'Unable to check for updates');
 
@@ -90,13 +100,9 @@ export const useUpdates = ({ loading, setError, setupReady }: UseUpdatesInput) =
     setError(null);
 
     try {
-      const update = updateAvailable.value ?? (await check());
+      const update = updateAvailable.value ?? (await checkForAvailableUpdate(false));
 
       if (!update) {
-        updateAvailable.value = null;
-        updateCheckStatus.value = 'current';
-        updateStatus.value = 'ActaVoces is up to date.';
-
         return;
       }
 
