@@ -20,16 +20,21 @@ type UpdateCheckStatus =
   | 'installing'
   | 'installed';
 
+interface UpdateToast {
+  message: string;
+}
+
 export const useUpdates = ({ loading, setError, setupReady }: UseUpdatesInput) => {
   const updateChecking = useSignal(false);
   const updateInstalling = useSignal(false);
   const updateAvailable = useSignal<Update | null>(null);
   const updateCheckStatus = useSignal<UpdateCheckStatus>('notChecked');
   const updateStatus = useSignal('Updates have not been checked in this session.');
+  const updateToast = useSignal<UpdateToast | null>(null);
   const initialCheckRequested = useSignal(false);
   const updateNoticeVisible = useComputed(() => updateCheckStatus.value !== 'current');
 
-  const checkForUpdates = async () => {
+  const runUpdateCheck = async (notify: boolean) => {
     if (!isTauriRuntime()) {
       updateCheckStatus.value = 'failed';
       updateStatus.value = 'Updater is available in the desktop app.';
@@ -49,6 +54,10 @@ export const useUpdates = ({ loading, setError, setupReady }: UseUpdatesInput) =
       updateStatus.value = update
         ? `Version ${update.version} is available.`
         : 'ActaVoces is up to date.';
+
+      if (notify) {
+        updateToast.value = { message: updateStatus.value };
+      }
     } catch (error) {
       const message = errorMessage(error, 'Unable to check for updates');
 
@@ -58,6 +67,14 @@ export const useUpdates = ({ loading, setError, setupReady }: UseUpdatesInput) =
     } finally {
       updateChecking.value = false;
     }
+  };
+
+  const checkForUpdates = async () => {
+    await runUpdateCheck(true);
+  };
+
+  const dismissUpdateToast = () => {
+    updateToast.value = null;
   };
 
   const installUpdate = async () => {
@@ -120,7 +137,7 @@ export const useUpdates = ({ loading, setError, setupReady }: UseUpdatesInput) =
 
     initialCheckRequested.value = true;
     window.requestAnimationFrame(() => {
-      void checkForUpdates();
+      void runUpdateCheck(false);
     });
   }, [setupReady.value, loading.value]);
 
@@ -131,8 +148,10 @@ export const useUpdates = ({ loading, setError, setupReady }: UseUpdatesInput) =
     updateCheckStatus,
     updateNoticeVisible,
     updateStatus,
+    updateToast,
     actions: {
       checkForUpdates,
+      dismissUpdateToast,
       installUpdate
     }
   };

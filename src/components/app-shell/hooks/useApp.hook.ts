@@ -103,6 +103,7 @@ export const useApp = () => {
       updateStatus: updates.updateStatus,
       updateAvailable: updates.updateAvailable,
       updateNoticeVisible: updates.updateNoticeVisible,
+      updateToast: updates.updateToast,
       appVersion
     },
     status: {
@@ -135,6 +136,7 @@ export const useApp = () => {
       clearHuggingFaceToken: settings.actions.clearHuggingFaceToken,
       saveSettings: settings.actions.saveSettings,
       checkForUpdates: updates.actions.checkForUpdates,
+      dismissUpdateToast: updates.actions.dismissUpdateToast,
       installUpdate: updates.actions.installUpdate,
       retrySetup: runtime.actions.retrySetup,
       setupDiarization: runtime.actions.setupDiarization,

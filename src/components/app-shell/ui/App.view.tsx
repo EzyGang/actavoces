@@ -11,6 +11,7 @@ import type { useApp } from '../hooks/useApp.hook';
 import { AppSidebar } from './AppSidebar.view';
 import { SortformerSetupToast } from './SortformerSetupToast.view';
 import { UnsavedSettingsToast } from './UnsavedSettingsToast.view';
+import { UpdateCheckToast } from './UpdateCheckToast.view';
 
 interface AppViewProps {
   app: ReturnType<typeof useApp>;
@@ -133,6 +134,13 @@ export const AppView = ({ app }: AppViewProps): JSX.Element =>
             offset={app.data.sortformerProgress.value !== null}
             onSave={app.actions.saveSettings}
             saving={app.status.savingSettings.value}
+          />
+        ) : null}
+
+        {app.data.updateToast.value ? (
+          <UpdateCheckToast
+            message={app.data.updateToast.value.message}
+            onDismiss={app.actions.dismissUpdateToast}
           />
         ) : null}
       </section>

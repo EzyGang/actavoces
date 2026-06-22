@@ -10,9 +10,13 @@ interface RecordingOverlaySyncPayload {
   displayMode: AppSettings['overlayDisplayMode'];
 }
 
+const effectiveDisplayMode = (snapshot: AppSnapshot): AppSettings['overlayDisplayMode'] =>
+  snapshot.desktop.overlayVisible ? snapshot.settings.overlayDisplayMode : 'none';
+
 export const useRecordingOverlay = () => {
   const stopping = useSignal(false);
   const displayMode = useSignal<AppSettings['overlayDisplayMode']>('full');
+  const overlaySyncReceived = useSignal(false);
 
   const handleStopRecording = async () => {
     stopping.value = true;
@@ -33,17 +37,24 @@ export const useRecordingOverlay = () => {
 
     void getAppSnapshot()
       .then((snapshot) => {
-        displayMode.value = snapshot.settings.overlayDisplayMode;
+        if (!overlaySyncReceived.value) {
+          displayMode.value = effectiveDisplayMode(snapshot);
+        }
       })
       .catch(() => undefined);
 
     const snapshotListener = listen<AppSnapshot>('app-snapshot-updated', (event) => {
-      displayMode.value = event.payload.settings.overlayDisplayMode;
+      displayMode.value = effectiveDisplayMode(event.payload);
     });
     const overlaySyncListener = listen<RecordingOverlaySyncPayload>(
       'recording-overlay-sync',
       (event) => {
+        overlaySyncReceived.value = true;
         displayMode.value = event.payload.visible ? event.payload.displayMode : 'none';
+
+        if (!event.payload.visible) {
+          stopping.value = false;
+        }
       }
     );
 

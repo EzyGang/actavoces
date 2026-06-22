@@ -337,6 +337,38 @@ describe('useApp hook', () => {
       expect(result.current.data.updateNoticeVisible.value).toBe(false);
     });
     expect(result.current.data.updateStatus.value).toBe('ActaVoces is up to date.');
+    expect(result.current.data.updateToast.value).toBeNull();
+  });
+
+  it('shows a toast after a manual successful update check', async () => {
+    Object.defineProperty(window, '__TAURI_INTERNALS__', {
+      configurable: true,
+      value: {}
+    });
+    vi.mocked(getAppSnapshot).mockResolvedValue(makeSnapshot());
+    vi.mocked(check).mockResolvedValue(null);
+
+    const { result } = renderHook(() => useApp());
+
+    await waitFor(() => {
+      expect(check).toHaveBeenCalledTimes(1);
+    });
+    expect(result.current.data.updateToast.value).toBeNull();
+
+    await act(async () => {
+      await result.current.actions.checkForUpdates();
+    });
+
+    expect(check).toHaveBeenCalledTimes(2);
+    expect(result.current.data.updateToast.value).toEqual({
+      message: 'ActaVoces is up to date.'
+    });
+
+    act(() => {
+      result.current.actions.dismissUpdateToast();
+    });
+
+    expect(result.current.data.updateToast.value).toBeNull();
   });
 
   it('keeps the dashboard update notice visible when an update is available', async () => {

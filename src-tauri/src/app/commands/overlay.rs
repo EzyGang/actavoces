@@ -39,6 +39,23 @@ pub fn sync_recording_overlay(
         return Ok(());
     };
 
+    if !visible || display_mode == OverlayDisplayMode::None {
+        emit_recording_overlay_sync(&overlay, visible, display_mode)?;
+
+        return overlay.hide().map_err(|error| error.to_string());
+    }
+
+    size_recording_overlay(&overlay, display_mode)?;
+    position_recording_overlay(app, &overlay, position)?;
+    emit_recording_overlay_sync(&overlay, visible, display_mode)?;
+    overlay.show().map_err(|error| error.to_string())
+}
+
+fn emit_recording_overlay_sync(
+    overlay: &tauri::WebviewWindow,
+    visible: bool,
+    display_mode: OverlayDisplayMode,
+) -> Result<(), String> {
     overlay
         .emit(
             "recording-overlay-sync",
@@ -47,15 +64,7 @@ pub fn sync_recording_overlay(
                 display_mode,
             },
         )
-        .map_err(|error| error.to_string())?;
-
-    if !visible || display_mode == OverlayDisplayMode::None {
-        return overlay.hide().map_err(|error| error.to_string());
-    }
-
-    size_recording_overlay(&overlay, display_mode)?;
-    position_recording_overlay(&overlay, position)?;
-    overlay.show().map_err(|error| error.to_string())
+        .map_err(|error| error.to_string())
 }
 
 fn size_recording_overlay(
@@ -72,14 +81,15 @@ fn size_recording_overlay(
 }
 
 fn position_recording_overlay(
+    app: &tauri::AppHandle,
     overlay: &tauri::WebviewWindow,
     position: OverlayPosition,
 ) -> Result<(), String> {
     let margin = 24;
     let size = overlay.outer_size().map_err(|error| error.to_string())?;
-    let monitor = overlay
-        .current_monitor()
-        .map_err(|error| error.to_string())?
+    let monitor = app
+        .get_webview_window("main")
+        .and_then(|window| window.current_monitor().ok().flatten())
         .or_else(|| overlay.primary_monitor().ok().flatten());
     let Some(monitor) = monitor else {
         overlay

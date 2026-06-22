@@ -1,5 +1,5 @@
 import { type EventCallback, listen } from '@tauri-apps/api/event';
-import { renderHook, waitFor } from '@testing-library/preact';
+import { act, renderHook, waitFor } from '@testing-library/preact';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { useRecordingOverlay } from '../components/recording-overlay/hooks/useRecordingOverlay.hook';
 import { getAppSnapshot } from '../services/desktop/app.service';
@@ -53,7 +53,7 @@ const baseSettings: AppSettings = {
   summaryPrompt: 'Summary'
 };
 
-const makeSnapshot = (settings: Partial<AppSettings> = {}): AppSnapshot => ({
+const makeSnapshot = (settings: Partial<AppSettings> = {}, overlayVisible = true): AppSnapshot => ({
   activeRecording: null,
   recordings: [],
   jobs: [],
@@ -63,7 +63,7 @@ const makeSnapshot = (settings: Partial<AppSettings> = {}): AppSnapshot => ({
     systemSources: []
   },
   desktop: {
-    overlayVisible: true,
+    overlayVisible,
     hotkeyRegistered: true,
     hotkeyError: null,
     workerRunning: false,
@@ -111,6 +111,18 @@ describe('useRecordingOverlay hook', () => {
     expect(listen).toHaveBeenCalledWith('recording-overlay-sync', expect.any(Function));
   });
 
+  it('uses no display mode when the snapshot says the overlay is hidden', async () => {
+    vi.mocked(getAppSnapshot).mockResolvedValue(
+      makeSnapshot({ overlayDisplayMode: 'full' }, false)
+    );
+
+    const { result } = renderHook(() => useRecordingOverlay());
+
+    await waitFor(() => {
+      expect(result.current.status.displayMode.value).toBe('none');
+    });
+  });
+
   it('updates display mode from overlay sync events', async () => {
     vi.mocked(getAppSnapshot).mockResolvedValue(makeSnapshot({ overlayDisplayMode: 'full' }));
 
@@ -142,5 +154,36 @@ describe('useRecordingOverlay hook', () => {
       payload: { visible: false, displayMode: 'full' }
     });
     expect(result.current.status.displayMode.value).toBe('none');
+  });
+
+  it('does not let a stale initial snapshot overwrite overlay sync state', async () => {
+    let resolveSnapshot: (snapshot: AppSnapshot) => void = () => undefined;
+    const snapshotPromise = new Promise<AppSnapshot>((resolve) => {
+      resolveSnapshot = resolve;
+    });
+
+    vi.mocked(getAppSnapshot).mockReturnValue(snapshotPromise);
+
+    const { result } = renderHook(() => useRecordingOverlay());
+
+    await waitFor(() => {
+      expect(eventListeners.has('recording-overlay-sync')).toBe(true);
+    });
+
+    const overlaySync = eventListeners.get('recording-overlay-sync');
+
+    overlaySync?.({
+      event: 'recording-overlay-sync',
+      id: 1,
+      payload: { visible: true, displayMode: 'full' }
+    });
+    expect(result.current.status.displayMode.value).toBe('full');
+
+    await act(async () => {
+      resolveSnapshot(makeSnapshot({ overlayDisplayMode: 'minimal' }));
+      await snapshotPromise;
+    });
+
+    expect(result.current.status.displayMode.value).toBe('full');
   });
 });
