@@ -60,7 +60,7 @@ def run_faster_whisper(
         return NeedsSetupResult(payload={'dependency': 'faster-whisper', 'model': model_name})
 
     try:
-        segments, words, detected_language = transcribe_with_model(
+        segments, words, detected_language, language_probability = transcribe_with_model(
             model_class=model_class,
             model_name=model_name,
             audio_path=audio_path,
@@ -71,11 +71,16 @@ def run_faster_whisper(
             transcription_profile=transcription_profile,
         )
 
-        return TranscriptionCompleteResult(segments=segments, words=words, language=detected_language)
+        return TranscriptionCompleteResult(
+            segments=segments,
+            words=words,
+            language=detected_language,
+            language_probability=language_probability,
+        )
     except Exception as error:
         if compute_type != 'cpu' and cuda_library_error(error=error):
             try:
-                segments, words, detected_language = transcribe_with_model(
+                segments, words, detected_language, language_probability = transcribe_with_model(
                     model_class=model_class,
                     model_name=model_name,
                     audio_path=audio_path,
@@ -90,6 +95,7 @@ def run_faster_whisper(
                     segments=segments,
                     words=words,
                     language=detected_language,
+                    language_probability=language_probability,
                     warning='CUDA libraries are unavailable; CPU fallback was used.',
                 )
             except Exception as fallback_error:
@@ -251,7 +257,7 @@ def transcribe_with_model(
     compute_type: str,
     model_storage_directory: Path | None,
     transcription_profile: str,
-) -> tuple[list[Segment], list[TranscriptionWord], str | None]:
+) -> tuple[list[Segment], list[TranscriptionWord], str | None, float | None]:
     model = model_class(model_name, **model_kwargs(compute_type=compute_type, storage_path=model_storage_directory))
     raw_segments, info = model.transcribe(
         str(audio_path),
@@ -265,7 +271,17 @@ def transcribe_with_model(
     words: list[TranscriptionWord] = []
 
     for index, segment in enumerate(raw_segments):
-        segments.append(Segment(id=index, start=segment.start, end=segment.end, text=segment.text))
+        segments.append(
+            Segment(
+                id=index,
+                start=segment.start,
+                end=segment.end,
+                text=segment.text,
+                avg_logprob=safe_float(value=getattr(segment, 'avg_logprob', None)),
+                compression_ratio=safe_float(value=getattr(segment, 'compression_ratio', None)),
+                no_speech_prob=safe_float(value=getattr(segment, 'no_speech_prob', None)),
+            )
+        )
         segment_words = cast(list[FasterWhisperWord] | None, getattr(segment, 'words', None))
 
         for word in segment_words or []:
@@ -275,11 +291,26 @@ def transcribe_with_model(
                     text=word.word,
                     start=word.start,
                     end=word.end,
-                    probability=getattr(word, 'probability', None),
+                    probability=safe_float(value=getattr(word, 'probability', None)),
                 )
             )
 
-    return segments, words, info.language
+    return (
+        segments,
+        words,
+        getattr(info, 'language', None),
+        safe_float(value=getattr(info, 'language_probability', None)),
+    )
+
+
+def safe_float(value: Any) -> float | None:
+    if value is None:
+        return None
+
+    try:
+        return float(value)
+    except TypeError, ValueError:
+        return None
 
 
 def cuda_library_error(error: Exception) -> bool:

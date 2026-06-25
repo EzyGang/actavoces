@@ -24,6 +24,8 @@ from app.dtos import (
     TranscribePayload,
     TranscriptionCompleteResult,
     TranscriptionMetadata,
+    TranscriptionQualityMetadata,
+    TranscriptionRepairAttempt,
     TranscriptionVadOptions,
     TranscriptionWord,
 )
@@ -44,6 +46,15 @@ from app.models import (
 from app.protocol import WorkerCommand, WorkerEvent
 from app.speaker_diarization import speaker_labeled_utterances, speaker_labeled_words
 from app.summaries import run_openai_compatible_summary, summary_transcript
+from app.transcription_quality import (
+    MAX_RETRY_ATTEMPTS_PER_CHUNK,
+    analyze_transcription_quality,
+    load_source_chunks,
+    merge_repaired_chunk,
+    repair_chunk_by_id,
+    risky_chunks_for_repair,
+    skipped_repair_attempt,
+)
 
 
 type CommandHandler = Callable[[WorkerCommand], Awaitable[list[WorkerEvent]]]
@@ -132,6 +143,27 @@ async def handle_transcribe(command: WorkerCommand) -> list[WorkerEvent]:
         return transcription_failure_events(command=command, result=result)
 
     prepare_output_directories(output_directory=payload.output_directory)
+    first_pass_segments = [segment.model_copy(deep=True) for segment in result.segments]
+    first_pass_words = [word.model_copy(deep=True) for word in result.words]
+    quality = run_transcription_quality_and_repair(payload=payload, result=result)
+    write_first_pass_trace = any(attempt.status == 'repaired' for attempt in quality.repair_attempts)
+
+    if write_first_pass_trace:
+        write_json(
+            first_pass_raw_segments_path(output_directory=payload.output_directory),
+            {'segments': segment_payloads(first_pass_segments)},
+        )
+        write_json(
+            first_pass_raw_words_path(output_directory=payload.output_directory),
+            {'words': word_payloads(first_pass_words)},
+        )
+        quality.first_pass_raw_segments_path = str(
+            first_pass_raw_segments_path(output_directory=payload.output_directory)
+        )
+        quality.first_pass_raw_words_path = str(first_pass_raw_words_path(output_directory=payload.output_directory))
+
+    quality.final_raw_segments_path = str(raw_segments_path(output_directory=payload.output_directory))
+    quality.final_raw_words_path = str(raw_words_path(output_directory=payload.output_directory))
     write_json(
         raw_segments_path(output_directory=payload.output_directory),
         {'segments': segment_payloads(segments=result.segments)},
@@ -148,7 +180,12 @@ async def handle_transcribe(command: WorkerCommand) -> list[WorkerEvent]:
         transcription_metadata_path(output_directory=payload.output_directory),
         transcription_metadata(payload=payload, result=result).model_dump(by_alias=True),
     )
+    write_json(
+        transcription_quality_path(output_directory=payload.output_directory),
+        quality.model_dump(by_alias=True),
+    )
 
+    warning = transcription_warning(result_warning=result.warning, quality=quality)
     return [
         command_event(command=command, name='transcribe.progress', payload={'progress': 100}),
         command_event(
@@ -158,7 +195,7 @@ async def handle_transcribe(command: WorkerCommand) -> list[WorkerEvent]:
                 segments_path=str(raw_segments_path(output_directory=payload.output_directory)),
                 words_path=str(raw_words_path(output_directory=payload.output_directory)),
                 transcript_path=str(raw_transcript_path(output_directory=payload.output_directory)),
-                warning=result.warning,
+                warning=warning,
             ),
         ),
     ]
@@ -311,6 +348,124 @@ def transcribe_audio(payload: TranscribePayload) -> TranscriptionResult:
     return result
 
 
+def run_transcription_quality_and_repair(
+    payload: TranscribePayload,
+    result: TranscriptionCompleteResult,
+) -> TranscriptionQualityMetadata:
+    quality = analyze_transcription_quality(
+        segments=result.segments,
+        words=result.words,
+        output_directory=payload.output_directory,
+        language=result.language,
+        expected_language=payload.language,
+        language_probability=getattr(result, 'language_probability', None),
+    )
+    chunks = load_source_chunks(output_directory=payload.output_directory)
+
+    for chunk_quality in risky_chunks_for_repair(quality=quality):
+        chunk = repair_chunk_by_id(chunks=chunks, chunk_id=chunk_quality.chunk_id)
+        if chunk is None:
+            quality.repair_attempts.append(
+                skipped_repair_attempt(chunk=chunk_quality, reason='chunk_audio_unavailable', model=payload.model)
+            )
+            continue
+        for attempt in range(1, MAX_RETRY_ATTEMPTS_PER_CHUNK + 1):
+            repair_result = run_faster_whisper(
+                audio_path=chunk.audio_path or payload.audio_path,
+                model_name=payload.model,
+                language=result.language or payload.language,
+                transcription_context=repair_context(context=payload.transcription_context),
+                compute_type=payload.compute_type,
+                model_storage_directory=payload.model_storage_directory,
+                transcription_profile=payload.transcription_profile,
+            )
+            quality.repair_attempts.append(
+                apply_repair_attempt(
+                    result=result,
+                    repair_result=repair_result,
+                    chunk=chunk,
+                    attempt=attempt,
+                    model=payload.model,
+                )
+            )
+
+    repaired_quality = analyze_transcription_quality(
+        segments=result.segments,
+        words=result.words,
+        output_directory=payload.output_directory,
+        language=result.language,
+        expected_language=payload.language,
+        language_probability=getattr(result, 'language_probability', None),
+    )
+    repaired_quality.repair_attempts = quality.repair_attempts
+    return repaired_quality
+
+
+def apply_repair_attempt(
+    result: TranscriptionCompleteResult,
+    repair_result: TranscriptionResult,
+    chunk: Any,
+    attempt: int,
+    model: str,
+) -> TranscriptionRepairAttempt:
+    if repair_result.status != 'complete':
+        return TranscriptionRepairAttempt(
+            chunk_id=chunk.chunk_id,
+            attempt=attempt,
+            status='failed',
+            reason='repair_transcription_failed',
+            model=model,
+            audio_path=str(chunk.audio_path) if chunk.audio_path is not None else None,
+        )
+    if not valid_repair_result(repair_result=repair_result):
+        return TranscriptionRepairAttempt(
+            chunk_id=chunk.chunk_id,
+            attempt=attempt,
+            status='failed',
+            reason='repair_timestamps_invalid',
+            model=model,
+            audio_path=str(chunk.audio_path) if chunk.audio_path is not None else None,
+        )
+    segments, words, before_ids, after_ids = merge_repaired_chunk(
+        first_pass_segments=result.segments,
+        first_pass_words=result.words,
+        repair_result=repair_result,
+        chunk=chunk,
+    )
+    result.segments = segments
+    result.words = words
+    return TranscriptionRepairAttempt(
+        chunk_id=chunk.chunk_id,
+        attempt=attempt,
+        status='repaired',
+        reason='weak_chunk_retranscribed',
+        model=model,
+        audio_path=str(chunk.audio_path) if chunk.audio_path is not None else None,
+        segment_ids_before=before_ids,
+        segment_ids_after=after_ids,
+    )
+
+
+def valid_repair_result(repair_result: TranscriptionCompleteResult) -> bool:
+    return all(segment.end >= segment.start for segment in repair_result.segments) and all(
+        word.end >= word.start for word in repair_result.words
+    )
+
+
+def repair_context(context: str) -> str:
+    extra = 'Re-transcribe this chunk conservatively. Preserve spoken words and avoid hallucinated filler.'
+
+    return f'{context}\n{extra}' if context.strip() else extra
+
+
+def transcription_warning(result_warning: str | None, quality: TranscriptionQualityMetadata) -> str | None:
+    warnings = [warning for warning in [result_warning, *quality.warnings] if warning]
+    if quality.unrepaired_risky_regions:
+        warnings.append('Some transcript regions remain risky after quality checks.')
+
+    return ' '.join(warnings) or None
+
+
 def transcription_metadata(payload: TranscribePayload, result: TranscriptionCompleteResult) -> TranscriptionMetadata:
     source_start, source_end = segment_source_timing(segments=result.segments)
 
@@ -349,7 +504,7 @@ def transcription_failure_events(command: WorkerCommand, result: TranscriptionRe
 
 
 def segment_payloads(segments: list[Segment]) -> list[dict[str, int | float | str | None]]:
-    return [segment.model_dump() for segment in segments]
+    return [segment.model_dump(exclude_none=True) for segment in segments]
 
 
 def word_payloads(words: list[TranscriptionWord]) -> list[dict[str, int | float | str | None]]:
@@ -400,6 +555,18 @@ def raw_words_path(output_directory: Path) -> Path:
 
 def transcription_metadata_path(output_directory: Path) -> Path:
     return meta_path(output_directory=output_directory) / 'transcription.json'
+
+
+def transcription_quality_path(output_directory: Path) -> Path:
+    return meta_path(output_directory=output_directory) / 'transcription-quality.json'
+
+
+def first_pass_raw_segments_path(output_directory: Path) -> Path:
+    return meta_path(output_directory=output_directory) / 'raw-segments-first-pass.json'
+
+
+def first_pass_raw_words_path(output_directory: Path) -> Path:
+    return meta_path(output_directory=output_directory) / 'raw-words-first-pass.json'
 
 
 def raw_transcript_path(output_directory: Path) -> Path:

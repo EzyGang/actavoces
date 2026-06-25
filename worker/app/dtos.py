@@ -59,6 +59,9 @@ class Segment(AppBaseModel):
     start: float = 0
     end: float = 0
     text: str = ''
+    avg_logprob: float | None = None
+    compression_ratio: float | None = None
+    no_speech_prob: float | None = None
 
 
 class TranscriptionWord(AppBaseModel):
@@ -126,7 +129,107 @@ class TranscriptionCompleteResult(AppBaseModel):
     segments: list[Segment]
     words: list[TranscriptionWord] = Field(default_factory=list)
     language: str | None = None
+    language_probability: float | None = None
     warning: str | None = None
+
+
+class TranscriptionQualityThresholds(AppBaseModel):
+    low_average_word_confidence: float = 0.65
+    very_low_word_confidence: float = 0.35
+    very_low_word_cluster_size: int = 3
+    repeated_text_min_words: int = 6
+    near_empty_max_chars: int = 8
+    long_no_speech_probability: float = 0.8
+    long_no_speech_min_duration: float = 8
+    long_segment_duration: float = 30
+    high_compression_ratio: float = 2.4
+    unexpected_language_probability: float = 0.7
+
+
+class TranscriptionSegmentIssue(AppBaseModel):
+    code: str
+    severity: Literal['warning', 'risky'] = 'warning'
+    segment_id: int | None = None
+    chunk_id: str | None = None
+    start: float
+    end: float
+    message: str
+
+
+class WordConfidenceAggregate(AppBaseModel):
+    segment_id: int | None = None
+    chunk_id: str | None = None
+    start: float
+    end: float
+    word_count: int
+    average_probability: float | None = None
+    minimum_probability: float | None = None
+
+
+class TranscriptionSegmentQuality(AppBaseModel):
+    segment_id: int | None = None
+    chunk_id: str | None = None
+    start: float
+    end: float
+    duration: float
+    generated_text_length: int
+    average_word_probability: float | None = None
+    average_logprob: float | None = None
+    compression_ratio: float | None = None
+    no_speech_probability: float | None = None
+    missing_word_timestamps: bool = False
+    issues: list[TranscriptionSegmentIssue] = Field(default_factory=list)
+
+
+class TranscriptionChunkQuality(AppBaseModel):
+    chunk_id: str
+    start: float
+    end: float
+    duration: float
+    generated_text_length: int
+    score: float
+    status: Literal['ok', 'warning', 'risky'] = 'ok'
+    issues: list[TranscriptionSegmentIssue] = Field(default_factory=list)
+
+
+class TranscriptionRepairAttempt(AppBaseModel):
+    chunk_id: str
+    attempt: int
+    status: Literal['skipped', 'repaired', 'failed']
+    reason: str
+    model: str
+    audio_path: str | None = None
+    segment_ids_before: list[int] = Field(default_factory=list)
+    segment_ids_after: list[int] = Field(default_factory=list)
+
+
+class UnrepairedRiskyRegion(AppBaseModel):
+    chunk_id: str | None = None
+    start: float
+    end: float
+    reason: str
+    issue_codes: list[str] = Field(default_factory=list)
+
+
+class TranscriptionQualityMetadata(AppBaseModel):
+    thresholds: TranscriptionQualityThresholds
+    overall_status: Literal['ok', 'warning', 'risky'] = 'ok'
+    recording_score: float
+    issue_counts: dict[str, int]
+    language: str | None = None
+    expected_language: str | None = None
+    language_probability: float | None = None
+    chunks_available: bool = False
+    per_chunk_issues: list[TranscriptionChunkQuality] = Field(default_factory=list)
+    per_segment_issues: list[TranscriptionSegmentQuality] = Field(default_factory=list)
+    low_confidence_words: list[WordConfidenceAggregate] = Field(default_factory=list)
+    repair_attempts: list[TranscriptionRepairAttempt] = Field(default_factory=list)
+    unrepaired_risky_regions: list[UnrepairedRiskyRegion] = Field(default_factory=list)
+    warnings: list[str] = Field(default_factory=list)
+    first_pass_raw_segments_path: str | None = None
+    first_pass_raw_words_path: str | None = None
+    final_raw_segments_path: str | None = None
+    final_raw_words_path: str | None = None
 
 
 class TranscriptionVadOptions(AppBaseModel):

@@ -34,6 +34,7 @@ from app.summaries import (
     run_openai_compatible_summary,
     summary_transcript,
 )
+from app.transcription_quality import analyze_transcription_quality, risky_chunks_for_repair
 
 
 class MockPyannoteTurn:
@@ -63,6 +64,13 @@ class MockPyannotePipeline:
 
 def speaker_turn(speaker: str, start: float, end: float) -> SpeakerTurn:
     return SpeakerTurn(speaker=speaker, start=start, end=end)
+
+
+def low_probability_words(count: int, segment_id: int = 0) -> list[TranscriptionWord]:
+    return [
+        TranscriptionWord(segment_id=segment_id, text=f'w{index}', start=index, end=index + 0.2, probability=0.2)
+        for index in range(count)
+    ]
 
 
 async def test_health_check_returns_ok_event() -> None:
@@ -352,6 +360,161 @@ async def test_transcribe_run_writes_raw_words_from_faster_whisper(mocker: Mocke
     assert events[-1].payload['wordsPath'] == str(tmp_path / 'meta' / 'raw-words.json')
     assert raw_words == {'words': [{'segment_id': 0, 'text': 'Hello', 'start': 0, 'end': 1, 'probability': 0.95}]}
     assert raw_segments == {'segments': [{'id': 0, 'start': 0, 'end': 1, 'text': 'Hello'}]}
+
+
+def test_quality_scoring_detects_expected_signals(tmp_path: Path) -> None:
+    quality = analyze_transcription_quality(
+        segments=[
+            Segment(
+                id=0,
+                start=0,
+                end=35,
+                text='hello hello hello hello hello hello',
+                compression_ratio=3.0,
+                no_speech_prob=0.9,
+            ),
+            Segment(id=1, start=36, end=37, text=''),
+        ],
+        words=low_probability_words(count=3),
+        output_directory=tmp_path,
+        language='es',
+        expected_language='en',
+        language_probability=0.95,
+    )
+    issue_codes = {issue.code for segment in quality.per_segment_issues for issue in segment.issues}
+
+    assert quality.overall_status == 'risky'
+    assert 'low_average_word_confidence' in issue_codes
+    assert 'very_low_word_confidence_cluster' in issue_codes
+    assert 'repeated_text' in issue_codes
+    assert 'very_long_asr_segment' in issue_codes
+    assert 'high_compression_ratio' in issue_codes
+    assert 'text_in_long_no_speech_region' in issue_codes
+    assert 'unexpected_language_mismatch' in issue_codes
+    assert quality.low_confidence_words[0].word_count == 3
+
+
+def test_quality_scoring_reports_missing_word_timestamps_and_near_empty(tmp_path: Path) -> None:
+    quality = analyze_transcription_quality(
+        segments=[Segment(id=0, start=0, end=2, text='Hi')],
+        words=[],
+        output_directory=tmp_path,
+        language='en',
+        expected_language='en',
+        language_probability=None,
+    )
+    issue_codes = {issue.code for segment in quality.per_segment_issues for issue in segment.issues}
+
+    assert 'missing_word_timestamps' in issue_codes
+    assert 'empty_or_near_empty_transcript' in issue_codes
+
+
+def test_repair_selection_is_bounded(tmp_path: Path) -> None:
+    meta = tmp_path / 'meta'
+    meta.mkdir()
+    (meta / 'audio-chunks.json').write_text(
+        '{"chunks":[{"id":"a","start":0,"end":10},{"id":"b","start":10,"end":20},'
+        '{"id":"c","start":20,"end":30},{"id":"d","start":30,"end":40}]}'
+    )
+    quality = analyze_transcription_quality(
+        segments=[
+            Segment(id=0, start=0, end=9, text='bad', compression_ratio=3),
+            Segment(id=1, start=10, end=19, text='bad', compression_ratio=3),
+            Segment(id=2, start=20, end=29, text='bad', compression_ratio=3),
+            Segment(id=3, start=30, end=39, text='bad', compression_ratio=3),
+        ],
+        words=[],
+        output_directory=tmp_path,
+        language='en',
+        expected_language='en',
+        language_probability=None,
+    )
+
+    assert [chunk.chunk_id for chunk in risky_chunks_for_repair(quality=quality)] == ['a', 'b', 'c']
+
+
+async def test_transcribe_run_skips_repair_without_chunk_metadata(mocker: MockerFixture, tmp_path: Path) -> None:
+    audio_path = tmp_path / 'recording.wav'
+    audio_path.write_bytes(b'RIFFdata')
+    mocker.patch(
+        'app.handlers.run_faster_whisper',
+        return_value=SimpleNamespace(
+            status='complete',
+            segments=[Segment(id=0, start=0, end=10, text='risk', compression_ratio=3)],
+            words=[],
+            language='en',
+            language_probability=None,
+            warning=None,
+        ),
+    )
+
+    events = await handle(
+        WorkerCommand(
+            id='quality-no-chunks',
+            name='transcribe.run',
+            payload={'audioPath': str(audio_path), 'outputDirectory': str(tmp_path)},
+        )
+    )
+    quality = loads((tmp_path / 'meta' / 'transcription-quality.json').read_text())
+
+    assert events[-1].payload['warning'].startswith('Transcript quality risks were detected')
+    assert quality['chunksAvailable'] is False
+    assert quality['repairAttempts'] == []
+    assert quality['unrepairedRiskyRegions'][0]['reason'] == 'chunk_metadata_unavailable'
+
+
+async def test_transcribe_repair_uses_installed_model_only_and_records_traceability(
+    mocker: MockerFixture, tmp_path: Path
+) -> None:
+    audio_path = tmp_path / 'recording.wav'
+    chunk_path = tmp_path / 'meta' / 'chunk-0.wav'
+    chunk_path.parent.mkdir()
+    audio_path.write_bytes(b'RIFFdata')
+    chunk_path.write_bytes(b'RIFFchunk')
+    (tmp_path / 'meta' / 'audio-chunks.json').write_text(
+        f'{{"chunks":[{{"id":"chunk-0","start":0,"end":10,"audioPath":"{chunk_path}"}}]}}'
+    )
+    calls: list[dict[str, Any]] = []
+
+    def fake_run_faster_whisper(**kwargs: Any) -> SimpleNamespace:
+        calls.append(kwargs)
+        if len(calls) == 1:
+            return SimpleNamespace(
+                status='complete',
+                segments=[Segment(id=0, start=0, end=10, text='risk', compression_ratio=3)],
+                words=[],
+                language='en',
+                language_probability=None,
+                warning=None,
+            )
+        return SimpleNamespace(
+            status='complete',
+            segments=[Segment(id=0, start=0, end=2, text='fixed')],
+            words=[TranscriptionWord(segment_id=0, text='fixed', start=0, end=1, probability=0.95)],
+            language='en',
+            language_probability=None,
+            warning=None,
+        )
+
+    mocker.patch('app.handlers.run_faster_whisper', side_effect=fake_run_faster_whisper)
+
+    events = await handle(
+        WorkerCommand(
+            id='quality-repair',
+            name='transcribe.run',
+            payload={'audioPath': str(audio_path), 'outputDirectory': str(tmp_path), 'model': 'small'},
+        )
+    )
+    quality = loads((tmp_path / 'meta' / 'transcription-quality.json').read_text())
+    raw_segments = loads((tmp_path / 'meta' / 'raw-segments.json').read_text())
+
+    assert events[-1].event == 'transcribe.complete'
+    assert [call['model_name'] for call in calls] == ['small', 'small']
+    assert calls[1]['audio_path'] == chunk_path
+    assert quality['repairAttempts'][0]['status'] == 'repaired'
+    assert quality['firstPassRawSegmentsPath'] == str(tmp_path / 'meta' / 'raw-segments-first-pass.json')
+    assert (tmp_path / 'meta' / 'raw-words-first-pass.json').exists()
+    assert raw_segments['segments'][0]['text'] == 'fixed'
 
 
 def test_faster_whisper_cuda_fallback_uses_cpu_when_cuda_libraries_are_missing() -> None:
