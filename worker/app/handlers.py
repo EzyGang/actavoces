@@ -22,6 +22,8 @@ from app.dtos import (
     SummaryCompletePayload,
     TranscribeCompletePayload,
     TranscribePayload,
+    TranscriptionChunkMetadata,
+    TranscriptionChunkReference,
     TranscriptionCompleteResult,
     TranscriptionMetadata,
     TranscriptionVadOptions,
@@ -38,12 +40,12 @@ from app.models import (
     faster_whisper_available,
     install_faster_whisper_model,
     model_installed,
-    run_faster_whisper,
     vad_parameters,
 )
 from app.protocol import WorkerCommand, WorkerEvent
 from app.speaker_diarization import speaker_labeled_utterances, speaker_labeled_words
 from app.summaries import run_openai_compatible_summary, summary_transcript
+from app.transcription_chunks import run_chunked_transcription
 
 
 type CommandHandler = Callable[[WorkerCommand], Awaitable[list[WorkerEvent]]]
@@ -147,6 +149,10 @@ async def handle_transcribe(command: WorkerCommand) -> list[WorkerEvent]:
     write_json(
         transcription_metadata_path(output_directory=payload.output_directory),
         transcription_metadata(payload=payload, result=result).model_dump(by_alias=True),
+    )
+    write_json(
+        transcription_chunks_path(output_directory=payload.output_directory),
+        {'chunks': chunk_payloads(chunks=result.chunks)},
     )
 
     return [
@@ -298,21 +304,12 @@ def transcribe_audio(payload: TranscribePayload) -> TranscriptionResult:
     if payload.segments is not None:
         return TranscriptionCompleteResult(segments=payload.segments)
 
-    result = run_faster_whisper(
-        audio_path=payload.audio_path,
-        model_name=payload.model,
-        language=payload.language,
-        transcription_context=payload.transcription_context,
-        compute_type=payload.compute_type,
-        model_storage_directory=payload.model_storage_directory,
-        transcription_profile=payload.transcription_profile,
-    )
-
-    return result
+    return run_chunked_transcription(payload=payload)
 
 
 def transcription_metadata(payload: TranscribePayload, result: TranscriptionCompleteResult) -> TranscriptionMetadata:
     source_start, source_end = segment_source_timing(segments=result.segments)
+    warnings = [result.warning] if result.warning else []
 
     return TranscriptionMetadata(
         model=payload.model,
@@ -325,6 +322,11 @@ def transcription_metadata(payload: TranscribePayload, result: TranscriptionComp
         ),
         source_start=source_start,
         source_end=source_end,
+        source_duration=result.source_duration,
+        chunk_count=max(1, len(result.chunks)),
+        chunks_path=str(transcription_chunks_path(output_directory=payload.output_directory)),
+        chunks=chunk_references(chunks=result.chunks),
+        warnings=warnings,
     )
 
 
@@ -354,6 +356,25 @@ def segment_payloads(segments: list[Segment]) -> list[dict[str, int | float | st
 
 def word_payloads(words: list[TranscriptionWord]) -> list[dict[str, int | float | str | None]]:
     return [word.model_dump() for word in words]
+
+
+def chunk_payloads(chunks: list[TranscriptionChunkMetadata]) -> list[dict[str, int | float | str | None | list[str]]]:
+    return [chunk.model_dump(by_alias=True) for chunk in chunks]
+
+
+def chunk_references(chunks: list[TranscriptionChunkMetadata]) -> list[TranscriptionChunkReference]:
+    return [
+        TranscriptionChunkReference(
+            chunk_id=chunk.chunk_id,
+            source_start=chunk.source_start,
+            source_end=chunk.source_end,
+            segment_id_start=chunk.segment_id_start,
+            segment_id_end=chunk.segment_id_end,
+            word_id_start=chunk.word_id_start,
+            word_id_end=chunk.word_id_end,
+        )
+        for chunk in chunks
+    ]
 
 
 def turn_payloads(turns: list[SpeakerTurn]) -> list[dict[str, float | str]]:
@@ -400,6 +421,10 @@ def raw_words_path(output_directory: Path) -> Path:
 
 def transcription_metadata_path(output_directory: Path) -> Path:
     return meta_path(output_directory=output_directory) / 'transcription.json'
+
+
+def transcription_chunks_path(output_directory: Path) -> Path:
+    return meta_path(output_directory=output_directory) / 'transcription-chunks.json'
 
 
 def raw_transcript_path(output_directory: Path) -> Path:

@@ -127,12 +127,43 @@ class TranscriptionCompleteResult(AppBaseModel):
     words: list[TranscriptionWord] = Field(default_factory=list)
     language: str | None = None
     warning: str | None = None
+    chunks: list[TranscriptionChunkMetadata] = Field(default_factory=list)
+    source_duration: float | None = None
 
 
 class TranscriptionVadOptions(AppBaseModel):
     enabled: bool = True
     profile: TranscriptionProfile = DEFAULT_TRANSCRIPTION_PROFILE
     parameters: dict[str, int | float]
+
+
+class TranscriptionChunkReference(AppBaseModel):
+    chunk_id: int
+    source_start: float
+    source_end: float
+    segment_id_start: int | None = None
+    segment_id_end: int | None = None
+    word_id_start: int | None = None
+    word_id_end: int | None = None
+
+
+class TranscriptionChunkMetadata(AppBaseModel):
+    chunk_id: int
+    source_start: float
+    source_end: float
+    overlap_start: float
+    overlap_end: float
+    asr_output_start: float | None = None
+    asr_output_end: float | None = None
+    model: str
+    language: str | None = None
+    transcription_profile: TranscriptionProfile = DEFAULT_TRANSCRIPTION_PROFILE
+    context_length: int = 0
+    segment_id_start: int | None = None
+    segment_id_end: int | None = None
+    word_id_start: int | None = None
+    word_id_end: int | None = None
+    stitch_warnings: list[str] = Field(default_factory=list)
 
 
 class TranscriptionMetadata(AppBaseModel):
@@ -142,6 +173,11 @@ class TranscriptionMetadata(AppBaseModel):
     vad: TranscriptionVadOptions
     source_start: float | None = None
     source_end: float | None = None
+    source_duration: float | None = None
+    chunk_count: int = 1
+    chunks_path: str | None = None
+    chunks: list[TranscriptionChunkReference] = Field(default_factory=list)
+    warnings: list[str] = Field(default_factory=list)
 
 
 class SummaryCompleteResult(AppBaseModel):

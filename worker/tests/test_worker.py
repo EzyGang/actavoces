@@ -1,3 +1,4 @@
+import wave
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
@@ -12,6 +13,8 @@ from app.dtos import (
     SpeakerTurn,
     SummarizePayload,
     SummaryOutput,
+    TranscribePayload,
+    TranscriptionChunkMetadata,
     TranscriptionMetadata,
     TranscriptionVadOptions,
     TranscriptionWord,
@@ -34,6 +37,8 @@ from app.summaries import (
     run_openai_compatible_summary,
     summary_transcript,
 )
+from app.transcription_chunk_audio import chunk_plans
+from app.transcription_chunks import run_chunked_transcription
 
 
 class MockPyannoteTurn:
@@ -59,6 +64,22 @@ class MockPyannotePipeline:
         self.calls.append(kwargs)
 
         return MockPyannoteAnnotation(tracks=self.tracks)
+
+
+def write_test_wav(path: Path, pattern: list[tuple[float, int]] | None = None) -> None:
+    frame_rate = 1000
+    frames = bytearray()
+
+    for duration, amplitude in pattern or [(1.0, 8000)]:
+        for index in range(int(duration * frame_rate)):
+            sample = amplitude if index % 2 == 0 else -amplitude
+            frames.extend(sample.to_bytes(2, byteorder='little', signed=True))
+
+    with wave.open(str(path), 'wb') as audio:
+        audio.setnchannels(1)
+        audio.setsampwidth(2)
+        audio.setframerate(frame_rate)
+        audio.writeframes(bytes(frames))
 
 
 def speaker_turn(speaker: str, start: float, end: float) -> SpeakerTurn:
@@ -334,8 +355,10 @@ async def test_transcribe_run_writes_raw_words_from_faster_whisper(mocker: Mocke
         words=[TranscriptionWord(segment_id=0, text='Hello', start=0, end=1, probability=0.95)],
         language='en',
         warning=None,
+        source_duration=1.0,
+        chunks=[],
     )
-    mocker.patch('app.handlers.run_faster_whisper', return_value=result)
+    mocker.patch('app.handlers.run_chunked_transcription', return_value=result)
 
     events = await handle(
         WorkerCommand(
@@ -352,6 +375,202 @@ async def test_transcribe_run_writes_raw_words_from_faster_whisper(mocker: Mocke
     assert events[-1].payload['wordsPath'] == str(tmp_path / 'meta' / 'raw-words.json')
     assert raw_words == {'words': [{'segment_id': 0, 'text': 'Hello', 'start': 0, 'end': 1, 'probability': 0.95}]}
     assert raw_segments == {'segments': [{'id': 0, 'start': 0, 'end': 1, 'text': 'Hello'}]}
+
+
+async def test_transcribe_run_writes_chunk_metadata_artifact(mocker: MockerFixture, tmp_path: Path) -> None:
+    audio_path = tmp_path / 'recording.wav'
+    audio_path.write_bytes(b'RIFFdata')
+    result = SimpleNamespace(
+        status='complete',
+        segments=[Segment(id=0, start=0, end=1, text='Hello')],
+        words=[TranscriptionWord(segment_id=0, text='Hello', start=0, end=1, probability=0.95)],
+        language='en',
+        warning=None,
+        source_duration=1.0,
+        chunks=[
+            TranscriptionChunkMetadata(
+                chunk_id=0,
+                source_start=0.0,
+                source_end=1.0,
+                overlap_start=0.0,
+                overlap_end=1.0,
+                asr_output_start=0.0,
+                asr_output_end=1.0,
+                model='medium',
+                language='en',
+                segment_id_start=0,
+                segment_id_end=0,
+                word_id_start=0,
+                word_id_end=0,
+            )
+        ],
+    )
+    mocker.patch('app.handlers.run_chunked_transcription', return_value=result)
+
+    events = await handle(
+        WorkerCommand(
+            id='chunks',
+            name='transcribe.run',
+            payload={'audio_path': str(audio_path), 'output_directory': str(tmp_path)},
+        )
+    )
+
+    metadata = loads((tmp_path / 'meta' / 'transcription.json').read_text())
+    chunks = loads((tmp_path / 'meta' / 'transcription-chunks.json').read_text())
+
+    assert events[-1].event == 'transcribe.complete'
+    assert metadata['chunkCount'] == 1
+    assert metadata['sourceDuration'] == 1.0
+    assert metadata['chunksPath'] == str(tmp_path / 'meta' / 'transcription-chunks.json')
+    assert chunks['chunks'][0]['chunkId'] == 0
+    assert chunks['chunks'][0]['wordIdEnd'] == 0
+
+
+def test_chunk_plans_prefer_silence_boundaries(mocker: MockerFixture, tmp_path: Path) -> None:
+    audio_path = tmp_path / 'recording.wav'
+    write_test_wav(audio_path, pattern=[(1.0, 8000), (1.0, 0), (1.0, 8000)])
+    mocker.patch('app.transcription_chunk_audio.LONG_AUDIO_CHUNK_SECONDS', 1.5)
+    mocker.patch('app.transcription_chunk_audio.CHUNK_OVERLAP_SECONDS', 0.25)
+    mocker.patch('app.transcription_chunk_audio.BOUNDARY_SEARCH_SECONDS', 1.0)
+
+    plans = chunk_plans(audio_path=audio_path, source_duration=3.0)
+
+    assert len(plans) == 2
+    assert plans[0].source_start == 0.0
+    assert plans[0].source_end == 1.5
+    assert plans[1].overlap_start == 1.25
+
+
+def test_chunked_transcription_offsets_deduplicates_and_carries_context(
+    mocker: MockerFixture,
+    tmp_path: Path,
+) -> None:
+    audio_path = tmp_path / 'recording.wav'
+    write_test_wav(audio_path, pattern=[(2.4, 8000)])
+    calls: list[tuple[Path, str]] = []
+    mocker.patch('app.transcription_chunks.LONG_AUDIO_CHUNK_SECONDS', 1.0)
+    mocker.patch('app.transcription_chunk_audio.LONG_AUDIO_CHUNK_SECONDS', 1.0)
+    mocker.patch('app.transcription_chunk_audio.CHUNK_OVERLAP_SECONDS', 0.2)
+
+    def transcriber(
+        *,
+        audio_path: Path,
+        model_name: str,
+        language: str | None,
+        transcription_context: str,
+        compute_type: str,
+        model_storage_directory: Path | None,
+        transcription_profile: str,
+    ) -> Any:
+        calls.append((audio_path, transcription_context))
+        if len(calls) == 1:
+            return SimpleNamespace(
+                status='complete',
+                segments=[Segment(id=0, start=0.1, end=0.5, text='First')],
+                words=[TranscriptionWord(segment_id=0, text='First', start=0.1, end=0.5)],
+                language='en',
+                warning=None,
+            )
+
+        return SimpleNamespace(
+            status='complete',
+            segments=[
+                Segment(id=0, start=0.0, end=0.1, text='Duplicate'),
+                Segment(id=1, start=0.4, end=0.7, text='Second'),
+            ],
+            words=[TranscriptionWord(segment_id=1, text='Second', start=0.4, end=0.7)],
+            language='en',
+            warning=None,
+        )
+
+    result = run_chunked_transcription(
+        payload=TranscribePayload.model_validate(
+            {
+                'audio_path': audio_path,
+                'output_directory': tmp_path,
+                'transcription_context': 'Glossary',
+            }
+        ),
+        transcriber=transcriber,
+    )
+
+    assert result.status == 'complete'
+    assert [segment.text for segment in result.segments] == ['First', 'Second', 'Second']
+    assert round(result.segments[1].start, 1) == 1.2
+    assert round(result.words[1].start, 1) == 1.2
+    assert 'Glossary\nFirst' in calls[1][1]
+    assert len(result.chunks) == 3
+    assert result.chunks[1].segment_id_start == 1
+    assert result.chunks[1].word_id_start == 1
+
+
+def test_short_audio_uses_single_chunk_without_extraction(mocker: MockerFixture, tmp_path: Path) -> None:
+    audio_path = tmp_path / 'short.wav'
+    write_test_wav(audio_path, pattern=[(0.5, 8000)])
+    write_chunk = mocker.patch('app.transcription_chunks.write_wav_chunk')
+
+    def transcriber(
+        *,
+        audio_path: Path,
+        model_name: str,
+        language: str | None,
+        transcription_context: str,
+        compute_type: str,
+        model_storage_directory: Path | None,
+        transcription_profile: str,
+    ) -> Any:
+        return SimpleNamespace(
+            status='complete',
+            segments=[Segment(id=0, start=0.0, end=0.5, text='Short')],
+            words=[],
+            language='en',
+            warning=None,
+        )
+
+    result = run_chunked_transcription(
+        payload=TranscribePayload.model_validate({'audio_path': audio_path, 'output_directory': tmp_path}),
+        transcriber=transcriber,
+    )
+
+    assert result.status == 'complete'
+    assert write_chunk.call_count == 0
+    assert result.chunks[0].source_end == 0.5
+
+
+def test_chunk_extraction_failure_falls_back_to_one_shot(mocker: MockerFixture, tmp_path: Path) -> None:
+    audio_path = tmp_path / 'recording.wav'
+    write_test_wav(audio_path, pattern=[(2.0, 8000)])
+    mocker.patch('app.transcription_chunks.LONG_AUDIO_CHUNK_SECONDS', 1.0)
+    mocker.patch('app.transcription_chunk_audio.LONG_AUDIO_CHUNK_SECONDS', 1.0)
+    mocker.patch('app.transcription_chunks.write_wav_chunk', side_effect=wave.Error('bad chunk'))
+
+    def transcriber(
+        *,
+        audio_path: Path,
+        model_name: str,
+        language: str | None,
+        transcription_context: str,
+        compute_type: str,
+        model_storage_directory: Path | None,
+        transcription_profile: str,
+    ) -> Any:
+        return SimpleNamespace(
+            status='complete',
+            segments=[Segment(id=0, start=0.0, end=2.0, text='Fallback')],
+            words=[],
+            language='en',
+            warning=None,
+        )
+
+    result = run_chunked_transcription(
+        payload=TranscribePayload.model_validate({'audio_path': audio_path, 'output_directory': tmp_path}),
+        transcriber=transcriber,
+    )
+
+    assert result.status == 'complete'
+    assert result.warning is not None
+    assert 'one-shot transcription was used' in result.warning
+    assert result.chunks[0].stitch_warnings == [result.warning]
 
 
 def test_faster_whisper_cuda_fallback_uses_cpu_when_cuda_libraries_are_missing() -> None:
