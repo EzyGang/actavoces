@@ -142,6 +142,7 @@ async def test_transcribe_run_writes_transcription_metadata(tmp_path: Path) -> N
     )
 
     metadata = loads((tmp_path / 'meta' / 'transcription.json').read_text())
+    chunks = loads((tmp_path / 'meta' / 'transcription-chunks.json').read_text())
     assert events[-1].event == 'transcribe.complete'
     assert metadata['model'] == 'small'
     assert metadata['language'] == 'en'
@@ -151,6 +152,10 @@ async def test_transcribe_run_writes_transcription_metadata(tmp_path: Path) -> N
     assert metadata['vad']['parameters']['min_silence_duration_ms'] == 2000
     assert metadata['sourceStart'] == 2
     assert metadata['sourceEnd'] == 5
+    assert metadata['chunkCount'] == 1
+    assert chunks['chunks'][0]['chunkId'] == 0
+    assert chunks['chunks'][0]['segmentIdStart'] == 0
+    assert chunks['chunks'][0]['segmentIdEnd'] == 0
 
 
 def test_transcription_metadata_serializes_aliases() -> None:
@@ -475,10 +480,12 @@ def test_chunked_transcription_offsets_deduplicates_and_carries_context(
         return SimpleNamespace(
             status='complete',
             segments=[
-                Segment(id=0, start=0.0, end=0.1, text='Duplicate'),
-                Segment(id=1, start=0.4, end=0.7, text='Second'),
+                Segment(id=0, start=0.0, end=0.7, text='Duplicate Second'),
             ],
-            words=[TranscriptionWord(segment_id=1, text='Second', start=0.4, end=0.7)],
+            words=[
+                TranscriptionWord(segment_id=0, text='Duplicate', start=0.0, end=0.1),
+                TranscriptionWord(segment_id=0, text='Second', start=0.4, end=0.7),
+            ],
             language='en',
             warning=None,
         )

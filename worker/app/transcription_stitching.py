@@ -23,45 +23,81 @@ def stitch_chunk(
     stitched_segments: list[Segment],
     stitched_words: list[TranscriptionWord],
 ) -> None:
-    segment_id_map: dict[int, int] = {}
+    clipped_words = clipped_words_by_segment(plan=plan, words=result.words)
 
-    for segment in result.segments:
+    for segment_index, segment in enumerate(result.segments):
         start = segment.start + plan.overlap_start
         end = segment.end + plan.overlap_start
         if end <= plan.source_start or start >= plan.source_end:
             continue
 
+        original_id = segment.id if segment.id is not None else segment_index
+        segment_words = clipped_words.get(original_id, [])
+        if result.words and not segment_words:
+            continue
+
         stitched_id = len(stitched_segments)
-        original_id = segment.id if segment.id is not None else stitched_id
-        segment_id_map[original_id] = stitched_id
         stitched_segments.append(
             Segment(
                 id=stitched_id,
-                start=max(start, plan.source_start),
-                end=min(end, plan.source_end),
-                text=segment.text,
+                start=clipped_segment_start(start=start, source_start=plan.source_start, words=segment_words),
+                end=clipped_segment_end(end=end, source_end=plan.source_end, words=segment_words),
+                text=clipped_segment_text(segment=segment, words=segment_words),
             )
         )
+        for word in segment_words:
+            stitched_words.append(
+                TranscriptionWord(
+                    segment_id=stitched_id,
+                    text=word.text,
+                    start=word.start,
+                    end=word.end,
+                    probability=word.probability,
+                )
+            )
 
-    for word in result.words:
+
+def clipped_words_by_segment(plan: ChunkPlan, words: list[TranscriptionWord]) -> dict[int, list[TranscriptionWord]]:
+    clipped_words: dict[int, list[TranscriptionWord]] = {}
+
+    for word in words:
         start = word.start + plan.overlap_start
         end = word.end + plan.overlap_start
         if end <= plan.source_start or start >= plan.source_end:
             continue
 
-        segment_id = segment_id_map.get(word.segment_id)
-        if segment_id is None:
-            continue
-
-        stitched_words.append(
+        clipped_words.setdefault(word.segment_id, []).append(
             TranscriptionWord(
-                segment_id=segment_id,
+                segment_id=word.segment_id,
                 text=word.text,
                 start=max(start, plan.source_start),
                 end=min(end, plan.source_end),
                 probability=word.probability,
             )
         )
+
+    return clipped_words
+
+
+def clipped_segment_text(segment: Segment, words: list[TranscriptionWord]) -> str:
+    if not words:
+        return segment.text
+
+    return ' '.join(word.text.strip() for word in words if word.text.strip())
+
+
+def clipped_segment_start(start: float, source_start: float, words: list[TranscriptionWord]) -> float:
+    if not words:
+        return max(start, source_start)
+
+    return min(word.start for word in words)
+
+
+def clipped_segment_end(end: float, source_end: float, words: list[TranscriptionWord]) -> float:
+    if not words:
+        return min(end, source_end)
+
+    return max(word.end for word in words)
 
 
 def chunk_metadata(

@@ -46,6 +46,7 @@ from app.protocol import WorkerCommand, WorkerEvent
 from app.speaker_diarization import speaker_labeled_utterances, speaker_labeled_words
 from app.summaries import run_openai_compatible_summary, summary_transcript
 from app.transcription_chunks import run_chunked_transcription
+from app.transcription_stitching import single_chunk_metadata
 
 
 type CommandHandler = Callable[[WorkerCommand], Awaitable[list[WorkerEvent]]]
@@ -302,7 +303,9 @@ async def handle_summarize(command: WorkerCommand) -> list[WorkerEvent]:
 
 def transcribe_audio(payload: TranscribePayload) -> TranscriptionResult:
     if payload.segments is not None:
-        return TranscriptionCompleteResult(segments=payload.segments)
+        result = TranscriptionCompleteResult(segments=payload.segments)
+        result.chunks = single_chunk_metadata(payload=payload, result=result, source_duration=None)
+        return result
 
     return run_chunked_transcription(payload=payload)
 
