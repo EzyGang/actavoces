@@ -13,11 +13,18 @@ Prerequisites for a fresh checkout:
 - `uv`
 - OS microphone and audio-capture permissions
 
-Initial setup:
+### Initial setup:
 
 ```bash
 pnpm install
 pnpm sync:py
+```
+
+### Validation shortcuts:
+
+```bash
+pnpm format && pnpm validate
+pnpm test:all
 ```
 
 ## Core Principles
@@ -489,7 +496,24 @@ Before Python implementation, inspect the worker folder structure. The worker fo
 - Do not re-export from `__init__.py`; import directly from the defining module.
 - Use Python 3.14 generic syntax, such as `def foo[**P, T](...)`.
 - Use f-strings only. Do not use `.format()` or `%` formatting.
-- When creating Pydantic models from existing dicts, JSON, or ORM objects with matching fields, use `.model_validate()`, `.model_validate_json()`, or `.model_validate(obj, from_attributes=True)`.
+- When creating Pydantic models from existing dicts, JSON, or ORM objects with matching fields, use `.model_validate()`, `.model_validate_json()`, or `.model_validate(obj, from_attributes=True)`, make sure to avoid the following:
+```python
+class TranscriptionChunkReference(BaseModel): ...
+
+# Bad, manual recreation where each field is 1 to 1 mapped
+TranscriptionChunkReference(
+    chunk_id=chunk.chunk_id,
+    source_start=chunk.source_start,
+    source_end=chunk.source_end,
+    segment_id_start=chunk.segment_id_start,
+    segment_id_end=chunk.segment_id_end,
+    word_id_start=chunk.word_id_start,
+    word_id_end=chunk.word_id_end,
+)
+
+# Good, using .model_validate()
+TranscriptionChunkReference.model_validate(chunk)
+```
 - Do not return raw `dict` or `list[dict]` for complex objects. Use `BaseModel` DTOs.
 
 </important_rules>
