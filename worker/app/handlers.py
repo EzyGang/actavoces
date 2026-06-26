@@ -49,12 +49,10 @@ from app.summaries import run_openai_compatible_summary, summary_transcript
 from app.transcription_quality import (
     MAX_RETRY_ATTEMPTS_PER_CHUNK,
     analyze_transcription_quality,
-    load_source_chunks,
-    merge_repaired_chunk,
-    repair_chunk_by_id,
     risky_chunks_for_repair,
     skipped_repair_attempt,
 )
+from app.transcription_quality_chunks import load_source_chunks, merge_repaired_chunk, repair_chunk_by_id
 
 
 type CommandHandler = Callable[[WorkerCommand], Awaitable[list[WorkerEvent]]]
