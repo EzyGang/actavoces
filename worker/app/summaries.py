@@ -30,7 +30,7 @@ def assemble_summary_prompt(transcript: str, prompt: str) -> str:
 
 
 def summary_transcript(payload: SummarizePayload) -> str:
-    for path in (payload.diarized_transcript_path, payload.transcript_path):
+    for path in (payload.clean_transcript_path, payload.diarized_transcript_path, payload.transcript_path):
         if path is not None and path.exists():
             transcript = path.read_text(encoding='utf-8').strip()
 

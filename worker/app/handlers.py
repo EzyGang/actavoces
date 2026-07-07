@@ -28,7 +28,7 @@ from app.dtos import (
     TranscriptionWord,
 )
 from app.events import command_event
-from app.formatting import render_diarized_transcript, render_raw_transcript, render_summary
+from app.formatting import render_clean_transcript, render_diarized_transcript, render_raw_transcript, render_summary
 from app.json_utils import write_json, write_text
 from app.models import (
     DEFAULT_MODEL,
@@ -144,6 +144,10 @@ async def handle_transcribe(command: WorkerCommand) -> list[WorkerEvent]:
         raw_transcript_path(output_directory=payload.output_directory),
         render_raw_transcript(segments=result.segments, title=payload.title),
     )
+    write_text(
+        clean_transcript_path(output_directory=payload.output_directory),
+        render_clean_transcript(segments=result.segments, title=payload.title, words=result.words),
+    )
     write_json(
         transcription_metadata_path(output_directory=payload.output_directory),
         transcription_metadata(payload=payload, result=result).model_dump(by_alias=True),
@@ -158,6 +162,7 @@ async def handle_transcribe(command: WorkerCommand) -> list[WorkerEvent]:
                 segments_path=str(raw_segments_path(output_directory=payload.output_directory)),
                 words_path=str(raw_words_path(output_directory=payload.output_directory)),
                 transcript_path=str(raw_transcript_path(output_directory=payload.output_directory)),
+                clean_transcript_path=str(clean_transcript_path(output_directory=payload.output_directory)),
                 warning=result.warning,
             ),
         ),
@@ -224,6 +229,16 @@ async def handle_diarize(command: WorkerCommand) -> list[WorkerEvent]:
         diarized_transcript_path(output_directory=payload.output_directory),
         render_diarized_transcript(segments=payload.segments, turns=turns, title=payload.title, words=payload.words),
     )
+    write_text(
+        clean_transcript_path(output_directory=payload.output_directory),
+        render_clean_transcript(
+            segments=payload.segments,
+            title=payload.title,
+            turns=turns,
+            words=payload.words,
+            utterances=utterances,
+        ),
+    )
 
     return [
         command_event(command=command, name='diarize.progress', payload={'progress': 100}),
@@ -233,6 +248,7 @@ async def handle_diarize(command: WorkerCommand) -> list[WorkerEvent]:
             payload=DiarizeCompletePayload(
                 diarization_path=str(diarization_path(output_directory=payload.output_directory)),
                 transcript_path=str(diarized_transcript_path(output_directory=payload.output_directory)),
+                clean_transcript_path=str(clean_transcript_path(output_directory=payload.output_directory)),
                 speaker_labeled_words_path=str(speaker_labeled_words_path(output_directory=payload.output_directory))
                 if labeled_words
                 else None,
@@ -402,8 +418,12 @@ def transcription_metadata_path(output_directory: Path) -> Path:
     return meta_path(output_directory=output_directory) / 'transcription.json'
 
 
+def clean_transcript_path(output_directory: Path) -> Path:
+    return output_directory / 'clean-transcript.md'
+
+
 def raw_transcript_path(output_directory: Path) -> Path:
-    return output_directory / 'raw-transcript.md'
+    return meta_path(output_directory=output_directory) / 'raw-transcript.md'
 
 
 def diarization_path(output_directory: Path) -> Path:

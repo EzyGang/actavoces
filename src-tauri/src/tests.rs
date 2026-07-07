@@ -9,9 +9,9 @@ use crate::app::commands::{
     rewrite_speaker_label, start_recording_session, stop_recording_session,
 };
 use crate::artifacts::{
-    artifact_directory, capture_artifacts_with_readiness, diarization_path,
-    diarized_transcript_path, microphone_audio_path, mixed_audio_path, raw_segments_path,
-    raw_transcript_path, raw_words_path, summary_path,
+    artifact_directory, capture_artifacts_with_readiness, clean_transcript_path, diarization_path,
+    diarized_transcript_path, legacy_raw_transcript_path, microphone_audio_path, mixed_audio_path,
+    raw_segments_path, raw_transcript_path, raw_words_path, summary_path,
 };
 use crate::capture::audio::{
     dedupe_capture_devices, is_default_system_source_name, is_system_monitor_device_name,
@@ -734,6 +734,7 @@ fn resume_pipeline_runs_worker_events_and_persists_artifacts() {
         .unwrap();
     repository.set_setting("exactSpeakers", "1").unwrap();
     let mut observed_transcription_running = false;
+    let mut observed_transcription_clean_artifact = false;
     let mut observed_diarization_words = false;
 
     resume_pipeline_jobs(
@@ -759,11 +760,14 @@ fn resume_pipeline_runs_worker_events_and_persists_artifacts() {
                     )
                     .unwrap();
                     fs::write(raw_transcript_path(&output_directory), "# Raw\n\nHello\n").unwrap();
+                    fs::write(clean_transcript_path(&output_directory), "# Clean\n\nHello\n")
+                        .unwrap();
 
                     Ok(vec![worker_event(
                         "transcribe.complete",
                         serde_json::json!({
                             "segmentsPath": raw_segments_path(&output_directory),
+                            "cleanTranscriptPath": clean_transcript_path(&output_directory),
                             "transcriptPath": raw_transcript_path(&output_directory),
                             "wordsPath": raw_words_path(&output_directory),
                         }),
@@ -787,12 +791,18 @@ fn resume_pipeline_runs_worker_events_and_persists_artifacts() {
                         "# Diarized\n\nHello\n",
                     )
                     .unwrap();
+                    fs::write(
+                        clean_transcript_path(&output_directory),
+                        "# Clean diarized\n\n## Speaker 1\n\nHello\n",
+                    )
+                    .unwrap();
 
                     Ok(vec![worker_event(
                         "diarize.complete",
                         serde_json::json!({
                             "diarizationPath": diarization_path(&output_directory),
                             "transcriptPath": diarized_transcript_path(&output_directory),
+                            "cleanTranscriptPath": clean_transcript_path(&output_directory),
                         }),
                     )])
                 }
@@ -800,11 +810,23 @@ fn resume_pipeline_runs_worker_events_and_persists_artifacts() {
             }
         },
         |repository| {
-            let job = repository
+            let transcription_job = repository
                 .job_for_recording_stage(&recording.id, PipelineStageId::Transcription)
                 .unwrap();
-            observed_transcription_running =
-                observed_transcription_running || job.status == PipelineStageStatus::Running;
+            let diarization_job = repository
+                .job_for_recording_stage(&recording.id, PipelineStageId::Diarization)
+                .unwrap();
+            observed_transcription_running = observed_transcription_running
+                || transcription_job.status == PipelineStageStatus::Running;
+
+            if transcription_job.status == PipelineStageStatus::Complete
+                && diarization_job.status == PipelineStageStatus::Pending
+            {
+                observed_transcription_clean_artifact =
+                    repository.artifacts(&recording.id).unwrap().iter().any(|artifact| {
+                        artifact.kind == ArtifactKind::CleanTranscript && artifact.ready
+                    });
+            }
 
             Ok(())
         },
@@ -818,6 +840,7 @@ fn resume_pipeline_runs_worker_events_and_persists_artifacts() {
         stage.id == PipelineStageId::Transcription && stage.status == PipelineStageStatus::Complete
     }));
     assert!(observed_transcription_running);
+    assert!(observed_transcription_clean_artifact);
     let diarization_stage = recording
         .stages
         .iter()
@@ -827,15 +850,234 @@ fn resume_pipeline_runs_worker_events_and_persists_artifacts() {
     assert!(recording.stages.iter().any(|stage| {
         stage.id == PipelineStageId::Summary && stage.status == PipelineStageStatus::Skipped
     }));
-    assert!(recording
-        .artifacts
-        .iter()
-        .any(|artifact| artifact.kind == ArtifactKind::RawTranscript && artifact.ready));
-    assert!(recording
-        .artifacts
-        .iter()
-        .any(|artifact| artifact.kind == ArtifactKind::DiarizedTranscript && artifact.ready));
+    let ready_artifact = |kind| {
+        recording
+            .artifacts
+            .iter()
+            .find(|artifact| artifact.kind == kind && artifact.ready)
+    };
+    let raw_artifact = ready_artifact(ArtifactKind::RawTranscript).unwrap();
+    let clean_artifact = ready_artifact(ArtifactKind::CleanTranscript).unwrap();
+
+    assert!(ready_artifact(ArtifactKind::Segments).is_some());
+    assert!(ready_artifact(ArtifactKind::RawWords).is_some());
+    assert!(Path::new(&raw_artifact.path).ends_with(Path::new("meta").join("raw-transcript.md")));
+    assert!(Path::new(&clean_artifact.path).ends_with("clean-transcript.md"));
+
+    assert!(ready_artifact(ArtifactKind::DiarizedTranscript).is_some());
     assert!(observed_diarization_words);
+}
+
+#[test]
+fn resume_pipeline_marks_diarize_complete_clean_transcript_ready() {
+    let database_path = test_database_path("pipeline-diarize-clean-transcript");
+    let artifact_path = test_artifact_path("pipeline-diarize-clean-transcript-recording");
+    let mut repository = AppRepository::open(&database_path).unwrap();
+    let mut capture_backend = FileAudioCaptureBackend::default();
+    let recording = NewRecording {
+        id: "recording-diarize-clean-transcript".to_owned(),
+        title: "Meeting".to_owned(),
+        started_at: "1".to_owned(),
+        artifact_directory: artifact_path.display().to_string(),
+    };
+
+    repository
+        .set_setting(
+            "diarizationBackend",
+            &serde_json::to_string(&DiarizationBackend::Pyannote).unwrap(),
+        )
+        .unwrap();
+    repository
+        .set_setting(
+            "speakerCountMode",
+            &serde_json::to_string(&SpeakerCountMode::Exact).unwrap(),
+        )
+        .unwrap();
+    repository.set_setting("exactSpeakers", "1").unwrap();
+    capture_backend
+        .start(&recording.id, &repository.settings().unwrap())
+        .unwrap();
+    repository.create_recording(recording.clone()).unwrap();
+    let capture_result = capture_backend.stop(&recording.id, &artifact_path).unwrap();
+    repository
+        .finish_recording(
+            &recording.id,
+            "2".to_owned(),
+            1,
+            capture_result.errors,
+            &capture_result.artifacts,
+        )
+        .unwrap();
+    fs::write(
+        raw_segments_path(&artifact_path),
+        "{\"segments\":[{\"start\":0,\"end\":1,\"text\":\"Hello\"}]}\n",
+    )
+    .unwrap();
+    fs::write(
+        raw_words_path(&artifact_path),
+        "{\"words\":[{\"segment_id\":0,\"text\":\"Hello\",\"start\":0,\"end\":1,\"probability\":0.95}]}\n",
+    )
+    .unwrap();
+    fs::write(raw_transcript_path(&artifact_path), "# Raw\n\nHello\n").unwrap();
+    let transcription_job = repository
+        .job_for_recording_stage(&recording.id, PipelineStageId::Transcription)
+        .unwrap();
+    repository
+        .update_job(
+            &transcription_job.id,
+            PipelineStageStatus::Complete,
+            100,
+            "Transcription complete",
+        )
+        .unwrap();
+
+    resume_pipeline_jobs(
+        &mut repository,
+        |command, payload| match command {
+            "diarize.run" => {
+                let output_directory = std::path::PathBuf::from(
+                    payload
+                        .get("outputDirectory")
+                        .and_then(serde_json::Value::as_str)
+                        .unwrap(),
+                );
+                fs::write(
+                    diarization_path(&output_directory),
+                    "{\"turns\":[{\"speaker\":\"Speaker 1\",\"start\":0,\"end\":1}]}\n",
+                )
+                .unwrap();
+                fs::write(
+                    diarized_transcript_path(&output_directory),
+                    "# Diarized\n\nHello\n",
+                )
+                .unwrap();
+                fs::write(
+                    clean_transcript_path(&output_directory),
+                    "# Clean diarized\n\n## Speaker 1\n\nHello\n",
+                )
+                .unwrap();
+
+                Ok(vec![worker_event(
+                    "diarize.complete",
+                    serde_json::json!({
+                        "diarizationPath": diarization_path(&output_directory),
+                        "transcriptPath": diarized_transcript_path(&output_directory),
+                        "cleanTranscriptPath": clean_transcript_path(&output_directory),
+                    }),
+                )])
+            }
+            other => Err(format!("unexpected worker command: {other}")),
+        },
+        |_| Ok(()),
+    )
+    .unwrap();
+
+    let snapshot = repository.snapshot().unwrap();
+    let recording = &snapshot.recordings[0];
+    let clean_artifact = recording
+        .artifacts
+        .iter()
+        .find(|artifact| artifact.kind == ArtifactKind::CleanTranscript && artifact.ready)
+        .unwrap();
+
+    assert!(Path::new(&clean_artifact.path).ends_with("clean-transcript.md"));
+    assert!(clean_transcript_path(&artifact_path).exists());
+}
+
+#[test]
+fn resume_pipeline_marks_sortformer_exact_one_speaker_clean_transcript_ready() {
+    let database_path = test_database_path("pipeline-sortformer-clean-transcript");
+    let artifact_path = test_artifact_path("pipeline-sortformer-clean-transcript-recording");
+    let mut repository = AppRepository::open(&database_path).unwrap();
+    let mut capture_backend = FileAudioCaptureBackend::default();
+    let recording = NewRecording {
+        id: "recording-sortformer-clean-transcript".to_owned(),
+        title: "Meeting".to_owned(),
+        started_at: "1".to_owned(),
+        artifact_directory: artifact_path.display().to_string(),
+    };
+
+    repository
+        .set_setting(
+            "speakerCountMode",
+            &serde_json::to_string(&SpeakerCountMode::Exact).unwrap(),
+        )
+        .unwrap();
+    repository.set_setting("exactSpeakers", "1").unwrap();
+    capture_backend
+        .start(&recording.id, &repository.settings().unwrap())
+        .unwrap();
+    repository.create_recording(recording.clone()).unwrap();
+    let capture_result = capture_backend.stop(&recording.id, &artifact_path).unwrap();
+    repository
+        .finish_recording(
+            &recording.id,
+            "2".to_owned(),
+            1,
+            capture_result.errors,
+            &capture_result.artifacts,
+        )
+        .unwrap();
+
+    resume_pipeline_jobs(
+        &mut repository,
+        |command, payload| match command {
+            "transcribe.run" => {
+                let output_directory = std::path::PathBuf::from(
+                    payload
+                        .get("outputDirectory")
+                        .and_then(serde_json::Value::as_str)
+                        .unwrap(),
+                );
+                fs::write(
+                    raw_segments_path(&output_directory),
+                    "{\"segments\":[{\"start\":0,\"end\":1,\"text\":\"Hello\"},{\"start\":1,\"end\":2,\"text\":\"there\"}]}\n",
+                )
+                .unwrap();
+                fs::write(
+                    raw_words_path(&output_directory),
+                    "{\"words\":[{\"segment_id\":0,\"text\":\"Hello\",\"start\":0,\"end\":1,\"probability\":0.95},{\"segment_id\":1,\"text\":\"there\",\"start\":1,\"end\":2,\"probability\":0.95}]}\n",
+                )
+                .unwrap();
+                fs::write(raw_transcript_path(&output_directory), "# Raw\n\nHello there\n").unwrap();
+                fs::write(
+                    clean_transcript_path(&output_directory),
+                    "# Clean\n\nHello there\n",
+                )
+                .unwrap();
+
+                Ok(vec![worker_event(
+                    "transcribe.complete",
+                    serde_json::json!({
+                        "segmentsPath": raw_segments_path(&output_directory),
+                        "cleanTranscriptPath": clean_transcript_path(&output_directory),
+                        "transcriptPath": raw_transcript_path(&output_directory),
+                        "wordsPath": raw_words_path(&output_directory),
+                    }),
+                )])
+            }
+            other => Err(format!("unexpected worker command: {other}")),
+        },
+        |_| Ok(()),
+    )
+    .unwrap();
+
+    let snapshot = repository.snapshot().unwrap();
+    let recording = &snapshot.recordings[0];
+    let clean_artifact = recording
+        .artifacts
+        .iter()
+        .find(|artifact| artifact.kind == ArtifactKind::CleanTranscript && artifact.ready)
+        .unwrap();
+    let clean_transcript = fs::read_to_string(clean_transcript_path(&artifact_path)).unwrap();
+
+    assert!(Path::new(&clean_artifact.path).ends_with("clean-transcript.md"));
+    assert!(raw_segments_path(&artifact_path).exists());
+    assert!(raw_words_path(&artifact_path).exists());
+    assert!(clean_transcript.starts_with("# Clean transcript - Meeting"));
+    assert!(clean_transcript.contains("## Speaker 1"));
+    assert!(clean_transcript.contains("Hello there"));
+    assert!(!clean_transcript.contains("[00:"));
 }
 
 #[test]
@@ -984,11 +1226,17 @@ fn resume_pipeline_sends_snake_case_summary_payload_without_required_api_key() {
                     )
                     .unwrap();
                     fs::write(raw_transcript_path(&output_directory), "# Raw\n\nHello\n").unwrap();
+                    fs::write(
+                        clean_transcript_path(&output_directory),
+                        "# Clean\n\nHello\n",
+                    )
+                    .unwrap();
 
                     Ok(vec![worker_event(
                         "transcribe.complete",
                         serde_json::json!({
                             "segmentsPath": raw_segments_path(&output_directory),
+                            "cleanTranscriptPath": clean_transcript_path(&output_directory),
                             "transcriptPath": raw_transcript_path(&output_directory),
                         }),
                     )])
@@ -1004,12 +1252,24 @@ fn resume_pipeline_sends_snake_case_summary_payload_without_required_api_key() {
                         "# Diarized\n\nHello\n",
                     )
                     .unwrap();
+                    fs::write(
+                        clean_transcript_path(&output_directory),
+                        "# Clean diarized\n\n## Speaker 1\n\nHello\n",
+                    )
+                    .unwrap();
+                    fs::remove_file(raw_transcript_path(&output_directory)).unwrap();
+                    fs::write(
+                        legacy_raw_transcript_path(&output_directory),
+                        "# Raw transcript - Meeting\n\nHello\n",
+                    )
+                    .unwrap();
 
                     Ok(vec![worker_event(
                         "diarize.complete",
                         serde_json::json!({
                             "diarizationPath": diarization_path(&output_directory),
                             "transcriptPath": diarized_transcript_path(&output_directory),
+                            "cleanTranscriptPath": clean_transcript_path(&output_directory),
                         }),
                     )])
                 }
@@ -1039,7 +1299,14 @@ fn resume_pipeline_sends_snake_case_summary_payload_without_required_api_key() {
     assert_eq!(payload["model"], "llama3");
     assert!(payload.get("output_directory").is_some());
     assert!(payload.get("diarized_transcript_path").is_some());
-    assert!(payload.get("transcript_path").is_some());
+    assert_eq!(
+        payload["clean_transcript_path"].as_str(),
+        Some(clean_transcript_path(&artifact_path).to_str().unwrap())
+    );
+    assert_eq!(
+        payload["transcript_path"].as_str(),
+        Some(legacy_raw_transcript_path(&artifact_path).to_str().unwrap())
+    );
     assert!(payload.get("summary_prompt").is_some());
     assert!(payload.get("providerBaseUrl").is_none());
     assert!(payload.get("apiKey").is_none());
@@ -1051,7 +1318,7 @@ fn resume_pipeline_sends_snake_case_summary_payload_without_required_api_key() {
     assert_eq!(recording.title, "Launch");
     assert!(Path::new(&recording.artifact_directory).ends_with("1970-01-01-0000-launch"));
     assert!(summary_path(Path::new(&recording.artifact_directory)).exists());
-    assert!(fs::read_to_string(raw_transcript_path(Path::new(
+    assert!(fs::read_to_string(legacy_raw_transcript_path(Path::new(
         &recording.artifact_directory
     )))
     .unwrap()
@@ -1061,6 +1328,11 @@ fn resume_pipeline_sends_snake_case_summary_payload_without_required_api_key() {
     )))
     .unwrap()
     .starts_with("# Diarized transcript - Launch"));
+    assert!(fs::read_to_string(clean_transcript_path(Path::new(
+        &recording.artifact_directory
+    )))
+    .unwrap()
+    .starts_with("# Clean transcript - Launch"));
 }
 
 #[test]
@@ -1114,11 +1386,15 @@ fn speaker_label_rename_rewrites_diarization_artifacts() {
 
     let diarization = fs::read_to_string(diarization_path(&artifact_path)).unwrap();
     let transcript = fs::read_to_string(diarized_transcript_path(&artifact_path)).unwrap();
+    let clean_transcript = fs::read_to_string(clean_transcript_path(&artifact_path)).unwrap();
     let snapshot = repository.snapshot().unwrap();
 
     assert!(diarization.contains("\"speaker\": \"Alice\""));
     assert!(transcript.contains("## Alice"));
     assert!(transcript.contains("Hello there"));
+    assert!(clean_transcript.contains("## Alice"));
+    assert!(clean_transcript.contains("Hello there"));
+    assert!(!clean_transcript.contains("[00:"));
     assert_eq!(snapshot.recordings[0].speaker_labels[0].name, "Alice");
 }
 
@@ -1159,6 +1435,11 @@ fn recording_title_rename_moves_artifact_folder_and_updates_transcript_headers()
         "# Diarized transcript - Meeting\n\nHello\n",
     )
     .unwrap();
+    fs::write(
+        clean_transcript_path(&artifact_path),
+        "# Clean transcript - Meeting\n\nHello\n",
+    )
+    .unwrap();
 
     let recording = repository.recording_by_id(&recording.id).unwrap().unwrap();
 
@@ -1179,6 +1460,11 @@ fn recording_title_rename_moves_artifact_folder_and_updates_transcript_headers()
         fs::read_to_string(diarized_transcript_path(artifact_directory))
             .unwrap()
             .starts_with("# Diarized transcript - Weekly Planning")
+    );
+    assert!(
+        fs::read_to_string(clean_transcript_path(artifact_directory))
+            .unwrap()
+            .starts_with("# Clean transcript - Weekly Planning")
     );
     assert!(recording
         .artifacts

@@ -44,8 +44,9 @@ export const workflowSteps = [
 ];
 
 export const artifactItems = [
-  'raw-transcript.md',
+  'clean-transcript.md',
   'diarized-transcript.md',
+  'meta/raw-transcript.md',
   'meta/recording.wav',
   'meta/microphone.wav',
   'meta/raw-segments.json',

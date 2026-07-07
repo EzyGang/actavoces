@@ -9,6 +9,7 @@ from pytest_mock import MockerFixture
 from app.diarization_smoothing import smooth_turns
 from app.dtos import (
     Segment,
+    SpeakerLabeledUtterance,
     SpeakerTurn,
     SummarizePayload,
     SummaryOutput,
@@ -17,7 +18,7 @@ from app.dtos import (
     TranscriptionWord,
 )
 from app.events import emit
-from app.formatting import render_diarized_transcript, render_raw_transcript
+from app.formatting import render_clean_transcript, render_diarized_transcript, render_raw_transcript
 from app.handlers import handle
 from app.json_utils import loads
 from app.models import (
@@ -94,9 +95,17 @@ async def test_transcribe_run_writes_supplied_segments(tmp_path: Path) -> None:
     events = await handle(command)
 
     assert events[-1].event == 'transcribe.complete'
-    transcript = (tmp_path / 'raw-transcript.md').read_text()
-    assert '# Raw transcript - Planning Call' in transcript
-    assert 'Hello' in transcript
+    raw_transcript_path = tmp_path / 'meta' / 'raw-transcript.md'
+    clean_transcript_path = tmp_path / 'clean-transcript.md'
+    assert events[-1].payload['transcriptPath'] == str(raw_transcript_path)
+    assert events[-1].payload['cleanTranscriptPath'] == str(clean_transcript_path)
+    raw_transcript = raw_transcript_path.read_text()
+    assert '# Raw transcript - Planning Call' in raw_transcript
+    assert '[00:00 - 00:03] Hello' in raw_transcript
+    clean_transcript = clean_transcript_path.read_text()
+    assert clean_transcript == '# Clean transcript - Planning Call\n\nHello\n'
+    assert '[' not in clean_transcript
+    assert not (tmp_path / 'raw-transcript.md').exists()
     assert (tmp_path / 'meta' / 'raw-segments.json').exists()
     raw_words = loads((tmp_path / 'meta' / 'raw-words.json').read_text())
     assert raw_words == {'words': []}
@@ -546,6 +555,44 @@ def test_diarized_transcript_uses_nearest_turn_for_no_overlap_words() -> None:
     assert '[00:05 - 00:06] between' in transcript
 
 
+def test_clean_transcript_merges_consecutive_speaker_utterances_without_timestamps() -> None:
+    transcript = render_clean_transcript(
+        segments=[],
+        title='Daily',
+        utterances=[
+            SpeakerLabeledUtterance(speaker='Speaker 1', start=0, end=1, text=' Hello '),
+            SpeakerLabeledUtterance(speaker='Speaker 1', start=2, end=3, text=' there. '),
+            SpeakerLabeledUtterance(speaker='Speaker 2', start=3, end=4, text=' Next item '),
+        ],
+    )
+
+    assert transcript == '# Clean transcript - Daily\n\n## Speaker 1\n\nHello there.\n\n## Speaker 2\n\nNext item\n'
+    assert '[' not in transcript
+
+
+def test_clean_transcript_falls_back_to_raw_segment_and_word_text_without_timestamps() -> None:
+    segment_transcript = render_clean_transcript(
+        segments=[
+            {'start': 61, 'end': 62, 'text': '  Done  '},
+            {'start': 62, 'end': 63, 'text': ' next  '},
+        ],
+        title='Retro',
+    )
+    word_transcript = render_clean_transcript(
+        segments=[{'start': 0, 'end': 1, 'text': ' '}],
+        title='Fallback',
+        words=[
+            TranscriptionWord(segment_id=0, text='Word', start=61, end=62),
+            TranscriptionWord(segment_id=0, text='fallback', start=62, end=63),
+        ],
+    )
+
+    assert segment_transcript == '# Clean transcript - Retro\n\nDone next\n'
+    assert word_transcript == '# Clean transcript - Fallback\n\nWord fallback\n'
+    assert '[' not in segment_transcript
+    assert '[' not in word_transcript
+
+
 def test_turn_smoothing_merges_same_speaker_turns_across_tiny_gap() -> None:
     assert smooth_turns(turns=[speaker_turn('Speaker 1', 0, 1), speaker_turn('Speaker 1', 1.1, 2)]) == [
         speaker_turn('Speaker 1', 0, 2)
@@ -614,7 +661,18 @@ async def test_diarize_run_completes_exact_single_speaker(tmp_path: Path) -> Non
     assert 'smoothing' not in diarization
 
 
-async def test_diarize_run_writes_speaker_labeled_artifacts(tmp_path: Path) -> None:
+async def test_diarize_run_writes_speaker_labeled_artifacts_without_clobbering_raw_metadata(tmp_path: Path) -> None:
+    meta_directory = tmp_path / 'meta'
+    meta_directory.mkdir()
+    raw_segments_path = meta_directory / 'raw-segments.json'
+    raw_words_path = meta_directory / 'raw-words.json'
+    raw_transcript_path = meta_directory / 'raw-transcript.md'
+    raw_segments = '{"segments":[{"id":0,"start":0,"end":1,"text":"Hello"}]}'
+    raw_words = '{"words":[{"segmentId":0,"text":"Hello","start":0,"end":1,"probability":0.95}]}'
+    raw_transcript = '# Raw transcript\n\n[00:00 - 00:01] Hello\n'
+    raw_segments_path.write_text(raw_segments)
+    raw_words_path.write_text(raw_words)
+    raw_transcript_path.write_text(raw_transcript)
     events = await handle(
         WorkerCommand(
             id='speaker-words',
@@ -635,6 +693,9 @@ async def test_diarize_run_writes_speaker_labeled_artifacts(tmp_path: Path) -> N
     assert events[-1].event == 'diarize.complete'
     assert words['words'][0]['speaker'] == 'Speaker 1'
     assert utterances['utterances'][0]['text'] == 'Hello'
+    assert raw_segments_path.read_text() == raw_segments
+    assert raw_words_path.read_text() == raw_words
+    assert raw_transcript_path.read_text() == raw_transcript
 
 
 async def test_diarize_run_reports_backend_specific_setup(tmp_path: Path) -> None:
@@ -751,15 +812,40 @@ def test_summary_prompt_assembly_keeps_prompt_and_transcript() -> None:
     assert 'We shipped.' in prompt
 
 
-def test_summary_transcript_prefers_diarized_transcript(tmp_path: Path) -> None:
+def test_summary_transcript_prefers_clean_transcript_over_diarized_and_raw(tmp_path: Path) -> None:
+    clean_path = tmp_path / 'clean-transcript.md'
     diarized_path = tmp_path / 'diarized-transcript.md'
-    raw_path = tmp_path / 'raw-transcript.md'
+    raw_path = tmp_path / 'meta' / 'raw-transcript.md'
+    raw_path.parent.mkdir()
+    clean_path.write_text('Clean notes')
     diarized_path.write_text('Speaker 1: Diarized notes')
     raw_path.write_text('Raw notes')
 
     transcript = summary_transcript(
         SummarizePayload(
             output_directory=tmp_path,
+            clean_transcript_path=clean_path,
+            diarized_transcript_path=diarized_path,
+            transcript_path=raw_path,
+        )
+    )
+
+    assert transcript == 'Clean notes'
+
+
+def test_summary_transcript_falls_back_to_diarized_when_clean_transcript_is_empty(tmp_path: Path) -> None:
+    clean_path = tmp_path / 'clean-transcript.md'
+    diarized_path = tmp_path / 'diarized-transcript.md'
+    raw_path = tmp_path / 'meta' / 'raw-transcript.md'
+    raw_path.parent.mkdir()
+    clean_path.write_text('')
+    diarized_path.write_text('Speaker 1: Diarized notes')
+    raw_path.write_text('Raw notes')
+
+    transcript = summary_transcript(
+        SummarizePayload(
+            output_directory=tmp_path,
+            clean_transcript_path=clean_path,
             diarized_transcript_path=diarized_path,
             transcript_path=raw_path,
         )
@@ -768,21 +854,18 @@ def test_summary_transcript_prefers_diarized_transcript(tmp_path: Path) -> None:
     assert transcript == 'Speaker 1: Diarized notes'
 
 
-def test_summary_transcript_falls_back_when_diarized_transcript_is_empty(tmp_path: Path) -> None:
-    diarized_path = tmp_path / 'diarized-transcript.md'
+def test_summary_transcript_supports_legacy_root_raw_path_when_no_clean_transcript(tmp_path: Path) -> None:
     raw_path = tmp_path / 'raw-transcript.md'
-    diarized_path.write_text('')
-    raw_path.write_text('Raw notes')
+    raw_path.write_text('Legacy raw notes')
 
     transcript = summary_transcript(
         SummarizePayload(
             output_directory=tmp_path,
-            diarized_transcript_path=diarized_path,
             transcript_path=raw_path,
         )
     )
 
-    assert transcript == 'Raw notes'
+    assert transcript == 'Legacy raw notes'
 
 
 async def test_summarize_reports_setup_when_provider_details_are_missing(tmp_path: Path) -> None:
@@ -836,10 +919,10 @@ async def test_summarize_writes_provider_summary(mocker: MockerFixture, tmp_path
             'provider_base_url': 'https://provider.test/v1',
             'model': 'meeting-model',
             'summary_prompt': 'Summarize decisions.',
-            'transcript_path': str(tmp_path / 'raw-transcript.md'),
+            'clean_transcript_path': str(tmp_path / 'clean-transcript.md'),
         },
     )
-    (tmp_path / 'raw-transcript.md').write_text('We shipped.')
+    (tmp_path / 'clean-transcript.md').write_text('We shipped.')
 
     events = await handle(command)
 
