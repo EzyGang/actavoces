@@ -84,8 +84,14 @@ pub(crate) fn capture_artifacts_with_readiness(
             microphone_ready,
         ),
         artifact(
+            ArtifactKind::CleanTranscript,
+            "Clean transcript",
+            clean_transcript_path(path),
+            false,
+        ),
+        artifact(
             ArtifactKind::RawTranscript,
-            "Raw transcript",
+            "Raw ASR transcript",
             raw_transcript_path(path),
             false,
         ),
@@ -185,8 +191,25 @@ pub(crate) fn microphone_audio_path(artifact_directory: &Path) -> PathBuf {
     meta_directory(artifact_directory).join("microphone.wav")
 }
 
+pub(crate) fn clean_transcript_path(artifact_directory: &Path) -> PathBuf {
+    artifact_directory.join("clean-transcript.md")
+}
+
 pub(crate) fn raw_transcript_path(artifact_directory: &Path) -> PathBuf {
+    meta_directory(artifact_directory).join("raw-transcript.md")
+}
+
+pub(crate) fn legacy_raw_transcript_path(artifact_directory: &Path) -> PathBuf {
     artifact_directory.join("raw-transcript.md")
+}
+
+pub(crate) fn raw_transcript_read_path(artifact_directory: &Path) -> PathBuf {
+    let raw_transcript_path = raw_transcript_path(artifact_directory);
+
+    match raw_transcript_path.exists() {
+        true => raw_transcript_path,
+        false => legacy_raw_transcript_path(artifact_directory),
+    }
 }
 
 pub(crate) fn raw_segments_path(artifact_directory: &Path) -> PathBuf {
@@ -225,12 +248,28 @@ pub(crate) fn job_log_path(artifact_directory: &Path) -> PathBuf {
     meta_directory(artifact_directory).join("job-log.jsonl")
 }
 
+pub(crate) fn rewrite_clean_transcript_title(
+    artifact_directory: &Path,
+    title: &str,
+) -> Result<(), String> {
+    rewrite_markdown_title(
+        &clean_transcript_path(artifact_directory),
+        "Clean transcript",
+        title,
+    )
+}
+
 pub(crate) fn rewrite_raw_transcript_title(
     artifact_directory: &Path,
     title: &str,
 ) -> Result<(), String> {
     rewrite_markdown_title(
         &raw_transcript_path(artifact_directory),
+        "Raw transcript",
+        title,
+    )?;
+    rewrite_markdown_title(
+        &legacy_raw_transcript_path(artifact_directory),
         "Raw transcript",
         title,
     )

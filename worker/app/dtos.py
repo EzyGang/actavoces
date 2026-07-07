@@ -195,6 +195,7 @@ class SummarizePayload(AppBaseModel):
     provider_base_url: str = ''
     api_key: str = ''
     model: str = ''
+    clean_transcript_path: Path | None = None
     diarized_transcript_path: Path | None = None
     transcript_path: Path | None = None
     summary_prompt: str = ''
@@ -226,12 +227,14 @@ class TranscribeCompletePayload(AppBaseModel):
     segments_path: str
     words_path: str
     transcript_path: str
+    clean_transcript_path: str
     warning: str | None = None
 
 
 class DiarizeCompletePayload(AppBaseModel):
     diarization_path: str
     transcript_path: str
+    clean_transcript_path: str
     speaker_labeled_words_path: str | None = None
     speaker_labeled_utterances_path: str | None = None
 

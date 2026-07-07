@@ -1,7 +1,7 @@
 from collections.abc import Sequence
 from typing import Any
 
-from app.dtos import Segment, SpeakerTurn, TranscriptionWord
+from app.dtos import Segment, SpeakerLabeledUtterance, SpeakerTurn, TranscriptionWord
 from app.speaker_diarization import render_speaker_labeled_utterances, speaker_labeled_utterances, speaker_labeled_words
 
 
@@ -52,6 +52,112 @@ def render_diarized_transcript(
     return '\n'.join(lines)
 
 
+def render_clean_transcript(
+    segments: Sequence[SegmentInput],
+    title: str = '',
+    turns: Sequence[SpeakerTurnInput] | None = None,
+    words: Sequence[TranscriptionWord] | None = None,
+    utterances: Sequence[SpeakerLabeledUtterance] | None = None,
+) -> str:
+    if utterances is not None and len(utterances) > 0:
+        return render_clean_speaker_transcript(utterances=utterances, title=title)
+
+    if turns is not None and len(turns) > 0:
+        if words is not None and len(words) > 0:
+            labeled_utterances = speaker_labeled_utterances(words=speaker_labeled_words(words=words, turns=turns))
+            return render_clean_speaker_transcript(utterances=labeled_utterances, title=title)
+
+        return render_clean_turn_transcript(segments=segments, turns=turns, title=title)
+
+    text = clean_paragraph([segment.text for segment in normalize_segments(segments=segments)])
+    if not text and words is not None:
+        text = clean_paragraph([word.text for word in words])
+
+    return render_clean_body(lines=[text] if text else [], title=title)
+
+
+def render_clean_speaker_transcript(utterances: Sequence[SpeakerLabeledUtterance], title: str = '') -> str:
+    lines = [clean_transcript_heading(title=title), '']
+    current_speaker = ''
+    current_texts: list[str] = []
+
+    for utterance in utterances:
+        text = clean_paragraph([utterance.text])
+        if not text:
+            continue
+
+        if current_speaker != utterance.speaker:
+            append_clean_speaker_group(lines=lines, speaker=current_speaker, texts=current_texts)
+            current_speaker = utterance.speaker
+            current_texts = [text]
+            continue
+
+        current_texts.append(text)
+
+    append_clean_speaker_group(lines=lines, speaker=current_speaker, texts=current_texts)
+
+    return '\n'.join(lines)
+
+
+def render_clean_turn_transcript(
+    segments: Sequence[SegmentInput],
+    turns: Sequence[SpeakerTurnInput],
+    title: str = '',
+) -> str:
+    lines = [clean_transcript_heading(title=title), '']
+    normalized_turns = normalize_turns(turns=turns)
+    groups: list[tuple[str, list[str]]] = []
+
+    for segment in normalize_segments(segments=segments):
+        text = clean_paragraph([segment.text])
+        if not text:
+            continue
+
+        speaker = best_speaker_for_segment(segment=segment, turns=normalized_turns)
+        if groups and groups[-1][0] == speaker:
+            groups[-1][1].append(text)
+        else:
+            groups.append((speaker, [text]))
+
+    for speaker, texts in groups:
+        append_clean_speaker_group(lines=lines, speaker=speaker, texts=texts)
+
+    return '\n'.join(lines)
+
+
+def render_clean_body(lines: list[str], title: str = '') -> str:
+    output = [clean_transcript_heading(title=title), '']
+    output.extend(lines)
+
+    if lines:
+        output.append('')
+
+    return '\n'.join(output)
+
+
+def append_clean_speaker_group(lines: list[str], speaker: str, texts: list[str]) -> None:
+    text = clean_paragraph(texts)
+    if not speaker or not text:
+        return
+
+    lines.append(f'## {speaker}')
+    lines.append('')
+    lines.append(text)
+    lines.append('')
+
+
+def clean_transcript_heading(title: str = '') -> str:
+    heading = 'Clean transcript'
+    if title.strip():
+        heading = f'{heading} - {title.strip()}'
+
+    return f'# {heading}'
+
+
+def clean_paragraph(texts: Sequence[str]) -> str:
+    return ' '.join(' '.join(text.split()) for text in texts if text.strip()).strip()
+
+
 def render_summary(summary: str) -> str:
     return f'# Summary\n\n{summary.strip()}\n'
 
@@ -64,6 +170,28 @@ def segment_texts_in_turn(segments: list[Segment], start: float, end: float) -> 
             texts.append(segment.text.strip())
 
     return texts
+
+
+def best_speaker_for_segment(segment: Segment, turns: list[SpeakerTurn]) -> str:
+    if not turns:
+        return 'Unknown speaker'
+
+    segment_midpoint = (segment.start + segment.end) / 2
+    return max(
+        turns,
+        key=lambda turn: segment_turn_score(segment=segment, segment_midpoint=segment_midpoint, turn=turn),
+    ).speaker
+
+
+def segment_turn_score(segment: Segment, segment_midpoint: float, turn: SpeakerTurn) -> float:
+    overlap = min(segment.end, turn.end) - max(segment.start, turn.start)
+
+    if overlap > 0:
+        turn_duration = max(turn.end - turn.start, 0.001)
+        return overlap + (1 / turn_duration / 1_000_000)
+
+    turn_midpoint = (turn.start + turn.end) / 2
+    return -abs(segment_midpoint - turn_midpoint)
 
 
 def normalize_segments(segments: Sequence[SegmentInput]) -> list[Segment]:

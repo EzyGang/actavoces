@@ -6,8 +6,8 @@ use std::{
 use tauri::{Emitter, Manager};
 
 use crate::artifacts::{
-    artifact, diarized_transcript_path, mixed_audio_path, raw_segments_path, raw_transcript_path,
-    raw_words_path, stage_label,
+    artifact, clean_transcript_path, diarized_transcript_path, mixed_audio_path, raw_segments_path,
+    raw_transcript_read_path, raw_words_path, stage_label,
 };
 use crate::diarization::{
     run_single_speaker_diarization, run_sortformer_diarization, TranscriptSegment, TranscriptWord,
@@ -275,6 +275,17 @@ fn run_sortformer_pipeline_stage(
                 ),
             )
         })
+        .and_then(|()| {
+            repository.upsert_artifact(
+                &recording.id,
+                &artifact(
+                    ArtifactKind::CleanTranscript,
+                    "Clean transcript",
+                    output.clean_transcript_path,
+                    true,
+                ),
+            )
+        })
         .map_err(|error| error.to_string())?;
 
     mark_stage_complete(
@@ -427,8 +438,16 @@ fn apply_complete_event(
             upsert_ready_artifact_from_event(
                 repository,
                 &recording.id,
+                ArtifactKind::CleanTranscript,
+                "Clean transcript",
+                event,
+                "cleanTranscriptPath",
+            )?;
+            upsert_ready_artifact_from_event(
+                repository,
+                &recording.id,
                 ArtifactKind::RawTranscript,
-                "Raw transcript",
+                "Raw ASR transcript",
                 event,
                 "transcriptPath",
             )?;
@@ -457,6 +476,14 @@ fn apply_complete_event(
                 "Diarized transcript",
                 event,
                 "transcriptPath",
+            )?;
+            upsert_ready_artifact_from_event(
+                repository,
+                &recording.id,
+                ArtifactKind::CleanTranscript,
+                "Clean transcript",
+                event,
+                "cleanTranscriptPath",
             )?;
         }
         PipelineStageId::Summary => {
@@ -754,8 +781,9 @@ fn summary_payload(
         "provider_base_url": settings.provider_base_url,
         "api_key": api_key,
         "model": settings.provider_model,
+        "clean_transcript_path": clean_transcript_path(&artifact_directory),
         "diarized_transcript_path": diarized_transcript_path(&artifact_directory),
-        "transcript_path": raw_transcript_path(&artifact_directory),
+        "transcript_path": raw_transcript_read_path(&artifact_directory),
         "summary_prompt": settings.summary_prompt,
     })
 }

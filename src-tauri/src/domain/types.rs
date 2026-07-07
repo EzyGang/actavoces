@@ -190,6 +190,7 @@ pub enum ArtifactKind {
     Audio,
     MicrophoneAudio,
     SystemAudio,
+    CleanTranscript,
     RawTranscript,
     Segments,
     RawWords,

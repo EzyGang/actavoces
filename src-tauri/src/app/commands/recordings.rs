@@ -5,7 +5,8 @@ use tauri::Manager;
 
 use crate::artifacts::{
     artifact_directory, meta_directory, rename_artifact_directory, renamed_artifact_directory,
-    rewrite_diarized_transcript_title, rewrite_raw_transcript_title,
+    rewrite_clean_transcript_title, rewrite_diarized_transcript_title,
+    rewrite_raw_transcript_title,
 };
 use crate::capture::audio::AudioCaptureBackend;
 use crate::domain::types::*;
@@ -185,6 +186,7 @@ pub(crate) fn rename_recording_outputs(
             &artifact_directory,
         )
         .map_err(|error| error.to_string())?;
+    rewrite_clean_transcript_title(&artifact_directory, title)?;
     rewrite_raw_transcript_title(&artifact_directory, title)?;
     rewrite_diarized_transcript_title(&artifact_directory, title)
 }

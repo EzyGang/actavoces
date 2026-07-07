@@ -1,4 +1,5 @@
 mod audio;
+mod clean;
 mod render;
 mod setup;
 mod smoothing;
@@ -12,13 +13,14 @@ use std::path::{Path, PathBuf};
 use serde::{Deserialize, Serialize};
 
 use crate::artifacts::{
-    diarization_path, diarized_transcript_path, meta_directory, speaker_labeled_utterances_path,
-    speaker_labeled_words_path,
+    clean_transcript_path, diarization_path, diarized_transcript_path, meta_directory,
+    speaker_labeled_utterances_path, speaker_labeled_words_path,
 };
 
+pub(crate) use clean::render_clean_transcript;
 pub(crate) use render::{
-    render_speaker_labeled_utterances, SpeakerLabeledUtterance, SpeakerLabeledUtterancesArtifact,
-    SpeakerLabeledWordsArtifact,
+    render_diarized_transcript, render_speaker_labeled_utterances, SpeakerLabeledUtterance,
+    SpeakerLabeledUtterancesArtifact, SpeakerLabeledWordsArtifact,
 };
 pub(crate) use setup::prepare_sortformer_diarization;
 
@@ -30,6 +32,7 @@ const SORTFORMER_SAMPLE_RATE: u32 = 16_000;
 pub(crate) struct SortformerDiarizationOutput {
     pub(crate) diarization_path: PathBuf,
     pub(crate) transcript_path: PathBuf,
+    pub(crate) clean_transcript_path: PathBuf,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -172,10 +175,17 @@ fn write_diarization_output(
         render::render_diarized_transcript(segments, &turns, title, &utterances),
     )
     .map_err(|error| error.to_string())?;
+    let clean_transcript_path = clean_transcript_path(output_directory);
+    fs::write(
+        &clean_transcript_path,
+        clean::render_clean_transcript(segments, &turns, title, &utterances),
+    )
+    .map_err(|error| error.to_string())?;
 
     Ok(SortformerDiarizationOutput {
         diarization_path,
         transcript_path,
+        clean_transcript_path,
     })
 }
 

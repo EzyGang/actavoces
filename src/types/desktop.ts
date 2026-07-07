@@ -14,6 +14,7 @@ export type ArtifactKind =
   | 'audio'
   | 'microphoneAudio'
   | 'systemAudio'
+  | 'cleanTranscript'
   | 'rawTranscript'
   | 'segments'
   | 'rawWords'

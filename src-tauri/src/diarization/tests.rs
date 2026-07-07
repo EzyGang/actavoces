@@ -1,6 +1,6 @@
 use crate::artifacts::{
-    diarization_path, diarized_transcript_path, meta_directory, speaker_labeled_utterances_path,
-    speaker_labeled_words_path,
+    clean_transcript_path, diarization_path, diarized_transcript_path, meta_directory,
+    speaker_labeled_utterances_path, speaker_labeled_words_path,
 };
 use crate::diarization::render::{
     render_diarized_transcript, speaker_labeled_utterances, speaker_labeled_words,
@@ -42,20 +42,36 @@ fn local_diarization_writes_speaker_labeled_artifacts() {
     let artifact_path = std::env::temp_dir().join("actavoces-speaker-labeled-local-diarization");
     let _ = std::fs::remove_dir_all(&artifact_path);
 
-    run_single_speaker_diarization(
+    let output = run_single_speaker_diarization(
         &artifact_path,
-        &[TranscriptSegment {
-            start: 0.0,
-            end: 1.0,
-            text: "Hello".to_owned(),
-        }],
-        &[TranscriptWord {
-            segment_id: 0,
-            text: "Hello".to_owned(),
-            start: 0.0,
-            end: 1.0,
-            probability: Some(0.95),
-        }],
+        &[
+            TranscriptSegment {
+                start: 0.0,
+                end: 1.0,
+                text: "Hello".to_owned(),
+            },
+            TranscriptSegment {
+                start: 1.0,
+                end: 2.0,
+                text: "there".to_owned(),
+            },
+        ],
+        &[
+            TranscriptWord {
+                segment_id: 0,
+                text: "Hello".to_owned(),
+                start: 0.0,
+                end: 1.0,
+                probability: Some(0.95),
+            },
+            TranscriptWord {
+                segment_id: 1,
+                text: "there".to_owned(),
+                start: 1.0,
+                end: 2.0,
+                probability: Some(0.95),
+            },
+        ],
         "Planning Call",
     )
     .unwrap();
@@ -65,8 +81,17 @@ fn local_diarization_writes_speaker_labeled_artifacts() {
     assert!(
         std::fs::read_to_string(diarized_transcript_path(&artifact_path))
             .unwrap()
-            .contains("[00:00 - 00:01] Hello")
+            .contains("[00:00 - 00:02] Hello there")
     );
+    assert_eq!(
+        output.clean_transcript_path,
+        clean_transcript_path(&artifact_path)
+    );
+    let clean_transcript = std::fs::read_to_string(clean_transcript_path(&artifact_path)).unwrap();
+    assert!(clean_transcript.starts_with("# Clean transcript - Planning Call"));
+    assert!(clean_transcript.contains("## Speaker 1"));
+    assert!(clean_transcript.contains("Hello there"));
+    assert!(!clean_transcript.contains("[00:"));
     let diarization = std::fs::read_to_string(diarization_path(&artifact_path)).unwrap();
     assert!(!diarization.contains("rawTurns"));
     assert!(!diarization.contains("smoothing"));
@@ -155,6 +180,7 @@ fn sortformer_output_writes_smoothed_turns_and_raw_metadata() {
         serde_json::from_str(&std::fs::read_to_string(diarization_path(&artifact_path)).unwrap())
             .unwrap();
     let transcript = std::fs::read_to_string(diarized_transcript_path(&artifact_path)).unwrap();
+    let clean_transcript = std::fs::read_to_string(clean_transcript_path(&artifact_path)).unwrap();
 
     assert_eq!(artifact["turns"].as_array().unwrap().len(), 1);
     assert_eq!(artifact["rawTurns"].as_array().unwrap().len(), 3);
@@ -164,6 +190,10 @@ fn sortformer_output_writes_smoothed_turns_and_raw_metadata() {
     );
     assert!(transcript.contains("## Speaker 1"));
     assert!(!transcript.contains("## Speaker 2"));
+    assert!(clean_transcript.contains("## Speaker 1"));
+    assert!(clean_transcript.contains("Hello yes continue"));
+    assert!(!clean_transcript.contains("## Speaker 2"));
+    assert!(!clean_transcript.contains("[00:"));
 }
 
 #[test]
