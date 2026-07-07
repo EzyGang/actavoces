@@ -105,17 +105,22 @@ def render_clean_turn_transcript(
     title: str = '',
 ) -> str:
     lines = [clean_transcript_heading(title=title), '']
-    normalized_segments = normalize_segments(segments=segments)
+    normalized_turns = normalize_turns(turns=turns)
+    groups: list[tuple[str, list[str]]] = []
 
-    for turn in normalize_turns(turns=turns):
-        text = clean_paragraph(segment_texts_in_turn(segments=normalized_segments, start=turn.start, end=turn.end))
+    for segment in normalize_segments(segments=segments):
+        text = clean_paragraph([segment.text])
         if not text:
             continue
 
-        lines.append(f'## {turn.speaker}')
-        lines.append('')
-        lines.append(text)
-        lines.append('')
+        speaker = best_speaker_for_segment(segment=segment, turns=normalized_turns)
+        if groups and groups[-1][0] == speaker:
+            groups[-1][1].append(text)
+        else:
+            groups.append((speaker, [text]))
+
+    for speaker, texts in groups:
+        append_clean_speaker_group(lines=lines, speaker=speaker, texts=texts)
 
     return '\n'.join(lines)
 
@@ -165,6 +170,28 @@ def segment_texts_in_turn(segments: list[Segment], start: float, end: float) -> 
             texts.append(segment.text.strip())
 
     return texts
+
+
+def best_speaker_for_segment(segment: Segment, turns: list[SpeakerTurn]) -> str:
+    if not turns:
+        return 'Unknown speaker'
+
+    segment_midpoint = (segment.start + segment.end) / 2
+    return max(
+        turns,
+        key=lambda turn: segment_turn_score(segment=segment, segment_midpoint=segment_midpoint, turn=turn),
+    ).speaker
+
+
+def segment_turn_score(segment: Segment, segment_midpoint: float, turn: SpeakerTurn) -> float:
+    overlap = min(segment.end, turn.end) - max(segment.start, turn.start)
+
+    if overlap > 0:
+        turn_duration = max(turn.end - turn.start, 0.001)
+        return overlap + (1 / turn_duration / 1_000_000)
+
+    turn_midpoint = (turn.start + turn.end) / 2
+    return -abs(segment_midpoint - turn_midpoint)
 
 
 def normalize_segments(segments: Sequence[SegmentInput]) -> list[Segment]:

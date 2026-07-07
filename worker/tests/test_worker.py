@@ -593,6 +593,25 @@ def test_clean_transcript_falls_back_to_raw_segment_and_word_text_without_timest
     assert '[' not in word_transcript
 
 
+def test_clean_transcript_keeps_segments_that_overlap_diarization_turns_without_words() -> None:
+    transcript = render_clean_transcript(
+        segments=[
+            {'start': 0, 'end': 10, 'text': ' Long planning segment '},
+            {'start': 10, 'end': 11, 'text': ' reply '},
+        ],
+        title='Planning',
+        turns=[
+            {'speaker': 'Speaker 1', 'start': 0, 'end': 5},
+            {'speaker': 'Speaker 2', 'start': 5, 'end': 11},
+        ],
+    )
+
+    assert 'Long planning segment' in transcript
+    assert transcript.count('Long planning segment') == 1
+    assert 'reply' in transcript
+    assert '[' not in transcript
+
+
 def test_turn_smoothing_merges_same_speaker_turns_across_tiny_gap() -> None:
     assert smooth_turns(turns=[speaker_turn('Speaker 1', 0, 1), speaker_turn('Speaker 1', 1.1, 2)]) == [
         speaker_turn('Speaker 1', 0, 2)
