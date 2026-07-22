@@ -53,29 +53,29 @@
     "ver:major": "pnpm version major --no-git-tag-version"
   },
   "dependencies": {
-    "@base-ui/react": "^1.5.0",
-    "@preact/signals": "^2.9.1",
-    "@tabler/icons-react": "^3.44.0",
-    "@tailwindcss/vite": "^4.3.0",
+    "@base-ui/react": "^1.6.0",
+    "@preact/signals": "^2.9.4",
+    "@tabler/icons-react": "^3.45.0",
+    "@tailwindcss/vite": "^4.3.3",
     "@tauri-apps/api": "^2",
-    "@tauri-apps/plugin-dialog": "^2.7.1",
+    "@tauri-apps/plugin-dialog": "^2.7.2",
     "@tauri-apps/plugin-opener": "^2",
     "@tauri-apps/plugin-process": "^2.3.1",
     "@tauri-apps/plugin-updater": "~2",
     "clsx": "^2.1.1",
-    "preact": "^10.25.1",
+    "preact": "^10.29.7",
     "react": "npm:@preact/compat",
-    "tailwindcss": "^4.3.0",
+    "tailwindcss": "^4.3.3",
     "wouter-preact": "^3.10.0"
   },
   "devDependencies": {
-    "@biomejs/biome": "^2.4.11",
-    "@preact/preset-vite": "^2.9.3",
+    "@biomejs/biome": "^2.5.5",
+    "@preact/preset-vite": "^2.10.6",
     "@tauri-apps/cli": "^2",
     "@testing-library/preact": "^3.2.4",
     "jsdom": "^29.1.1",
-    "typescript": "^6.0.3",
-    "vite": "^8.0.16",
-    "vitest": "^4.1.8"
+    "typescript": "^7.0.2",
+    "vite": "^8.1.5",
+    "vitest": "^4.1.10"
   }
 }
