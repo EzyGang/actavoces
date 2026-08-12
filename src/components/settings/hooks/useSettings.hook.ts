@@ -24,7 +24,10 @@ interface UseSettingsInput {
 export const useSettings = ({ setError, setSnapshot }: UseSettingsInput) => {
   const savingSettings = useSignal(false);
   const recordingHotkey = useSignal(false);
+  const recordingDictationHotkey = useSignal(false);
   const glossaryInput = useSignal('');
+  const dictationHintsInput = useSignal('');
+  const activeTab = useSignal<'recording' | 'dictation'>('recording');
   const draft = useSignal<AppSettingsUpdate>(buildSettingsUpdate(appSnapshotSignal.value.settings));
   const validationErrors = useComputed(() =>
     validateSettingsDraft(
@@ -40,6 +43,9 @@ export const useSettings = ({ setError, setSnapshot }: UseSettingsInput) => {
   const resetDraft = (settings: AppSettings) => {
     draft.value = buildSettingsUpdate(settings);
     glossaryInput.value = '';
+    dictationHintsInput.value = '';
+    recordingHotkey.value = false;
+    recordingDictationHotkey.value = false;
   };
 
   const persistSettings = async (nextDraft: AppSettingsUpdate) => {
@@ -107,7 +113,7 @@ export const useSettings = ({ setError, setSnapshot }: UseSettingsInput) => {
   };
 
   useEffect(() => {
-    if (!recordingHotkey.value) {
+    if (!recordingHotkey.value && !recordingDictationHotkey.value) {
       return;
     }
 
@@ -115,6 +121,7 @@ export const useSettings = ({ setError, setSnapshot }: UseSettingsInput) => {
       if (event.key === 'Escape') {
         event.preventDefault();
         recordingHotkey.value = false;
+        recordingDictationHotkey.value = false;
 
         return;
       }
@@ -128,9 +135,10 @@ export const useSettings = ({ setError, setSnapshot }: UseSettingsInput) => {
       event.preventDefault();
       draft.value = {
         ...draft.value,
-        hotkey: nextHotkey
+        [recordingDictationHotkey.value ? 'dictationHotkey' : 'hotkey']: nextHotkey
       };
       recordingHotkey.value = false;
+      recordingDictationHotkey.value = false;
     };
 
     window.addEventListener('keydown', handleKeyDown, { capture: true });
@@ -138,18 +146,32 @@ export const useSettings = ({ setError, setSnapshot }: UseSettingsInput) => {
     return () => {
       window.removeEventListener('keydown', handleKeyDown, { capture: true });
     };
-  }, [recordingHotkey.value]);
+  }, [recordingHotkey.value, recordingDictationHotkey.value]);
 
   return {
     draft,
     savingSettings,
     validationErrors,
+    activeTab,
     hasUnsavedSettings,
     resetDraft,
-    fields: buildSettingsFields(draft, recordingHotkey, glossaryInput, (nextDraft) => {
-      void persistSettings(nextDraft);
-    }),
+    fields: buildSettingsFields(
+      draft,
+      recordingHotkey,
+      recordingDictationHotkey,
+      glossaryInput,
+      dictationHintsInput,
+      (nextDraft) => {
+        void persistSettings(nextDraft);
+      }
+    ),
     actions: {
+      showRecordingTab: () => {
+        activeTab.value = 'recording';
+      },
+      showDictationTab: () => {
+        activeTab.value = 'dictation';
+      },
       saveSettings,
       clearProviderApiKey,
       clearHuggingFaceToken: clearHuggingFaceTokenAction

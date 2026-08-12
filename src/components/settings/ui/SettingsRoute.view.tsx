@@ -1,6 +1,7 @@
 import type { JSX } from 'preact';
 import type { useApp } from '../../app-shell/hooks/useApp.hook';
 import { Button } from '../../shared/ui/Button.view';
+import { SettingsDictationPanel } from './SettingsDictationPanel.view';
 import { SettingsGeneralCapturePanel } from './SettingsGeneralCapturePanel.view';
 import { SettingsPromptsPanel } from './SettingsPromptsPanel.view';
 import { SettingsSummaryProviderPanel } from './SettingsSummaryProviderPanel.view';
@@ -39,15 +40,38 @@ export const SettingsRoute = ({ app }: SettingsRouteProps): JSX.Element => (
         ))}
       </div>
     ) : null}
+    <div class='flex gap-2 border-b border-border-base' role='tablist'>
+      <Button
+        aria-selected={app.settings.activeTab.value === 'recording'}
+        onClick={app.actions.showRecordingSettings}
+        variant={app.settings.activeTab.value === 'recording' ? 'primary' : 'ghost'}
+      >
+        Recording
+      </Button>
+      <Button
+        aria-selected={app.settings.activeTab.value === 'dictation'}
+        onClick={app.actions.showDictationSettings}
+        variant={app.settings.activeTab.value === 'dictation' ? 'primary' : 'ghost'}
+      >
+        Dictation
+      </Button>
+    </div>
 
-    <section class='grid gap-4 xl:grid-cols-2'>
-      <SettingsGeneralCapturePanel app={app} />
-      <SettingsTranscriptionSpeakersPanel app={app} />
-    </section>
-
-    <section class='grid gap-4 xl:grid-cols-2'>
-      <SettingsSummaryProviderPanel app={app} />
-      <SettingsPromptsPanel app={app} />
-    </section>
+    {app.settings.activeTab.value === 'recording' ? (
+      <>
+        <section class='grid gap-4 xl:grid-cols-2' role='tabpanel'>
+          <SettingsGeneralCapturePanel app={app} />
+          <SettingsTranscriptionSpeakersPanel app={app} />
+        </section>
+        <section class='grid gap-4 xl:grid-cols-2'>
+          <SettingsSummaryProviderPanel app={app} />
+          <SettingsPromptsPanel app={app} />
+        </section>
+      </>
+    ) : (
+      <section role='tabpanel'>
+        <SettingsDictationPanel app={app} />
+      </section>
+    )}
   </section>
 );

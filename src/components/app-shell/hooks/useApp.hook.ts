@@ -93,6 +93,7 @@ export const useApp = () => {
       latestRecordingProgress: recordings.latestRecordingProgress,
       latestRecordingPipelineStatus: recordings.latestRecordingPipelineStatus,
       selectedModel: workerRuntime.selectedModel,
+      selectedDictationModel: workerRuntime.selectedDictationModel,
       settingsValidationErrors: settings.validationErrors,
       routeLabel,
       displayHotkey,
@@ -123,6 +124,7 @@ export const useApp = () => {
     navigation,
     settings: {
       draft: settings.draft,
+      activeTab: settings.activeTab,
       ...settings.fields
     },
     actions: {
@@ -132,7 +134,10 @@ export const useApp = () => {
       checkWorker: workerRuntime.actions.checkWorker,
       refreshModels: workerRuntime.actions.refreshModels,
       installSelectedModel: workerRuntime.actions.installSelectedModel,
+      installSelectedDictationModel: workerRuntime.actions.installSelectedDictationModel,
       clearProviderApiKey: settings.actions.clearProviderApiKey,
+      showRecordingSettings: settings.actions.showRecordingTab,
+      showDictationSettings: settings.actions.showDictationTab,
       clearHuggingFaceToken: settings.actions.clearHuggingFaceToken,
       saveSettings: settings.actions.saveSettings,
       checkForUpdates: updates.actions.checkForUpdates,

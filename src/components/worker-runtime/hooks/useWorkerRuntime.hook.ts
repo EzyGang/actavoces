@@ -29,6 +29,12 @@ export const useWorkerRuntime = ({
         (model) => model.name === settingsDraft.value.whisperModel
       ) ?? null
   );
+  const selectedDictationModel = useComputed(
+    () =>
+      appSnapshotSignal.value.models.find(
+        (model) => model.name === settingsDraft.value.dictationWhisperModel
+      ) ?? null
+  );
 
   const checkWorker = async () => {
     loading.value = true;
@@ -69,14 +75,28 @@ export const useWorkerRuntime = ({
       installingModel.value = false;
     }
   };
+  const installSelectedDictationModel = async () => {
+    installingModel.value = true;
+    setError(null);
+
+    try {
+      setSnapshot(await installTranscriptionModel(settingsDraft.value.dictationWhisperModel));
+    } catch (error) {
+      setError(errorMessage(error, 'Unable to install dictation model'));
+    } finally {
+      installingModel.value = false;
+    }
+  };
 
   return {
     installingModel,
     selectedModel,
+    selectedDictationModel,
     actions: {
       checkWorker,
       refreshModels,
-      installSelectedModel
+      installSelectedModel,
+      installSelectedDictationModel
     }
   };
 };

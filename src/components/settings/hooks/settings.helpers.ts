@@ -90,6 +90,13 @@ export const buildSettingsUpdate = (settings: AppSettings): AppSettingsUpdate =>
   hotkey: settings.hotkey,
   overlayPosition: settings.overlayPosition,
   overlayDisplayMode: settings.overlayDisplayMode,
+  dictationHotkey: settings.dictationHotkey,
+  dictationShortcutMode: settings.dictationShortcutMode,
+  dictationWhisperModel: settings.dictationWhisperModel,
+  dictationLanguage: settings.dictationLanguage,
+  dictationContext: settings.dictationContext,
+  dictationOverlayPosition: settings.dictationOverlayPosition,
+  dictationOverlayDisplayMode: settings.dictationOverlayDisplayMode,
   closeToTray: settings.closeToTray,
   launchAtLogin: settings.launchAtLogin,
   microphoneDevice: settings.microphoneDevice,
@@ -165,22 +172,46 @@ export const captureDeviceOptions = (
   return options;
 };
 
-const modifierKeys = new Set(['Alt', 'Control', 'Meta', 'Shift']);
+const UNSUPPORTED_SHORTCUT_KEYS: Record<string, true> = {
+  AudioVolumeDown: true,
+  AudioVolumeMute: true,
+  AudioVolumeUp: true,
+  Fn: true,
+  MediaPlayPause: true,
+  MediaStop: true,
+  MediaTrackNext: true,
+  MediaTrackPrevious: true,
+  OS: true,
+  Power: true,
+  Sleep: true,
+  WakeUp: true
+};
+
+const MODIFIER_KEYS: Record<string, true> = {
+  Alt: true,
+  Control: true,
+  Meta: true,
+  Shift: true
+};
 
 const hotkeyKey = (event: KeyboardEvent): string | null => {
   if (event.key === ' ') {
     return 'Space';
   }
 
-  if (modifierKeys.has(event.key)) {
+  if (MODIFIER_KEYS[event.key]) {
     return null;
   }
 
-  if (event.key.length === 1) {
+  if (event.key.length === 1 && /[a-z0-9!"#$%&'()*,-./:;<=>?@[\\\]^_`{|}~]/i.test(event.key)) {
     return event.key.toUpperCase();
   }
 
-  return event.key;
+  if (UNSUPPORTED_SHORTCUT_KEYS[event.key]) {
+    return null;
+  }
+
+  return null;
 };
 
 export const hotkeyFromKeyboardEvent = (event: KeyboardEvent): string | null => {

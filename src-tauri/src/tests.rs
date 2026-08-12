@@ -19,8 +19,9 @@ use crate::capture::audio::{
 };
 use crate::domain::types::{
     AppSettingsUpdate, ArtifactKind, CaptureDeviceInfo, DesktopRuntimeStatus, DiarizationBackend,
-    ModelInventoryItem, OverlayDisplayMode, OverlayPosition, PipelineStageId, PipelineStageStatus,
-    RecordingStatus, SpeakerCountMode, SpeakerRenameInput, WorkerEvent, WorkerSetupStatus,
+    DictationShortcutMode, ModelInventoryItem, OverlayDisplayMode, OverlayPosition,
+    PipelineStageId, PipelineStageStatus, RecordingStatus, SpeakerCountMode, SpeakerRenameInput,
+    WorkerEvent, WorkerSetupStatus,
 };
 use crate::settings::{
     default_settings,
@@ -397,6 +398,102 @@ fn settings_update_persists_overlay_display_mode() {
     let settings = repository.settings().unwrap();
 
     assert_eq!(settings.overlay_display_mode, OverlayDisplayMode::Minimal);
+}
+
+#[test]
+fn dictation_settings_have_explicit_independent_defaults() {
+    let database_path = test_database_path("dictation-defaults");
+    let repository = AppRepository::open(&database_path).unwrap();
+    let settings = repository.settings().unwrap();
+
+    assert_eq!(settings.dictation_language, "en");
+    assert_eq!(settings.dictation_whisper_model, "small");
+    assert_eq!(settings.dictation_hotkey, "CommandOrControl+Shift+D");
+    assert_eq!(settings.transcription_language, "auto");
+}
+
+#[test]
+fn dictation_settings_persist_independently() {
+    let database_path = test_database_path("dictation-settings");
+    let mut repository = AppRepository::open(&database_path).unwrap();
+    let mut update = settings_update(
+        test_artifact_path("dictation-settings-records")
+            .display()
+            .to_string(),
+    );
+
+    update.dictation_hotkey = "R".to_owned();
+    update.dictation_shortcut_mode = DictationShortcutMode::PushToTalk;
+    update.dictation_whisper_model = "large-v3".to_owned();
+    update.dictation_language = "es".to_owned();
+    update.dictation_context = "ActaVoces\nKaneo".to_owned();
+    update.whisper_model = "medium".to_owned();
+    update.transcription_language = "uk".to_owned();
+
+    repository.update_settings(update).unwrap();
+
+    let settings = repository.settings().unwrap();
+
+    assert_eq!(settings.dictation_hotkey, "R");
+    assert_eq!(
+        settings.dictation_shortcut_mode,
+        DictationShortcutMode::PushToTalk
+    );
+    assert_eq!(settings.dictation_whisper_model, "large-v3");
+    assert_eq!(settings.dictation_language, "es");
+    assert_eq!(settings.dictation_context, "ActaVoces\nKaneo");
+    assert_eq!(settings.whisper_model, "medium");
+    assert_eq!(settings.transcription_language, "uk");
+}
+
+#[test]
+fn dictation_settings_fall_back_when_additive_keys_are_missing() {
+    let database_path = test_database_path("dictation-fallback");
+    let repository = AppRepository::open(&database_path).unwrap();
+    drop(repository);
+
+    let connection = rusqlite::Connection::open(&database_path).unwrap();
+    for key in [
+        "dictationHotkey",
+        "dictationShortcutMode",
+        "dictationWhisperModel",
+        "dictationLanguage",
+        "dictationContext",
+        "dictationOverlayPosition",
+        "dictationOverlayDisplayMode",
+    ] {
+        connection
+            .execute("DELETE FROM settings WHERE key = ?1", [key])
+            .unwrap();
+    }
+    drop(connection);
+
+    let repository = AppRepository::open(&database_path).unwrap();
+
+    let settings = repository.settings().unwrap();
+
+    assert_eq!(settings.dictation_language, "en");
+    assert_eq!(settings.dictation_whisper_model, "small");
+    assert_eq!(settings.dictation_hotkey, "CommandOrControl+Shift+D");
+}
+
+#[test]
+fn dictation_shortcut_validation_accepts_single_keys_and_rejects_system_keys() {
+    let database_path = test_database_path("dictation-shortcuts");
+    let mut repository = AppRepository::open(&database_path).unwrap();
+    let output_directory = test_artifact_path("dictation-shortcut-records")
+        .display()
+        .to_string();
+
+    let mut single_key = settings_update(output_directory.clone());
+    single_key.dictation_hotkey = "R".to_owned();
+    repository.update_settings(single_key).unwrap();
+
+    for unsupported in ["Fn", "MediaPlayPause", "Shift", "F1"] {
+        let mut update = settings_update(output_directory.clone());
+        update.dictation_hotkey = unsupported.to_owned();
+        assert!(repository.update_settings(update).is_err());
+    }
 }
 
 #[test]
@@ -1473,6 +1570,13 @@ fn settings_update(output_directory: String) -> AppSettingsUpdate {
         hotkey: "CommandOrControl+Shift+Space".to_owned(),
         overlay_position: OverlayPosition::TopLeft,
         overlay_display_mode: OverlayDisplayMode::Full,
+        dictation_hotkey: "R".to_owned(),
+        dictation_shortcut_mode: DictationShortcutMode::Toggle,
+        dictation_whisper_model: "small".to_owned(),
+        dictation_language: "en".to_owned(),
+        dictation_context: String::new(),
+        dictation_overlay_position: OverlayPosition::TopRight,
+        dictation_overlay_display_mode: OverlayDisplayMode::Minimal,
         close_to_tray: true,
         launch_at_login: false,
         microphone_device: "Default microphone".to_owned(),

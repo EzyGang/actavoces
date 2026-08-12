@@ -8,6 +8,9 @@ pub(crate) const DEFAULT_SUMMARY_PROMPT: &str =
     "Summarize the conversation. Then provide bullet lists for decisions and action items.";
 pub(crate) const SUMMARY_PROVIDER_API_KEY_SETTING: &str = "providerApiKey";
 pub(crate) const HUGGING_FACE_TOKEN_SETTING: &str = "huggingFaceToken";
+const SUPPORTED_WHISPER_MODELS: [&str; 4] = ["small", "medium", "large-v3", "distil-large-v3"];
+const SUPPORTED_TRANSCRIPTION_LANGUAGES: [&str; 5] = ["auto", "en", "ru", "uk", "es"];
+const DEFAULT_DICTATION_LANGUAGE: &str = "en";
 
 pub(crate) fn default_settings(database_path: &Path) -> AppSettings {
     AppSettings {
@@ -16,6 +19,13 @@ pub(crate) fn default_settings(database_path: &Path) -> AppSettings {
         hotkey: "CommandOrControl+Shift+Space".to_owned(),
         overlay_position: OverlayPosition::TopLeft,
         overlay_display_mode: OverlayDisplayMode::Full,
+        dictation_hotkey: "CommandOrControl+Shift+D".to_owned(),
+        dictation_shortcut_mode: DictationShortcutMode::Toggle,
+        dictation_whisper_model: "small".to_owned(),
+        dictation_language: DEFAULT_DICTATION_LANGUAGE.to_owned(),
+        dictation_context: String::new(),
+        dictation_overlay_position: OverlayPosition::TopRight,
+        dictation_overlay_display_mode: OverlayDisplayMode::Minimal,
         close_to_tray: true,
         launch_at_login: false,
         microphone_device: "Default microphone".to_owned(),
@@ -50,7 +60,7 @@ pub(crate) fn default_settings(database_path: &Path) -> AppSettings {
 }
 
 pub(crate) fn default_model_inventory() -> Vec<ModelInventoryItem> {
-    ["small", "medium", "large-v3", "distil-large-v3"]
+    SUPPORTED_WHISPER_MODELS
         .iter()
         .map(|model| ModelInventoryItem {
             name: (*model).to_owned(),
@@ -77,6 +87,25 @@ pub(crate) fn settings_pairs(
         (
             "overlayDisplayMode",
             serde_json::to_string(&input.overlay_display_mode).unwrap_or_default(),
+        ),
+        ("dictationHotkey", input.dictation_hotkey.clone()),
+        (
+            "dictationShortcutMode",
+            serde_json::to_string(&input.dictation_shortcut_mode).unwrap_or_default(),
+        ),
+        (
+            "dictationWhisperModel",
+            input.dictation_whisper_model.clone(),
+        ),
+        ("dictationLanguage", input.dictation_language.clone()),
+        ("dictationContext", input.dictation_context.clone()),
+        (
+            "dictationOverlayPosition",
+            serde_json::to_string(&input.dictation_overlay_position).unwrap_or_default(),
+        ),
+        (
+            "dictationOverlayDisplayMode",
+            serde_json::to_string(&input.dictation_overlay_display_mode).unwrap_or_default(),
         ),
         ("closeToTray", input.close_to_tray.to_string()),
         ("launchAtLogin", input.launch_at_login.to_string()),
@@ -147,6 +176,26 @@ pub(crate) fn validate_settings(
         ));
     }
 
+    validate_hotkey(&input.hotkey, "Hotkey")?;
+    validate_hotkey(&input.dictation_hotkey, "Dictation hotkey")?;
+
+    if !SUPPORTED_WHISPER_MODELS.contains(&input.whisper_model.as_str())
+        || !SUPPORTED_WHISPER_MODELS.contains(&input.dictation_whisper_model.as_str())
+    {
+        return Err(rusqlite::Error::InvalidParameterName(
+            "Unsupported Whisper model".to_owned(),
+        ));
+    }
+
+    if !SUPPORTED_TRANSCRIPTION_LANGUAGES.contains(&input.transcription_language.as_str())
+        || input.dictation_language == "auto"
+        || !SUPPORTED_TRANSCRIPTION_LANGUAGES.contains(&input.dictation_language.as_str())
+    {
+        return Err(rusqlite::Error::InvalidParameterName(
+            "Unsupported transcription language".to_owned(),
+        ));
+    }
+
     if input.sample_rate == 0 {
         return Err(rusqlite::Error::InvalidParameterName(
             "Sample rate must be greater than zero".to_owned(),
@@ -189,6 +238,33 @@ pub(crate) fn validate_settings(
             )),
         },
     }
+}
+
+fn validate_hotkey(hotkey: &str, label: &str) -> rusqlite::Result<()> {
+    let parts = hotkey.split('+').collect::<Vec<_>>();
+    let key = parts.last().copied().unwrap_or_default();
+    let modifiers = &parts[..parts.len().saturating_sub(1)];
+    let valid_modifiers = modifiers
+        .iter()
+        .all(|part| matches!(*part, "CommandOrControl" | "Alt" | "Shift"));
+    let valid_key = key == "Space"
+        || (key.chars().count() == 1
+            && key.chars().all(|character| {
+                character.is_ascii_alphanumeric() || character.is_ascii_punctuation()
+            }));
+
+    if parts.is_empty()
+        || modifiers.len() > 3
+        || !valid_modifiers
+        || !valid_key
+        || hotkey.trim() != hotkey
+    {
+        return Err(rusqlite::Error::InvalidParameterName(format!(
+            "{label} is not a supported shortcut"
+        )));
+    }
+
+    Ok(())
 }
 
 pub(crate) fn summary_provider_configured_for(
