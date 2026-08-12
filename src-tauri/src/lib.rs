@@ -3,6 +3,7 @@ mod artifacts;
 mod capture;
 mod diagnostics;
 mod diarization;
+mod dictation;
 mod domain;
 mod settings;
 mod storage;
@@ -16,10 +17,11 @@ use std::sync::{Mutex, OnceLock};
 
 use crate::app::commands::{create_recording_overlay, init_tray, sync_launch_at_login};
 use crate::app::commands::{
-    emit_snapshot_update, register_global_hotkey, spawn_pipeline_processing,
+    emit_snapshot_update, register_global_hotkeys, spawn_pipeline_processing,
     sync_recording_overlay, sync_tray_recording_icon,
 };
 use crate::capture::audio::NativeAudioCaptureBackend;
+use crate::dictation::{cleanup_stale_dictations, DictationRuntime};
 use crate::domain::types::{ActavocesState, AppSettings};
 use crate::storage::repository::AppRepository;
 use crate::worker::runtime::WorkerRuntimeState;
@@ -56,6 +58,7 @@ pub fn run() {
         .manage(ActavocesState {
             repository: OnceLock::new(),
             capture_backend: Mutex::new(NativeAudioCaptureBackend::default()),
+            dictation_runtime: Mutex::new(DictationRuntime::default()),
             worker_runtime: Mutex::new(WorkerRuntimeState::default()),
             pipeline_running: Mutex::new(false),
         })
@@ -121,6 +124,8 @@ pub fn run() {
             app::commands::recordings::rename_recording_title,
             app::commands::recordings::rename_speaker_label,
             app::commands::recordings::toggle_recording_from_shortcut,
+            dictation::cancel_active_dictation,
+            dictation::get_dictation_status,
             app::commands::pipeline::resume_pending_jobs,
             app::commands::worker::bootstrap_worker_runtime,
             app::commands::worker::get_worker_status,
@@ -141,6 +146,9 @@ async fn initialize_app_state(handle: tauri::AppHandle) -> Result<(), String> {
         .app_data_dir()
         .map_err(|error| format!("Unable to resolve app data directory: {error}"))?
         .join("actavoces.sqlite");
+    if let Some(app_data_directory) = database_path.parent() {
+        cleanup_stale_dictations(app_data_directory)?;
+    }
     let (repository, settings) =
         tauri::async_runtime::spawn_blocking(move || initialize_repository(database_path))
             .await
@@ -156,7 +164,7 @@ async fn initialize_app_state(handle: tauri::AppHandle) -> Result<(), String> {
         let _ = handle.emit("app-error", error);
     }
 
-    let status = register_global_hotkey(&handle, &settings.hotkey);
+    let status = register_global_hotkeys(&handle, &settings);
     let snapshot = {
         let mut repository = state.repository()?;
 
