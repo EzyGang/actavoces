@@ -36,6 +36,64 @@ from app.summaries import (
 )
 
 
+def test_faster_whisper_reuses_compatible_cached_model(mocker: MockerFixture) -> None:
+    model_creations: list[tuple[str, dict[str, Any]]] = []
+
+    class FakeModel:
+        def __init__(self, model_name: str, **kwargs: Any) -> None:
+            model_creations.append((model_name, kwargs))
+
+        def transcribe(self, audio_path: str, **kwargs: Any) -> tuple[list[SimpleNamespace], SimpleNamespace]:
+            return ([SimpleNamespace(start=0.0, end=1.0, text=audio_path)], SimpleNamespace(language='en'))
+
+    mocker.patch('app.models.cached_model', None)
+    mocker.patch('app.models.cached_model_key', None)
+    for audio_path in [Path('first.wav'), Path('second.wav')]:
+        result = run_faster_whisper(
+            audio_path=audio_path,
+            model_name='medium',
+            language='en',
+            compute_type='cpu',
+            model_storage_directory=Path('/tmp/models'),
+            model_factory=FakeModel,
+        )
+        assert result.status == 'complete'
+
+    assert model_creations == [('medium', {'device': 'cpu', 'compute_type': 'int8', 'download_root': '/tmp/models'})]
+
+
+def test_faster_whisper_replaces_cache_for_runtime_configuration(mocker: MockerFixture) -> None:
+    model_creations: list[tuple[str, dict[str, Any]]] = []
+
+    class FakeModel:
+        def __init__(self, model_name: str, **kwargs: Any) -> None:
+            model_creations.append((model_name, kwargs))
+
+        def transcribe(self, audio_path: str, **kwargs: Any) -> tuple[list[SimpleNamespace], SimpleNamespace]:
+            return ([SimpleNamespace(start=0.0, end=1.0, text=audio_path)], SimpleNamespace(language='en'))
+
+    mocker.patch('app.models.cached_model', None)
+    mocker.patch('app.models.cached_model_key', None)
+    configurations = [
+        ('small', 'cpu', Path('/tmp/models-a')),
+        ('medium', 'cpu', Path('/tmp/models-a')),
+        ('medium', 'int8_float32', Path('/tmp/models-a')),
+        ('medium', 'int8_float32', Path('/tmp/models-b')),
+    ]
+    for model_name, compute_type, storage_directory in configurations:
+        result = run_faster_whisper(
+            audio_path=Path('recording.wav'),
+            model_name=model_name,
+            language='en',
+            compute_type=compute_type,
+            model_storage_directory=storage_directory,
+            model_factory=FakeModel,
+        )
+        assert result.status == 'complete'
+
+    assert len(model_creations) == 4
+
+
 class MockPyannoteTurn:
     def __init__(self, start: float, end: float) -> None:
         self.start = start

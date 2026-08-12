@@ -1,5 +1,6 @@
 use crate::domain::types::{ModelInventoryItem, RuntimeCapabilities, WorkerEvent};
 
+#[cfg(test)]
 pub(crate) fn parse_worker_events(output: &str) -> Result<Vec<WorkerEvent>, String> {
     let mut events = Vec::new();
 

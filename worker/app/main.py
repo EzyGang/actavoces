@@ -3,8 +3,7 @@ import sys
 
 from app.events import emit
 from app.handlers import handle
-from app.json_utils import loads
-from app.protocol import WorkerCommand
+from app.protocol import WorkerCommand, WorkerEvent
 
 
 def main() -> None:
@@ -16,8 +15,10 @@ async def run() -> None:
         if not line.strip():
             continue
 
-        for worker_event in await handle(WorkerCommand.model_validate(loads(line))):
+        command = WorkerCommand.model_validate_json(line)
+        for worker_event in await handle(command):
             emit(worker_event)
+        emit(WorkerEvent(command_id=command.id, event='command.finished'))
 
 
 if __name__ == '__main__':

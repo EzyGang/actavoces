@@ -2,7 +2,9 @@ use tauri::{Emitter, Manager};
 
 use crate::domain::types::*;
 use crate::utils::lock_error;
-use crate::worker::runtime::{bootstrap_worker, persist_worker_setup_progress, run_worker_command};
+use crate::worker::runtime::{
+    bootstrap_worker, persist_worker_setup_progress, run_worker_command, stop_worker_process,
+};
 
 use super::pipeline::spawn_pipeline_processing;
 
@@ -50,64 +52,67 @@ pub fn get_worker_status(state: tauri::State<'_, ActavocesState>) -> Result<Work
 }
 
 #[tauri::command]
-pub fn start_worker(state: tauri::State<'_, ActavocesState>) -> Result<WorkerStatus, String> {
-    let status = {
-        let mut runtime = state.worker_runtime.lock().map_err(lock_error)?;
-
-        runtime.running = true;
-        runtime.status()
-    };
-
-    persist_worker_status(&state, &status)?;
-
-    Ok(status)
+pub async fn start_worker(app: tauri::AppHandle) -> Result<WorkerStatus, String> {
+    update_worker_health(app).await
 }
 
 #[tauri::command]
-pub fn stop_worker(state: tauri::State<'_, ActavocesState>) -> Result<WorkerStatus, String> {
-    let status = {
-        let mut runtime = state.worker_runtime.lock().map_err(lock_error)?;
+pub async fn stop_worker(app: tauri::AppHandle) -> Result<WorkerStatus, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        stop_worker_process()?;
+        let state = app.state::<ActavocesState>();
+        let status = {
+            let mut runtime = state.worker_runtime.lock().map_err(lock_error)?;
 
-        runtime.running = false;
-        runtime.health_ok = false;
-        runtime.status()
-    };
+            runtime.running = false;
+            runtime.health_ok = false;
+            runtime.status()
+        };
+        persist_worker_status(&state, &status)?;
 
-    persist_worker_status(&state, &status)?;
-
-    Ok(status)
+        Ok(status)
+    })
+    .await
+    .map_err(|error| format!("Worker stop task failed: {error}"))?
 }
 
 #[tauri::command]
-pub fn check_worker_health(
-    state: tauri::State<'_, ActavocesState>,
-) -> Result<WorkerStatus, String> {
-    let status = {
-        let mut runtime = state.worker_runtime.lock().map_err(lock_error)?;
+pub async fn check_worker_health(app: tauri::AppHandle) -> Result<WorkerStatus, String> {
+    update_worker_health(app).await
+}
 
-        runtime.running = true;
+async fn update_worker_health(app: tauri::AppHandle) -> Result<WorkerStatus, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let result = run_worker_command("health.check", serde_json::json!({}));
+        let state = app.state::<ActavocesState>();
+        let status = {
+            let mut runtime = state.worker_runtime.lock().map_err(lock_error)?;
 
-        match run_worker_command("health.check", serde_json::json!({})) {
-            Ok(events) if events.iter().any(|event| event.event == "health.ok") => {
-                runtime.health_ok = true;
-                runtime.last_error = None;
+            runtime.running = true;
+            match result {
+                Ok(events) if events.iter().any(|event| event.event == "health.ok") => {
+                    runtime.health_ok = true;
+                    runtime.last_error = None;
+                }
+                Ok(events) => {
+                    runtime.health_ok = false;
+                    runtime.last_error =
+                        Some(format!("Unexpected worker events: {}", events.len()));
+                }
+                Err(error) => {
+                    runtime.running = false;
+                    runtime.health_ok = false;
+                    runtime.last_error = Some(error);
+                }
             }
-            Ok(events) => {
-                runtime.health_ok = false;
-                runtime.last_error = Some(format!("Unexpected worker events: {}", events.len()));
-            }
-            Err(error) => {
-                runtime.health_ok = false;
-                runtime.last_error = Some(error);
-            }
-        }
+            runtime.status()
+        };
+        persist_worker_status(&state, &status)?;
 
-        runtime.status()
-    };
-
-    persist_worker_status(&state, &status)?;
-
-    Ok(status)
+        Ok(status)
+    })
+    .await
+    .map_err(|error| format!("Worker health task failed: {error}"))?
 }
 
 pub fn persist_worker_status(
