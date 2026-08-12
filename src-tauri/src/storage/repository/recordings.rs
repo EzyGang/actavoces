@@ -67,16 +67,18 @@ impl AppRepository {
                 ended_at,
                 duration_seconds,
                 status,
+                profile,
                 artifact_directory,
                 capture_errors
             )
-            VALUES (?1, ?2, ?3, NULL, NULL, ?4, ?5, '[]')
+            VALUES (?1, ?2, ?3, NULL, NULL, ?4, ?5, ?6, '[]')
             ",
             params![
                 recording.id,
                 recording.title,
                 recording.started_at,
                 enum_value(RecordingStatus::Recording)?,
+                enum_value(recording.profile)?,
                 recording.artifact_directory
             ],
         )?;

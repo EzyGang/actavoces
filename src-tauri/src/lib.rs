@@ -16,10 +16,11 @@ use std::sync::{Mutex, OnceLock};
 
 use crate::app::commands::{create_recording_overlay, init_tray, sync_launch_at_login};
 use crate::app::commands::{
-    emit_snapshot_update, register_global_hotkey, spawn_pipeline_processing,
-    sync_recording_overlay, sync_tray_recording_icon,
+    emit_snapshot_update, register_global_hotkeys, spawn_pipeline_processing,
+    sync_active_recording_overlay, sync_tray_recording_icon,
 };
 use crate::capture::audio::NativeAudioCaptureBackend;
+use crate::domain::types::DictationPushToTalkState;
 use crate::domain::types::{ActavocesState, AppSettings};
 use crate::storage::repository::AppRepository;
 use crate::worker::runtime::WorkerRuntimeState;
@@ -58,6 +59,7 @@ pub fn run() {
             capture_backend: Mutex::new(NativeAudioCaptureBackend::default()),
             worker_runtime: Mutex::new(WorkerRuntimeState::default()),
             pipeline_running: Mutex::new(false),
+            dictation_push_to_talk: Mutex::new(DictationPushToTalkState::default()),
         })
         .plugin(tauri_plugin_autostart::init(
             MacosLauncher::LaunchAgent,
@@ -156,7 +158,12 @@ async fn initialize_app_state(handle: tauri::AppHandle) -> Result<(), String> {
         let _ = handle.emit("app-error", error);
     }
 
-    let status = register_global_hotkey(&handle, &settings.hotkey);
+    let status = register_global_hotkeys(
+        &handle,
+        &settings.hotkey,
+        &settings.dictation_hotkey,
+        settings.dictation_shortcut_mode,
+    );
     let snapshot = {
         let mut repository = state.repository()?;
 
@@ -166,11 +173,10 @@ async fn initialize_app_state(handle: tauri::AppHandle) -> Result<(), String> {
         repository.snapshot().map_err(|error| error.to_string())?
     };
 
-    sync_recording_overlay(
+    sync_active_recording_overlay(
         &handle,
-        snapshot.active_recording.is_some(),
-        snapshot.settings.overlay_position,
-        snapshot.settings.overlay_display_mode,
+        snapshot.active_recording.as_ref(),
+        &snapshot.settings,
     )?;
     sync_tray_recording_icon(&handle, snapshot.active_recording.is_some());
     emit_snapshot_update(&handle, &snapshot);

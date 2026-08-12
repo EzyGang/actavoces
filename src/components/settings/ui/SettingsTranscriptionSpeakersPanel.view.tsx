@@ -7,6 +7,7 @@ import { Input } from '../../shared/ui/Input.view';
 import { Panel } from '../../shared/ui/Panel.view';
 import { Select } from '../../shared/ui/Select.view';
 import { StatusBadge } from '../../shared/ui/StatusBadge.view';
+import { SettingsGlossaryField } from './SettingsGlossaryField.view';
 
 interface SettingsPanelProps {
   app: ReturnType<typeof useApp>;
@@ -50,46 +51,7 @@ export const SettingsTranscriptionSpeakersPanel = ({ app }: SettingsPanelProps):
         </Field>
       ))}
     </div>
-    <div class='flex flex-col gap-3 border border-border-base bg-bg-input p-3 text-sm'>
-      <Field class='text-sm'>
-        <Field.Label>{app.settings.glossaryField.label}</Field.Label>
-        <div class='flex gap-2'>
-          <Input
-            class='min-w-0 flex-1'
-            onInput={app.settings.glossaryField.onInput}
-            onKeyDown={app.settings.glossaryField.onKeyDown}
-            placeholder={app.settings.glossaryField.placeholder}
-            type='text'
-            value={app.settings.glossaryField.value}
-            surface='card'
-          />
-          <Button class='h-11 px-3' onClick={app.settings.glossaryField.onAdd} variant='secondary'>
-            Add
-          </Button>
-        </div>
-        <Field.Description>{app.settings.glossaryField.hint}</Field.Description>
-      </Field>
-      {app.settings.glossaryField.entries.length > 0 ? (
-        <div class='flex flex-wrap gap-2'>
-          {app.settings.glossaryField.entries.map((entry) => (
-            <span
-              class='inline-flex items-center gap-2 border border-border-base bg-bg-card px-2 py-1 font-mono text-xs'
-              key={entry.value}
-            >
-              {entry.value}
-              <Button
-                aria-label={`Remove ${entry.value}`}
-                class='h-auto p-0! text-text-muted hover:text-text-primary'
-                onClick={entry.onRemove}
-                variant='ghost'
-              >
-                X
-              </Button>
-            </span>
-          ))}
-        </div>
-      ) : null}
-    </div>
+    <SettingsGlossaryField field={app.settings.glossaryField} />
     <Collapsible>
       <Collapsible.Trigger>Advanced speaker options</Collapsible.Trigger>
       <Collapsible.Panel class='grid gap-3 md:grid-cols-3'>

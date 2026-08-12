@@ -78,6 +78,7 @@ export interface Recording {
   durationSeconds: number | null;
   status: RecordingStatus;
   artifactDirectory: string;
+  profile: 'meeting' | 'dictation';
   captureErrors: CaptureError[];
   stages: PipelineStage[];
   artifacts: Artifact[];
@@ -94,6 +95,13 @@ export interface AppSettings {
   hotkey: string;
   overlayPosition: 'topLeft' | 'topRight' | 'bottomLeft' | 'bottomRight';
   overlayDisplayMode: 'full' | 'minimal' | 'none';
+  dictationHotkey: string;
+  dictationShortcutMode: 'toggle' | 'pushToTalk';
+  dictationWhisperModel: string;
+  dictationLanguage: string;
+  dictationContext: string;
+  dictationOverlayPosition: 'topLeft' | 'topRight' | 'bottomLeft' | 'bottomRight';
+  dictationOverlayDisplayMode: 'full' | 'minimal' | 'none';
   closeToTray: boolean;
   launchAtLogin: boolean;
   microphoneDevice: string;

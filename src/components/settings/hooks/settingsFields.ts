@@ -22,16 +22,41 @@ import { selectFields, speakerCountField } from './settingsSelectFields';
 export const buildSettingsFields = (
   draft: Signal<AppSettingsUpdate>,
   recordingHotkey: Signal<boolean>,
+  recordingDictationHotkey: Signal<boolean>,
   glossaryInput: Signal<string>,
+  dictationHintsInput: Signal<string>,
   onDashboardGlossaryChange?: (draft: AppSettingsUpdate) => void
 ) => {
   const inputHandlers = createInputHandlers(draft);
 
   return {
     folderFields: folderFields(draft),
-    dashboardGlossaryField: glossaryField(draft, glossaryInput, onDashboardGlossaryChange),
-    glossaryField: glossaryField(draft, glossaryInput),
-    hotkeyField: hotkeyField(draft, recordingHotkey),
+    dashboardGlossaryField: glossaryField(
+      draft,
+      glossaryInput,
+      'transcriptionContext',
+      'Transcription glossary',
+      onDashboardGlossaryChange
+    ),
+    glossaryField: glossaryField(
+      draft,
+      glossaryInput,
+      'transcriptionContext',
+      'Transcription glossary'
+    ),
+    dictationHintsField: glossaryField(
+      draft,
+      dictationHintsInput,
+      'dictationContext',
+      'Dictation hints'
+    ),
+    hotkeyField: hotkeyField(draft, recordingHotkey, 'hotkey', 'Global hotkey'),
+    dictationHotkeyField: hotkeyField(
+      draft,
+      recordingDictationHotkey,
+      'dictationHotkey',
+      'Dictation shortcut'
+    ),
     huggingFaceTokenField: {
       key: 'huggingFaceToken',
       label: 'Hugging Face token',
@@ -41,6 +66,7 @@ export const buildSettingsFields = (
     } satisfies SettingsTextField,
     textFields: textFields(draft, inputHandlers.text),
     captureSelectFields: captureSelectFields(draft, inputHandlers.select),
+    dictationSelectFields: dictationSelectFields(draft, inputHandlers.select),
     numberFields: numberFields(draft, inputHandlers.number, inputHandlers.optionalNumber),
     selectFields: selectFields(draft, inputHandlers.select),
     speakerCountField: speakerCountField(draft, inputHandlers.select),
@@ -52,13 +78,15 @@ export const buildSettingsFields = (
 const glossaryField = (
   draft: Signal<AppSettingsUpdate>,
   glossaryInput: Signal<string>,
+  contextKey: 'transcriptionContext' | 'dictationContext',
+  label: string,
   onChange?: (draft: AppSettingsUpdate) => void
 ): SettingsGlossaryField => {
-  const entries = glossaryEntriesFromContext(draft.value.transcriptionContext);
+  const entries = glossaryEntriesFromContext(draft.value[contextKey]);
   const updateEntries = (nextEntries: string[]) => {
     const nextDraft = {
       ...draft.value,
-      transcriptionContext: contextFromGlossaryEntries(normalizeGlossaryEntries(nextEntries))
+      [contextKey]: contextFromGlossaryEntries(normalizeGlossaryEntries(nextEntries))
     };
 
     draft.value = nextDraft;
@@ -76,7 +104,7 @@ const glossaryField = (
   };
 
   return {
-    label: 'Transcription glossary',
+    label,
     hint: 'Optional words, names, products, acronyms, and short phrases to hint during transcription.',
     placeholder: 'Type a term or phrase, then press Enter',
     value: glossaryInput.value,
@@ -181,11 +209,13 @@ const folderSelectHandler =
 
 const hotkeyField = (
   draft: Signal<AppSettingsUpdate>,
-  recordingHotkey: Signal<boolean>
+  recordingHotkey: Signal<boolean>,
+  key: 'hotkey' | 'dictationHotkey',
+  label: string
 ): SettingsHotkeyField => ({
-  label: 'Global hotkey',
-  value: draft.value.hotkey,
-  displayValue: displayHotkey(draft.value.hotkey),
+  label,
+  value: draft.value[key],
+  displayValue: displayHotkey(draft.value[key]),
   recording: recordingHotkey.value,
   onCapture: () => {
     recordingHotkey.value = true;
@@ -263,6 +293,69 @@ const captureSelectFields = (
       { value: 'none', label: 'None' }
     ],
     onValueChange: onValueChange('overlayDisplayMode')
+  }
+];
+
+const dictationSelectFields = (
+  draft: Signal<AppSettingsUpdate>,
+  onValueChange: (key: keyof AppSettingsUpdate) => (value: string) => void
+): SettingsSelectField[] => [
+  {
+    key: 'dictationShortcutMode',
+    label: 'Shortcut mode',
+    value: draft.value.dictationShortcutMode,
+    options: [
+      { value: 'toggle', label: 'Toggle' },
+      { value: 'pushToTalk', label: 'Push to talk' }
+    ],
+    onValueChange: onValueChange('dictationShortcutMode')
+  },
+  {
+    key: 'dictationWhisperModel',
+    label: 'Whisper model',
+    value: draft.value.dictationWhisperModel,
+    options: [
+      { value: 'small', label: 'small' },
+      { value: 'medium', label: 'medium' },
+      { value: 'large-v3', label: 'large-v3' },
+      { value: 'distil-large-v3', label: 'distil-large-v3' }
+    ],
+    onValueChange: onValueChange('dictationWhisperModel')
+  },
+  {
+    key: 'dictationLanguage',
+    label: 'Language',
+    value: draft.value.dictationLanguage,
+    options: [
+      { value: 'en', label: 'English' },
+      { value: 'ru', label: 'Russian' },
+      { value: 'uk', label: 'Ukrainian' },
+      { value: 'es', label: 'Spanish' }
+    ],
+    onValueChange: onValueChange('dictationLanguage')
+  },
+  {
+    key: 'dictationOverlayPosition',
+    label: 'Status window position',
+    value: draft.value.dictationOverlayPosition,
+    options: [
+      { value: 'topLeft', label: 'Top left' },
+      { value: 'topRight', label: 'Top right' },
+      { value: 'bottomLeft', label: 'Bottom left' },
+      { value: 'bottomRight', label: 'Bottom right' }
+    ],
+    onValueChange: onValueChange('dictationOverlayPosition')
+  },
+  {
+    key: 'dictationOverlayDisplayMode',
+    label: 'Status window',
+    value: draft.value.dictationOverlayDisplayMode,
+    options: [
+      { value: 'full', label: 'Full' },
+      { value: 'minimal', label: 'Minimal' },
+      { value: 'none', label: 'None' }
+    ],
+    onValueChange: onValueChange('dictationOverlayDisplayMode')
   }
 ];
 

@@ -10,7 +10,10 @@ use crate::worker::runtime::run_diarization_setup;
 
 use super::overlay::sync_recording_overlay;
 use super::pipeline::{emit_snapshot_update, spawn_pipeline_processing};
-use super::recordings::toggle_recording_lifecycle_background;
+use super::recordings::{
+    set_recording_profile_active_background, toggle_recording_lifecycle_background,
+    toggle_recording_lifecycle_for_profile_background,
+};
 
 #[tauri::command]
 pub async fn update_app_settings(
@@ -42,12 +45,21 @@ pub async fn update_app_settings(
 
         repository.snapshot().map_err(|error| error.to_string())?
     };
-
+    let (overlay_position, overlay_display_mode) = match snapshot.active_recording.as_ref() {
+        Some(recording) if recording.profile == RecordingProfile::Dictation => (
+            snapshot.settings.dictation_overlay_position,
+            snapshot.settings.dictation_overlay_display_mode,
+        ),
+        Some(_) | None => (
+            snapshot.settings.overlay_position,
+            snapshot.settings.overlay_display_mode,
+        ),
+    };
     sync_recording_overlay(
         &app,
         snapshot.active_recording.is_some(),
-        snapshot.settings.overlay_position,
-        snapshot.settings.overlay_display_mode,
+        overlay_position,
+        overlay_display_mode,
     )?;
     emit_snapshot_update(&app, &snapshot);
     if prepare_sortformer {
@@ -134,18 +146,19 @@ pub fn skip_diarization_setup(
         .map_err(|error| error.to_string())?;
     repository.snapshot().map_err(|error| error.to_string())
 }
-
 pub fn refresh_global_hotkey(app: &tauri::AppHandle) -> Result<(), String> {
     let state = app.state::<ActavocesState>();
-    let hotkey = {
+    let settings = {
         let repository = state.repository()?;
 
-        repository
-            .settings()
-            .map(|settings| settings.hotkey)
-            .map_err(|error| error.to_string())?
+        repository.settings().map_err(|error| error.to_string())?
     };
-    let status = register_global_hotkey(app, &hotkey);
+    let status = register_global_hotkeys(
+        app,
+        &settings.hotkey,
+        &settings.dictation_hotkey,
+        settings.dictation_shortcut_mode,
+    );
     let mut repository = state.repository()?;
     let mut desktop_status = repository
         .desktop_runtime_status()
@@ -179,7 +192,12 @@ pub fn sync_launch_at_login(app: &tauri::AppHandle, enabled: bool) -> Result<(),
         .map_err(|error| format!("Unable to disable launch at login: {error}"))
 }
 
-pub fn register_global_hotkey(app: &tauri::AppHandle, hotkey: &str) -> DesktopRuntimeStatus {
+pub fn register_global_hotkeys(
+    app: &tauri::AppHandle,
+    hotkey: &str,
+    dictation_hotkey: &str,
+    dictation_shortcut_mode: DictationShortcutMode,
+) -> DesktopRuntimeStatus {
     let _ = app.global_shortcut().unregister_all();
 
     let registration = app
@@ -200,6 +218,44 @@ pub fn register_global_hotkey(app: &tauri::AppHandle, hotkey: &str) -> DesktopRu
                 }
             });
         });
+    let registration = match registration {
+        Ok(()) if dictation_hotkey.is_empty() => Ok(()),
+        Ok(()) => {
+            app.global_shortcut()
+                .on_shortcut(dictation_hotkey, move |app, _shortcut, event| {
+                    match dictation_shortcut_mode {
+                        DictationShortcutMode::Toggle => {
+                            if event.state != ShortcutState::Pressed {
+                                return;
+                            }
+
+                            let app = app.clone();
+
+                            tauri::async_runtime::spawn(async move {
+                                match toggle_recording_lifecycle_for_profile_background(
+                                    app.clone(),
+                                    RecordingProfile::Dictation,
+                                )
+                                .await
+                                {
+                                    Ok(_) => (),
+                                    Err(error) => {
+                                        let _ = app.emit("app-error", error);
+                                    }
+                                }
+                            });
+                        }
+                        DictationShortcutMode::PushToTalk => {
+                            sync_dictation_push_to_talk(
+                                app.clone(),
+                                event.state == ShortcutState::Pressed,
+                            );
+                        }
+                    }
+                })
+        }
+        Err(error) => Err(error),
+    };
 
     match registration {
         Ok(()) => DesktopRuntimeStatus {
@@ -229,4 +285,79 @@ pub fn register_global_hotkey(app: &tauri::AppHandle, hotkey: &str) -> DesktopRu
             cuda_error: None,
         },
     }
+}
+
+fn sync_dictation_push_to_talk(app: tauri::AppHandle, active: bool) {
+    let state = app.state::<ActavocesState>();
+    let should_spawn = match state.dictation_push_to_talk.lock() {
+        Ok(mut state) => update_dictation_push_to_talk_state(&mut state, active),
+        Err(error) => {
+            let _ = app.emit("app-error", error.to_string());
+            false
+        }
+    };
+
+    if !should_spawn {
+        return;
+    }
+
+    tauri::async_runtime::spawn(async move {
+        let mut target = match app.state::<ActavocesState>().dictation_push_to_talk.lock() {
+            Ok(state) => state.active,
+            Err(error) => {
+                let _ = app.emit("app-error", error.to_string());
+                return;
+            }
+        };
+
+        loop {
+            let result = set_recording_profile_active_background(
+                app.clone(),
+                RecordingProfile::Dictation,
+                target,
+            )
+            .await;
+
+            if let Err(error) = result {
+                let _ = app.emit("app-error", error);
+            }
+
+            match app.state::<ActavocesState>().dictation_push_to_talk.lock() {
+                Ok(mut state) => match next_dictation_push_to_talk_target(&mut state, target) {
+                    Some(next_target) => target = next_target,
+                    None => return,
+                },
+                Err(error) => {
+                    let _ = app.emit("app-error", error.to_string());
+                    return;
+                }
+            }
+        }
+    });
+}
+
+pub(crate) fn update_dictation_push_to_talk_state(
+    state: &mut DictationPushToTalkState,
+    active: bool,
+) -> bool {
+    state.active = active;
+
+    if state.syncing {
+        return false;
+    }
+
+    state.syncing = true;
+    true
+}
+
+pub(crate) fn next_dictation_push_to_talk_target(
+    state: &mut DictationPushToTalkState,
+    target: bool,
+) -> Option<bool> {
+    if state.active != target {
+        return Some(state.active);
+    }
+
+    state.syncing = false;
+    None
 }

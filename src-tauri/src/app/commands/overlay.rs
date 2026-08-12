@@ -1,7 +1,7 @@
 use serde::Serialize;
 use tauri::{Emitter, LogicalSize, Manager, PhysicalPosition, PhysicalSize, Size, WebviewUrl};
 
-use crate::domain::types::{OverlayDisplayMode, OverlayPosition};
+use crate::domain::types::{AppSettings, OverlayDisplayMode, OverlayPosition, Recording};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -49,6 +49,42 @@ pub fn sync_recording_overlay(
     position_recording_overlay(app, &overlay, position)?;
     emit_recording_overlay_sync(&overlay, visible, display_mode)?;
     overlay.show().map_err(|error| error.to_string())
+}
+
+pub fn sync_active_recording_overlay(
+    app: &tauri::AppHandle,
+    active_recording: Option<&Recording>,
+    settings: &AppSettings,
+) -> Result<(), String> {
+    let (visible, position, display_mode) =
+        active_recording_overlay_config(active_recording, settings);
+
+    sync_recording_overlay(app, visible, position, display_mode)
+}
+
+pub(crate) fn active_recording_overlay_config(
+    active_recording: Option<&Recording>,
+    settings: &AppSettings,
+) -> (bool, OverlayPosition, OverlayDisplayMode) {
+    match active_recording {
+        Some(recording) => match recording.profile {
+            crate::domain::types::RecordingProfile::Meeting => (
+                true,
+                settings.overlay_position,
+                settings.overlay_display_mode,
+            ),
+            crate::domain::types::RecordingProfile::Dictation => (
+                true,
+                settings.dictation_overlay_position,
+                settings.dictation_overlay_display_mode,
+            ),
+        },
+        None => (
+            false,
+            settings.overlay_position,
+            settings.overlay_display_mode,
+        ),
+    }
 }
 
 fn emit_recording_overlay_sync(

@@ -142,7 +142,15 @@ pub struct Recording {
     pub(crate) capture_errors: Vec<CaptureError>,
     pub(crate) stages: Vec<PipelineStage>,
     pub(crate) artifacts: Vec<Artifact>,
+    pub(crate) profile: RecordingProfile,
     pub(crate) speaker_labels: Vec<SpeakerLabel>,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum RecordingProfile {
+    Meeting,
+    Dictation,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -242,6 +250,13 @@ pub struct AppSettings {
     pub(crate) hotkey: String,
     pub(crate) overlay_position: OverlayPosition,
     pub(crate) overlay_display_mode: OverlayDisplayMode,
+    pub(crate) dictation_hotkey: String,
+    pub(crate) dictation_shortcut_mode: DictationShortcutMode,
+    pub(crate) dictation_whisper_model: String,
+    pub(crate) dictation_language: String,
+    pub(crate) dictation_context: String,
+    pub(crate) dictation_overlay_position: OverlayPosition,
+    pub(crate) dictation_overlay_display_mode: OverlayDisplayMode,
     pub(crate) close_to_tray: bool,
     pub(crate) launch_at_login: bool,
     pub(crate) microphone_device: String,
@@ -284,6 +299,13 @@ pub struct AppSettingsUpdate {
     pub(crate) hotkey: String,
     pub(crate) overlay_position: OverlayPosition,
     pub(crate) overlay_display_mode: OverlayDisplayMode,
+    pub(crate) dictation_hotkey: String,
+    pub(crate) dictation_shortcut_mode: DictationShortcutMode,
+    pub(crate) dictation_whisper_model: String,
+    pub(crate) dictation_language: String,
+    pub(crate) dictation_context: String,
+    pub(crate) dictation_overlay_position: OverlayPosition,
+    pub(crate) dictation_overlay_display_mode: OverlayDisplayMode,
     pub(crate) close_to_tray: bool,
     pub(crate) launch_at_login: bool,
     pub(crate) microphone_device: String,
@@ -318,6 +340,13 @@ pub struct ModelInstallInput {
 #[serde(rename_all = "camelCase")]
 pub struct DiarizationSetupInput {
     pub(crate) hugging_face_token: Option<String>,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum DictationShortcutMode {
+    Toggle,
+    PushToTalk,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -392,12 +421,19 @@ pub enum SpeakerCountMode {
     Range,
 }
 
+#[derive(Debug, Default)]
+pub struct DictationPushToTalkState {
+    pub(crate) active: bool,
+    pub(crate) syncing: bool,
+}
+
 #[derive(Debug)]
 pub struct ActavocesState {
     pub(crate) repository: OnceLock<Mutex<AppRepository>>,
     pub(crate) capture_backend: Mutex<NativeAudioCaptureBackend>,
     pub(crate) worker_runtime: Mutex<WorkerRuntimeState>,
     pub(crate) pipeline_running: Mutex<bool>,
+    pub(crate) dictation_push_to_talk: Mutex<DictationPushToTalkState>,
 }
 
 impl ActavocesState {

@@ -651,17 +651,29 @@ fn stage_is_complete(
 
 fn transcription_payload(recording: &Recording, settings: &AppSettings) -> serde_json::Value {
     let artifact_directory = PathBuf::from(&recording.artifact_directory);
+    let (model, language, context) = match recording.profile {
+        RecordingProfile::Meeting => (
+            &settings.whisper_model,
+            &settings.transcription_language,
+            &settings.transcription_context,
+        ),
+        RecordingProfile::Dictation => (
+            &settings.dictation_whisper_model,
+            &settings.dictation_language,
+            &settings.dictation_context,
+        ),
+    };
     let mut payload = serde_json::json!({
         "audioPath": mixed_audio_path(&artifact_directory),
         "outputDirectory": artifact_directory,
         "title": recording.title,
-        "model": settings.whisper_model,
-        "language": settings.transcription_language,
+        "model": model,
+        "language": language,
         "computeType": settings.compute_type,
         "modelStorageDirectory": settings.model_storage_directory,
     });
 
-    if let Some(context) = normalized_transcription_context(&settings.transcription_context) {
+    if let Some(context) = normalized_transcription_context(context) {
         payload["transcriptionContext"] = serde_json::json!(context);
     }
 

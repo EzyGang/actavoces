@@ -7,6 +7,13 @@ const validSettings: AppSettingsUpdate = {
   hotkey: 'CommandOrControl+Shift+Space',
   overlayPosition: 'topLeft',
   overlayDisplayMode: 'full',
+  dictationHotkey: 'R',
+  dictationShortcutMode: 'toggle',
+  dictationWhisperModel: 'small',
+  dictationLanguage: 'en',
+  dictationContext: '',
+  dictationOverlayPosition: 'topRight',
+  dictationOverlayDisplayMode: 'minimal',
   closeToTray: true,
   launchAtLogin: false,
   microphoneDevice: 'Default microphone',
@@ -99,5 +106,13 @@ describe('settings validation', () => {
         true
       )
     ).toEqual([]);
+  });
+  it('requires an explicit dictation language', () => {
+    expect(
+      validateSettingsDraft({
+        ...validSettings,
+        dictationLanguage: 'auto'
+      })
+    ).toContain('Dictation language must be selected explicitly.');
   });
 });

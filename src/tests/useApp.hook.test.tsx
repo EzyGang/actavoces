@@ -64,6 +64,13 @@ const baseSettings: AppSettings = {
   hotkey: 'CommandOrControl+Shift+Space',
   overlayPosition: 'topLeft',
   overlayDisplayMode: 'full',
+  dictationHotkey: 'R',
+  dictationShortcutMode: 'toggle',
+  dictationWhisperModel: 'small',
+  dictationLanguage: 'en',
+  dictationContext: '',
+  dictationOverlayPosition: 'topRight',
+  dictationOverlayDisplayMode: 'minimal',
   closeToTray: true,
   launchAtLogin: false,
   microphoneDevice: 'Default microphone',
@@ -103,6 +110,7 @@ const makeRecording = (id: string): Recording => ({
   durationSeconds: 60,
   status: 'processing',
   artifactDirectory: `/tmp/actavoces/records/${id}`,
+  profile: 'meeting',
   captureErrors: [],
   stages: [
     {
@@ -740,6 +748,58 @@ describe('useApp hook', () => {
 
     expect(result.current.settings.draft.value.hotkey).toBe('CommandOrControl+Shift+K');
     expect(result.current.settings.hotkeyField.recording).toBe(false);
+  });
+
+  it('keeps dictation drafts independent and captures a single-key shortcut', async () => {
+    vi.mocked(getAppSnapshot).mockResolvedValue(makeSnapshot());
+
+    const { result } = renderHook(() => useApp());
+
+    await waitFor(() => {
+      expect(result.current.settings.dictationHotkeyField.value).toBe('R');
+    });
+    act(() => {
+      result.current.actions.showDictationSettings();
+      result.current.settings.dictationSelectFields[1].onValueChange('large-v3');
+      result.current.settings.dictationSelectFields[2].onValueChange('es');
+      result.current.settings.dictationHintsField.onInput({
+        currentTarget: { value: ' ActaVoces ' }
+      } as Parameters<typeof result.current.settings.dictationHintsField.onInput>[0]);
+      result.current.settings.dictationHintsField.onAdd();
+      result.current.settings.dictationHotkeyField.onCapture();
+    });
+    act(() => {
+      window.dispatchEvent(new KeyboardEvent('keydown', { key: 'r' }));
+    });
+
+    expect(result.current.settings.activeTab.value).toBe('dictation');
+    expect(result.current.settings.draft.value.dictationWhisperModel).toBe('large-v3');
+    expect(result.current.settings.draft.value.dictationLanguage).toBe('es');
+    expect(result.current.settings.draft.value.dictationContext).toBe('ActaVoces');
+    expect(result.current.settings.draft.value.dictationHotkey).toBe('R');
+    expect(result.current.settings.draft.value.whisperModel).toBe('medium');
+    expect(result.current.settings.draft.value.transcriptionLanguage).toBe('auto');
+    expect(result.current.settings.draft.value.transcriptionContext).toBe('');
+    expect(result.current.status.hasUnsavedSettings.value).toBe(true);
+  });
+
+  it('switches settings tabs without discarding unsaved drafts', async () => {
+    vi.mocked(getAppSnapshot).mockResolvedValue(makeSnapshot());
+
+    const { result } = renderHook(() => useApp());
+
+    await waitFor(() => {
+      expect(result.current.settings.activeTab.value).toBe('recording');
+    });
+    act(() => {
+      result.current.settings.dictationSelectFields[2].onValueChange('uk');
+      result.current.actions.showDictationSettings();
+      result.current.actions.showRecordingSettings();
+    });
+
+    expect(result.current.settings.activeTab.value).toBe('recording');
+    expect(result.current.settings.draft.value.dictationLanguage).toBe('uk');
+    expect(result.current.status.hasUnsavedSettings.value).toBe(true);
   });
 
   it('keeps the user on settings when unsaved changes are not discarded', async () => {

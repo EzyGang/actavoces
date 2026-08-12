@@ -5,8 +5,10 @@ use std::process::Command;
 use std::sync::atomic::{AtomicU64, Ordering};
 
 use crate::app::commands::{
+    active_recording_overlay_config, next_dictation_push_to_talk_target,
     normalized_transcription_context, rename_recording_outputs, resume_pipeline_jobs,
     rewrite_speaker_label, start_recording_session, stop_recording_session,
+    update_dictation_push_to_talk_state,
 };
 use crate::artifacts::{
     artifact_directory, capture_artifacts_with_readiness, diarization_path,
@@ -19,7 +21,8 @@ use crate::capture::audio::{
 };
 use crate::domain::types::{
     AppSettingsUpdate, ArtifactKind, CaptureDeviceInfo, DesktopRuntimeStatus, DiarizationBackend,
-    ModelInventoryItem, OverlayDisplayMode, OverlayPosition, PipelineStageId, PipelineStageStatus,
+    DictationPushToTalkState, DictationShortcutMode, ModelInventoryItem, OverlayDisplayMode,
+    OverlayPosition, PipelineStageId, PipelineStageStatus, Recording, RecordingProfile,
     RecordingStatus, SpeakerCountMode, SpeakerRenameInput, WorkerEvent, WorkerSetupStatus,
 };
 use crate::settings::{
@@ -75,6 +78,7 @@ fn repository_restores_recordings_after_reopen() {
         id: "recording-1".to_owned(),
         title: "Untitled meeting".to_owned(),
         started_at: "1".to_owned(),
+        profile: RecordingProfile::Meeting,
         artifact_directory: artifact_path.display().to_string(),
     };
 
@@ -116,6 +120,7 @@ fn repository_removes_legacy_alignment_stage_rows() {
         id: "recording-1".to_owned(),
         title: "Untitled meeting".to_owned(),
         started_at: "1".to_owned(),
+        profile: RecordingProfile::Meeting,
         artifact_directory: artifact_path.display().to_string(),
     };
 
@@ -329,6 +334,7 @@ fn settings_changes_do_not_rewrite_existing_artifact_paths() {
         id: "recording-2".to_owned(),
         title: "Meeting".to_owned(),
         started_at: "1717938012".to_owned(),
+        profile: RecordingProfile::Meeting,
         artifact_directory: artifact_path.display().to_string(),
     };
     let mut capture_backend = FileAudioCaptureBackend::default();
@@ -397,6 +403,154 @@ fn settings_update_persists_overlay_display_mode() {
     let settings = repository.settings().unwrap();
 
     assert_eq!(settings.overlay_display_mode, OverlayDisplayMode::Minimal);
+}
+
+#[test]
+fn dictation_settings_have_explicit_independent_defaults() {
+    let database_path = test_database_path("dictation-defaults");
+    let repository = AppRepository::open(&database_path).unwrap();
+    let settings = repository.settings().unwrap();
+
+    assert_eq!(settings.dictation_language, "en");
+    assert_eq!(settings.dictation_whisper_model, "small");
+    assert_eq!(settings.dictation_hotkey, "CommandOrControl+Shift+D");
+    assert_eq!(settings.transcription_language, "auto");
+}
+
+#[test]
+fn dictation_settings_persist_independently() {
+    let database_path = test_database_path("dictation-settings");
+    let mut repository = AppRepository::open(&database_path).unwrap();
+    let mut update = settings_update(
+        test_artifact_path("dictation-settings-records")
+            .display()
+            .to_string(),
+    );
+
+    update.dictation_hotkey = "R".to_owned();
+    update.dictation_shortcut_mode = DictationShortcutMode::PushToTalk;
+    update.dictation_whisper_model = "large-v3".to_owned();
+    update.dictation_language = "es".to_owned();
+    update.dictation_context = "ActaVoces\nKaneo".to_owned();
+    update.whisper_model = "medium".to_owned();
+    update.transcription_language = "uk".to_owned();
+
+    repository.update_settings(update).unwrap();
+
+    let settings = repository.settings().unwrap();
+
+    assert_eq!(settings.dictation_hotkey, "R");
+    assert_eq!(
+        settings.dictation_shortcut_mode,
+        DictationShortcutMode::PushToTalk
+    );
+    assert_eq!(settings.dictation_whisper_model, "large-v3");
+    assert_eq!(settings.dictation_language, "es");
+    assert_eq!(settings.dictation_context, "ActaVoces\nKaneo");
+    assert_eq!(settings.whisper_model, "medium");
+    assert_eq!(settings.transcription_language, "uk");
+}
+
+#[test]
+fn dictation_settings_fall_back_when_additive_keys_are_missing() {
+    let database_path = test_database_path("dictation-fallback");
+    let repository = AppRepository::open(&database_path).unwrap();
+
+    for key in [
+        "dictationHotkey",
+        "dictationShortcutMode",
+        "dictationWhisperModel",
+        "dictationLanguage",
+        "dictationContext",
+        "dictationOverlayPosition",
+        "dictationOverlayDisplayMode",
+    ] {
+        repository
+            .connection
+            .execute("DELETE FROM settings WHERE key = ?1", [key])
+            .unwrap();
+    }
+    let settings = repository.settings().unwrap();
+
+    assert_eq!(settings.dictation_language, "en");
+    assert_eq!(settings.dictation_whisper_model, "small");
+    assert_eq!(settings.dictation_hotkey, "CommandOrControl+Shift+D");
+}
+
+#[test]
+fn active_recording_overlay_uses_the_recording_profile() {
+    let settings = default_settings(&test_database_path("overlay-profile-settings"));
+    let recording = Recording {
+        id: "dictation-overlay".to_owned(),
+        title: "Dictation".to_owned(),
+        started_at: "1".to_owned(),
+        ended_at: None,
+        duration_seconds: None,
+        status: RecordingStatus::Recording,
+        artifact_directory: String::new(),
+        capture_errors: Vec::new(),
+        stages: Vec::new(),
+        artifacts: Vec::new(),
+        profile: RecordingProfile::Dictation,
+        speaker_labels: Vec::new(),
+    };
+
+    assert_eq!(
+        active_recording_overlay_config(Some(&recording), &settings),
+        (
+            true,
+            settings.dictation_overlay_position,
+            settings.dictation_overlay_display_mode,
+        )
+    );
+}
+
+#[test]
+fn dictation_shortcut_validation_accepts_single_keys_and_rejects_system_keys() {
+    let database_path = test_database_path("dictation-shortcuts");
+    let mut repository = AppRepository::open(&database_path).unwrap();
+    let output_directory = test_artifact_path("dictation-shortcut-records")
+        .display()
+        .to_string();
+
+    let mut single_key = settings_update(output_directory.clone());
+    single_key.dictation_hotkey = "R".to_owned();
+    repository.update_settings(single_key).unwrap();
+
+    for unsupported in ["Fn", "MediaPlayPause", "Shift", "F1"] {
+        let mut update = settings_update(output_directory.clone());
+        update.dictation_hotkey = unsupported.to_owned();
+        assert!(repository.update_settings(update).is_err());
+    }
+}
+
+#[test]
+fn dictation_shortcut_validation_rejects_meeting_shortcut() {
+    let database_path = test_database_path("dictation-duplicate-shortcut");
+    let mut repository = AppRepository::open(&database_path).unwrap();
+    let output_directory = test_artifact_path("dictation-duplicate-shortcut-records")
+        .display()
+        .to_string();
+    let mut update = settings_update(output_directory);
+
+    update.dictation_hotkey = update.hotkey.clone();
+
+    assert!(repository.update_settings(update).is_err());
+}
+
+#[test]
+fn dictation_push_to_talk_applies_latest_state_after_reordered_events() {
+    let mut state = DictationPushToTalkState::default();
+
+    assert!(update_dictation_push_to_talk_state(&mut state, true));
+    assert!(!update_dictation_push_to_talk_state(&mut state, false));
+    assert_eq!(
+        next_dictation_push_to_talk_target(&mut state, true),
+        Some(false)
+    );
+    assert_eq!(next_dictation_push_to_talk_target(&mut state, false), None);
+    assert!(!state.syncing);
+    assert!(!state.active);
 }
 
 #[test]
@@ -487,6 +641,7 @@ fn delete_recording_removes_database_rows_and_artifacts() {
         id: "recording-delete".to_owned(),
         title: "Delete me".to_owned(),
         started_at: "1".to_owned(),
+        profile: RecordingProfile::Meeting,
         artifact_directory: artifact_path.display().to_string(),
     };
 
@@ -524,6 +679,7 @@ fn retryable_jobs_reset_to_pending() {
         id: "recording-retry".to_owned(),
         title: "Retry me".to_owned(),
         started_at: "1".to_owned(),
+        profile: RecordingProfile::Meeting,
         artifact_directory: artifact_path.display().to_string(),
     };
 
@@ -703,6 +859,7 @@ fn resume_pipeline_runs_worker_events_and_persists_artifacts() {
         id: "recording-4".to_owned(),
         title: "Meeting".to_owned(),
         started_at: "1".to_owned(),
+        profile: RecordingProfile::Meeting,
         artifact_directory: artifact_path.display().to_string(),
     };
 
@@ -848,6 +1005,7 @@ fn resume_pipeline_sends_transcription_context_when_configured() {
         id: "recording-transcription-context".to_owned(),
         title: "Meeting".to_owned(),
         started_at: "1".to_owned(),
+        profile: RecordingProfile::Meeting,
         artifact_directory: artifact_path.display().to_string(),
     };
 
@@ -915,6 +1073,70 @@ fn resume_pipeline_sends_transcription_context_when_configured() {
 }
 
 #[test]
+fn resume_pipeline_uses_dictation_transcription_profile() {
+    let database_path = test_database_path("pipeline-dictation-profile");
+    let artifact_path = test_artifact_path("pipeline-dictation-profile-recording");
+    let mut repository = AppRepository::open(&database_path).unwrap();
+    let mut capture_backend = FileAudioCaptureBackend::default();
+    let recording = NewRecording {
+        id: "recording-dictation-profile".to_owned(),
+        title: "Dictation".to_owned(),
+        started_at: "1".to_owned(),
+        profile: RecordingProfile::Dictation,
+        artifact_directory: artifact_path.display().to_string(),
+    };
+
+    repository
+        .set_setting("dictationWhisperModel", "large-v3")
+        .unwrap();
+    repository.set_setting("dictationLanguage", "es").unwrap();
+    repository
+        .set_setting("dictationContext", " ActaVoces \n\nKaneo\nActaVoces")
+        .unwrap();
+    capture_backend
+        .start(&recording.id, &repository.settings().unwrap())
+        .unwrap();
+    repository.create_recording(recording.clone()).unwrap();
+    let capture_result = capture_backend.stop(&recording.id, &artifact_path).unwrap();
+    repository
+        .finish_recording(
+            &recording.id,
+            "2".to_owned(),
+            1,
+            capture_result.errors,
+            &capture_result.artifacts,
+        )
+        .unwrap();
+
+    let mut observed_payload = None;
+
+    resume_pipeline_jobs(
+        &mut repository,
+        |command, payload| match command {
+            "transcribe.run" => {
+                observed_payload = Some(payload);
+                Ok(vec![worker_event(
+                    "transcribe.complete",
+                    serde_json::json!({
+                        "segmentsPath": raw_segments_path(&artifact_path),
+                        "transcriptPath": raw_transcript_path(&artifact_path),
+                        "wordsPath": raw_words_path(&artifact_path),
+                    }),
+                )])
+            }
+            other => Err(format!("unexpected worker command: {other}")),
+        },
+        |_| Ok(()),
+    )
+    .unwrap();
+
+    let payload = observed_payload.unwrap();
+    assert_eq!(payload["model"], "large-v3");
+    assert_eq!(payload["language"], "es");
+    assert_eq!(payload["transcriptionContext"], "ActaVoces\nKaneo");
+}
+
+#[test]
 fn resume_pipeline_sends_snake_case_summary_payload_without_required_api_key() {
     let database_path = test_database_path("pipeline-summary-payload");
     let artifact_path = test_artifact_path("pipeline-summary-payload-recording");
@@ -924,6 +1146,7 @@ fn resume_pipeline_sends_snake_case_summary_payload_without_required_api_key() {
         id: "recording-summary-payload".to_owned(),
         title: "Meeting".to_owned(),
         started_at: "1".to_owned(),
+        profile: RecordingProfile::Meeting,
         artifact_directory: artifact_path.display().to_string(),
     };
 
@@ -1073,6 +1296,7 @@ fn speaker_label_rename_rewrites_diarization_artifacts() {
         id: "recording-speakers".to_owned(),
         title: "Meeting".to_owned(),
         started_at: "1".to_owned(),
+        profile: RecordingProfile::Meeting,
         artifact_directory: artifact_path.display().to_string(),
     };
 
@@ -1132,6 +1356,7 @@ fn recording_title_rename_moves_artifact_folder_and_updates_transcript_headers()
         id: "recording-title".to_owned(),
         title: "Meeting".to_owned(),
         started_at: "1".to_owned(),
+        profile: RecordingProfile::Meeting,
         artifact_directory: artifact_path.display().to_string(),
     };
 
@@ -1473,6 +1698,13 @@ fn settings_update(output_directory: String) -> AppSettingsUpdate {
         hotkey: "CommandOrControl+Shift+Space".to_owned(),
         overlay_position: OverlayPosition::TopLeft,
         overlay_display_mode: OverlayDisplayMode::Full,
+        dictation_hotkey: "R".to_owned(),
+        dictation_shortcut_mode: DictationShortcutMode::Toggle,
+        dictation_whisper_model: "small".to_owned(),
+        dictation_language: "en".to_owned(),
+        dictation_context: String::new(),
+        dictation_overlay_position: OverlayPosition::TopRight,
+        dictation_overlay_display_mode: OverlayDisplayMode::Minimal,
         close_to_tray: true,
         launch_at_login: false,
         microphone_device: "Default microphone".to_owned(),

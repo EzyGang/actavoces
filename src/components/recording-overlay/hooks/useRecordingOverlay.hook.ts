@@ -10,8 +10,15 @@ interface RecordingOverlaySyncPayload {
   displayMode: AppSettings['overlayDisplayMode'];
 }
 
-const effectiveDisplayMode = (snapshot: AppSnapshot): AppSettings['overlayDisplayMode'] =>
-  snapshot.desktop.overlayVisible ? snapshot.settings.overlayDisplayMode : 'none';
+const effectiveDisplayMode = (snapshot: AppSnapshot): AppSettings['overlayDisplayMode'] => {
+  if (!snapshot.desktop.overlayVisible) {
+    return 'none';
+  }
+
+  return snapshot.activeRecording?.profile === 'dictation'
+    ? snapshot.settings.dictationOverlayDisplayMode
+    : snapshot.settings.overlayDisplayMode;
+};
 
 export const useRecordingOverlay = () => {
   const stopping = useSignal(false);

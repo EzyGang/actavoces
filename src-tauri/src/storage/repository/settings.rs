@@ -67,6 +67,25 @@ impl AppRepository {
                 "\"full\"",
             ))
             .unwrap_or(OverlayDisplayMode::Full),
+            dictation_hotkey: get_value("dictationHotkey", "CommandOrControl+Shift+D"),
+            dictation_shortcut_mode: serde_json::from_str(&get_value(
+                "dictationShortcutMode",
+                "\"toggle\"",
+            ))
+            .unwrap_or(DictationShortcutMode::Toggle),
+            dictation_whisper_model: get_value("dictationWhisperModel", "small"),
+            dictation_language: get_value("dictationLanguage", "en"),
+            dictation_context: get_value("dictationContext", ""),
+            dictation_overlay_position: serde_json::from_str(&get_value(
+                "dictationOverlayPosition",
+                "\"topRight\"",
+            ))
+            .unwrap_or(OverlayPosition::TopRight),
+            dictation_overlay_display_mode: serde_json::from_str(&get_value(
+                "dictationOverlayDisplayMode",
+                "\"minimal\"",
+            ))
+            .unwrap_or(OverlayDisplayMode::Minimal),
             close_to_tray: parse_bool(&get_value("closeToTray", "true")),
             launch_at_login: parse_bool(&get_value("launchAtLogin", "false")),
             microphone_device: get_value("microphoneDevice", "Default microphone"),

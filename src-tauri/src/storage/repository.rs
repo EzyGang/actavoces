@@ -26,6 +26,7 @@ pub(crate) struct NewRecording {
     pub(crate) id: String,
     pub(crate) title: String,
     pub(crate) started_at: String,
+    pub(crate) profile: RecordingProfile,
     pub(crate) artifact_directory: String,
 }
 
@@ -70,6 +71,7 @@ impl AppRepository {
                 ended_at TEXT,
                 duration_seconds INTEGER,
                 status TEXT NOT NULL,
+                profile TEXT NOT NULL DEFAULT 'meeting',
                 artifact_directory TEXT NOT NULL,
                 capture_errors TEXT NOT NULL DEFAULT '[]'
             );
@@ -135,6 +137,11 @@ impl AppRepository {
             "dependency",
             "ALTER TABLE models ADD COLUMN dependency TEXT NOT NULL DEFAULT 'faster-whisper'",
         )?;
+        self.ensure_column(
+            "recordings",
+            "profile",
+            "ALTER TABLE recordings ADD COLUMN profile TEXT NOT NULL DEFAULT 'meeting'",
+        )?;
         self.remove_alignment_stage()
     }
 
@@ -179,6 +186,22 @@ impl AppRepository {
         self.upsert_setting(
             "overlayDisplayMode",
             &json_string(&settings.overlay_display_mode)?,
+        )?;
+        self.upsert_setting("dictationHotkey", &settings.dictation_hotkey)?;
+        self.upsert_setting(
+            "dictationShortcutMode",
+            &json_string(&settings.dictation_shortcut_mode)?,
+        )?;
+        self.upsert_setting("dictationWhisperModel", &settings.dictation_whisper_model)?;
+        self.upsert_setting("dictationLanguage", &settings.dictation_language)?;
+        self.upsert_setting("dictationContext", &settings.dictation_context)?;
+        self.upsert_setting(
+            "dictationOverlayPosition",
+            &json_string(&settings.dictation_overlay_position)?,
+        )?;
+        self.upsert_setting(
+            "dictationOverlayDisplayMode",
+            &json_string(&settings.dictation_overlay_display_mode)?,
         )?;
         self.upsert_setting("closeToTray", &settings.close_to_tray.to_string())?;
         self.upsert_setting("launchAtLogin", &settings.launch_at_login.to_string())?;

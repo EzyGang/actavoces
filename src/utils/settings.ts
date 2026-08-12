@@ -14,6 +14,13 @@ export const validateSettingsDraft = (
   if (settings.hotkey.trim().length === 0) {
     errors.push('Global hotkey is required.');
   }
+  if (settings.dictationHotkey.trim().length === 0) {
+    errors.push('Dictation shortcut is required.');
+  }
+
+  if (settings.dictationLanguage === 'auto') {
+    errors.push('Dictation language must be selected explicitly.');
+  }
 
   if (settings.sampleRate <= 0) {
     errors.push('Sample rate must be greater than zero.');
