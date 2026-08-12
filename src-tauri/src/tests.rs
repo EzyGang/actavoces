@@ -36,6 +36,9 @@ use crate::worker::runtime::{
     rewrite_pyvenv_home, worker_runtime_paths_from_local_data_directory, WorkerRuntimePaths,
     WorkerRuntimeState,
 };
+use crate::worker::runtime::{
+    manifest_matches, WorkerBootstrapManifest, WORKER_RUNTIME_SCHEMA_VERSION,
+};
 
 static TEST_PATH_COUNTER: AtomicU64 = AtomicU64::new(0);
 
@@ -284,6 +287,22 @@ fn bootstrap_model_install_payload_uses_settings_model() {
     );
     assert_eq!(payload["model"], "distil-large-v3");
     assert_eq!(payload["computeType"], "cuda");
+}
+
+#[test]
+fn worker_manifest_requires_current_configured_model() {
+    let manifest = WorkerBootstrapManifest {
+        runtime_schema_version: WORKER_RUNTIME_SCHEMA_VERSION,
+        worker_source_hash: "source".to_owned(),
+        uv_ready: true,
+        synced: true,
+        health_ok: true,
+        default_model: "small".to_owned(),
+        default_model_installed: true,
+    };
+
+    assert!(manifest_matches(&manifest, "source", "small"));
+    assert!(!manifest_matches(&manifest, "source", "medium"));
 }
 
 #[test]

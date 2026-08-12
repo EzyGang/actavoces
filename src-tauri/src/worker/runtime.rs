@@ -29,6 +29,10 @@ pub(crate) use crate::worker::events::{
 #[cfg(test)]
 pub(crate) use crate::worker::files::rewrite_pyvenv_home;
 #[cfg(test)]
+pub(crate) use crate::worker::manifest::{
+    manifest_matches, WorkerBootstrapManifest, WORKER_RUNTIME_SCHEMA_VERSION,
+};
+#[cfg(test)]
 pub(crate) use crate::worker::paths::worker_runtime_paths_from_local_data_directory;
 pub(crate) use crate::worker::paths::WorkerRuntimePaths;
 pub(crate) use crate::worker::progress::persist_worker_setup_progress;
@@ -92,10 +96,14 @@ pub(crate) fn bootstrap_worker(
 ) -> Result<(), String> {
     let paths = worker_runtime_paths(app)?;
     WORKER_RUNTIME_PATHS.get_or_init(|| paths.clone());
+    let settings = {
+        let repository = state.repository()?;
 
+        repository.settings().map_err(|error| error.to_string())?
+    };
     let source_hash = worker_source_hash(app)?;
 
-    match worker_bootstrap_is_ready(&paths, &source_hash) {
+    match worker_bootstrap_is_ready(&paths, &source_hash, &settings.whisper_model) {
         true => {
             ensure_worker_health(&paths, state)?;
             persist_worker_setup_progress(
@@ -214,7 +222,19 @@ pub(crate) fn run_worker_bootstrap(
             .map_err(|error| error.to_string())?;
     }
 
-    write_worker_bootstrap_manifest(&paths, &source_hash, &settings.whisper_model)?;
+    let default_model_installed = models
+        .iter()
+        .any(|model| model.name == settings.whisper_model && model.installed);
+    if !default_model_installed {
+        return Err(format!("Model {} is not installed", settings.whisper_model));
+    }
+
+    write_worker_bootstrap_manifest(
+        &paths,
+        &source_hash,
+        &settings.whisper_model,
+        default_model_installed,
+    )?;
     emit_worker_setup_progress(
         app,
         state,
