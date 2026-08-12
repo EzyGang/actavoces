@@ -7,6 +7,7 @@ use tauri_plugin_global_shortcut::{GlobalShortcutExt, ShortcutState};
 use crate::diarization::prepare_sortformer_diarization;
 use crate::dictation::{dispatch_shortcut, DictationShortcutEvent};
 use crate::domain::types::*;
+use crate::utils::lock_error;
 use crate::worker::runtime::run_diarization_setup;
 
 use super::overlay::sync_recording_overlay;
@@ -22,14 +23,30 @@ pub async fn update_app_settings(
     let prepare_sortformer = input.diarization_backend == DiarizationBackend::Sortformer;
     let model_storage_directory = input.model_storage_directory.clone();
     let app_for_settings = app.clone();
-
     tauri::async_runtime::spawn_blocking(move || {
         let state = app_for_settings.state::<ActavocesState>();
+        let _capture_admission = state.capture_admission.lock().map_err(lock_error)?;
         let mut repository = state.repository()?;
+        let current_settings = repository.settings().map_err(|error| error.to_string())?;
+        let shortcut_settings_changed = input.dictation_hotkey != current_settings.dictation_hotkey
+            || input.dictation_shortcut_mode != current_settings.dictation_shortcut_mode;
+        if shortcut_settings_changed
+            && state
+                .dictation_runtime
+                .lock()
+                .map_err(lock_error)?
+                .is_capturing()
+        {
+            return Err(
+                "Dictation shortcut settings cannot change during an active capture".to_owned(),
+            );
+        }
 
         repository
             .update_settings(input)
-            .map_err(|error| error.to_string())
+            .map_err(|error| error.to_string())?;
+        drop(repository);
+        refresh_global_hotkey(&app_for_settings)
     })
     .await
     .map_err(|error| format!("Settings update task failed: {error}"))??;

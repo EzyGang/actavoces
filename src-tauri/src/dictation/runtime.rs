@@ -1,6 +1,7 @@
 use std::fmt;
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::sync::mpsc;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use serde::Serialize;
@@ -58,6 +59,7 @@ pub(crate) struct DictationRuntime {
     started_at: Option<SystemTime>,
     temporary_directory: Option<PathBuf>,
     microphone: Option<CapturedSource>,
+    clipboard: Option<arboard::Clipboard>,
 }
 
 impl fmt::Debug for DictationRuntime {
@@ -70,6 +72,7 @@ impl fmt::Debug for DictationRuntime {
             .field("started_at", &self.started_at)
             .field("temporary_directory", &self.temporary_directory)
             .field("microphone_active", &self.microphone.is_some())
+            .field("clipboard_active", &self.clipboard.is_some())
             .finish()
     }
 }
@@ -88,6 +91,7 @@ impl Default for DictationRuntime {
             started_at: None,
             temporary_directory: None,
             microphone: None,
+            clipboard: None,
         }
     }
 }
@@ -118,6 +122,10 @@ impl DictationRuntime {
         self.started_at = Some(started_at);
     }
 
+    #[must_use]
+    pub(crate) fn is_capturing(&self) -> bool {
+        self.update.state == DictationState::Capturing
+    }
     pub(crate) fn shortcut_action(
         &mut self,
         mode: DictationShortcutMode,
@@ -182,9 +190,29 @@ pub(crate) fn cleanup_stale_dictations(app_data_directory: &Path) -> Result<(), 
 }
 
 pub(crate) fn dispatch_shortcut(app: tauri::AppHandle, event: DictationShortcutEvent) {
-    tauri::async_runtime::spawn_blocking(move || {
-        if let Err(error) = handle_shortcut(&app, event) {
-            fail_active_dictation(&app, error);
+    let state = app.state::<ActavocesState>();
+    let Ok(sender) = state.dictation_event_sender.lock() else {
+        return;
+    };
+    if let Some(sender) = sender.as_ref() {
+        let _ = sender.send(event);
+    }
+}
+
+pub(crate) fn start_shortcut_dispatcher(app: tauri::AppHandle) {
+    let (sender, receiver) = mpsc::channel();
+    let state = app.state::<ActavocesState>();
+    let Ok(mut dispatcher) = state.dictation_event_sender.lock() else {
+        return;
+    };
+    *dispatcher = Some(sender);
+    drop(dispatcher);
+
+    std::thread::spawn(move || {
+        for event in receiver {
+            if let Err(error) = handle_shortcut(&app, event) {
+                fail_active_dictation(&app, error);
+            }
         }
     });
 }
@@ -246,6 +274,7 @@ fn handle_shortcut(app: &tauri::AppHandle, event: DictationShortcutEvent) -> Res
 
 fn start_dictation(app: &tauri::AppHandle, settings: &AppSettings) -> Result<(), String> {
     let state = app.state::<ActavocesState>();
+    let _capture_admission = state.capture_admission.lock().map_err(lock_error)?;
     let mut runtime = state.dictation_runtime.lock().map_err(lock_error)?;
     if runtime.blocks_recording() {
         return Err("A dictation is already being processed".to_owned());
@@ -309,8 +338,8 @@ fn stop_and_transcribe(app: &tauri::AppHandle, settings: &AppSettings) -> Result
         let audio_path = temporary_directory.join("dictation.wav");
         let microphone = finalize_native_source(&runtime.microphone)?
             .ok_or_else(|| "Dictation captured no microphone audio".to_owned())?;
-        runtime.microphone = None;
         write_pcm_wav_file(&audio_path, &microphone)?;
+        runtime.microphone = None;
         runtime.transition(DictationState::Transcribing, None, None);
         emit_update(app, &runtime.update);
         (
@@ -328,7 +357,7 @@ fn stop_and_transcribe(app: &tauri::AppHandle, settings: &AppSettings) -> Result
     let text = fs::read_to_string(&transcript_path)
         .map_err(|error| format!("Unable to read dictation transcript: {error}"))?;
     let text = transcript_body(&text);
-    copy_to_clipboard(&text)?;
+    let clipboard = copy_to_clipboard(&text)?;
     remove_directory(&temporary_directory)?;
 
     let mut runtime = state.dictation_runtime.lock().map_err(lock_error)?;
@@ -336,6 +365,7 @@ fn stop_and_transcribe(app: &tauri::AppHandle, settings: &AppSettings) -> Result
         return Ok(());
     }
     runtime.reset_session();
+    runtime.clipboard = Some(clipboard);
     runtime.transition(DictationState::Copied, None, Some(text));
     emit_update(app, &runtime.update);
 
@@ -455,16 +485,17 @@ fn transcript_body(transcript: &str) -> String {
 fn strip_timestamp(line: &str) -> &str {
     match line.find("] ") {
         Some(timestamp_end) if line.starts_with('[') => &line[timestamp_end + 2..],
-        _ => line,
+        None | Some(_) => line,
     }
 }
 
-fn copy_to_clipboard(text: &str) -> Result<(), String> {
+fn copy_to_clipboard(text: &str) -> Result<arboard::Clipboard, String> {
     let mut clipboard = arboard::Clipboard::new()
         .map_err(|error| format!("Unable to access clipboard: {error}"))?;
     clipboard
         .set_text(text)
-        .map_err(|error| format!("Unable to copy dictation: {error}"))
+        .map_err(|error| format!("Unable to copy dictation: {error}"))?;
+    Ok(clipboard)
 }
 
 fn emit_update(app: &tauri::AppHandle, update: &DictationStateUpdate) {

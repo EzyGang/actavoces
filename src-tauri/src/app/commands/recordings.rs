@@ -22,6 +22,7 @@ pub async fn start_recording(app: tauri::AppHandle) -> Result<AppSnapshot, Strin
     let app_for_start = app.clone();
     let snapshot = tauri::async_runtime::spawn_blocking(move || -> Result<AppSnapshot, String> {
         let state = app_for_start.state::<ActavocesState>();
+        let _capture_admission = state.capture_admission.lock().map_err(lock_error)?;
         ensure_dictation_inactive(&state)?;
         let mut repository = state.repository()?;
         let mut capture_backend = state.capture_backend.lock().map_err(lock_error)?;
@@ -316,6 +317,7 @@ pub async fn toggle_recording_lifecycle_background(
     let app_for_toggle = app.clone();
     let snapshot = tauri::async_runtime::spawn_blocking(move || -> Result<AppSnapshot, String> {
         let state = app_for_toggle.state::<ActavocesState>();
+        let _capture_admission = state.capture_admission.lock().map_err(lock_error)?;
         ensure_dictation_inactive(&state)?;
         let mut repository = state.repository()?;
         let mut capture_backend = state.capture_backend.lock().map_err(lock_error)?;

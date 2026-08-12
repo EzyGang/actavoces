@@ -57,6 +57,8 @@ pub fn run() {
     builder
         .manage(ActavocesState {
             repository: OnceLock::new(),
+            capture_admission: Mutex::new(()),
+            dictation_event_sender: Mutex::new(None),
             capture_backend: Mutex::new(NativeAudioCaptureBackend::default()),
             dictation_runtime: Mutex::new(DictationRuntime::default()),
             worker_runtime: Mutex::new(WorkerRuntimeState::default()),
@@ -93,7 +95,7 @@ pub fn run() {
 
             create_recording_overlay(app)?;
             let handle = app.handle().clone();
-
+            dictation::start_shortcut_dispatcher(handle.clone());
             tauri::async_runtime::spawn(async move {
                 match initialize_app_state(handle.clone()).await {
                     Ok(()) => {}
