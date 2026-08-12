@@ -12,7 +12,7 @@ use crate::domain::types::*;
 use crate::storage::repository::{AppRepository, NewRecording};
 use crate::utils::{lock_error, unix_timestamp};
 
-use super::overlay::sync_recording_overlay;
+use super::overlay::{sync_active_recording_overlay, sync_recording_overlay};
 use super::pipeline::{emit_snapshot_update, spawn_pipeline_processing};
 use super::speaker_labels::rewrite_speaker_label;
 use super::tray::sync_tray_recording_icon;
@@ -406,22 +406,7 @@ pub async fn set_recording_profile_active_background(
     .await
     .map_err(|error| format!("Recording update task failed: {error}"))??;
 
-    let (position, display_mode) = match profile {
-        RecordingProfile::Meeting => (
-            snapshot.settings.overlay_position,
-            snapshot.settings.overlay_display_mode,
-        ),
-        RecordingProfile::Dictation => (
-            snapshot.settings.dictation_overlay_position,
-            snapshot.settings.dictation_overlay_display_mode,
-        ),
-    };
-    sync_recording_overlay(
-        &app,
-        snapshot.active_recording.is_some(),
-        position,
-        display_mode,
-    )?;
+    sync_active_recording_overlay(&app, snapshot.active_recording.as_ref(), &snapshot.settings)?;
     sync_tray_recording_icon(&app, snapshot.active_recording.is_some());
     emit_snapshot_update(&app, &snapshot);
     if snapshot.active_recording.is_none() {

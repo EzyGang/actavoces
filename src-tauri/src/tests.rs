@@ -5,8 +5,9 @@ use std::process::Command;
 use std::sync::atomic::{AtomicU64, Ordering};
 
 use crate::app::commands::{
-    next_dictation_push_to_talk_target, normalized_transcription_context, rename_recording_outputs,
-    resume_pipeline_jobs, rewrite_speaker_label, start_recording_session, stop_recording_session,
+    active_recording_overlay_config, next_dictation_push_to_talk_target,
+    normalized_transcription_context, rename_recording_outputs, resume_pipeline_jobs,
+    rewrite_speaker_label, start_recording_session, stop_recording_session,
     update_dictation_push_to_talk_state,
 };
 use crate::artifacts::{
@@ -21,8 +22,8 @@ use crate::capture::audio::{
 use crate::domain::types::{
     AppSettingsUpdate, ArtifactKind, CaptureDeviceInfo, DesktopRuntimeStatus, DiarizationBackend,
     DictationPushToTalkState, DictationShortcutMode, ModelInventoryItem, OverlayDisplayMode,
-    OverlayPosition, PipelineStageId, PipelineStageStatus, RecordingProfile, RecordingStatus,
-    SpeakerCountMode, SpeakerRenameInput, WorkerEvent, WorkerSetupStatus,
+    OverlayPosition, PipelineStageId, PipelineStageStatus, Recording, RecordingProfile,
+    RecordingStatus, SpeakerCountMode, SpeakerRenameInput, WorkerEvent, WorkerSetupStatus,
 };
 use crate::settings::{
     default_settings,
@@ -474,6 +475,34 @@ fn dictation_settings_fall_back_when_additive_keys_are_missing() {
     assert_eq!(settings.dictation_language, "en");
     assert_eq!(settings.dictation_whisper_model, "small");
     assert_eq!(settings.dictation_hotkey, "CommandOrControl+Shift+D");
+}
+
+#[test]
+fn active_recording_overlay_uses_the_recording_profile() {
+    let settings = default_settings(&test_database_path("overlay-profile-settings"));
+    let recording = Recording {
+        id: "dictation-overlay".to_owned(),
+        title: "Dictation".to_owned(),
+        started_at: "1".to_owned(),
+        ended_at: None,
+        duration_seconds: None,
+        status: RecordingStatus::Recording,
+        artifact_directory: String::new(),
+        capture_errors: Vec::new(),
+        stages: Vec::new(),
+        artifacts: Vec::new(),
+        profile: RecordingProfile::Dictation,
+        speaker_labels: Vec::new(),
+    };
+
+    assert_eq!(
+        active_recording_overlay_config(Some(&recording), &settings),
+        (
+            true,
+            settings.dictation_overlay_position,
+            settings.dictation_overlay_display_mode,
+        )
+    );
 }
 
 #[test]
