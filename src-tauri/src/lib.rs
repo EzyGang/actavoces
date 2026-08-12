@@ -131,8 +131,16 @@ pub fn run() {
             app::commands::models::install_transcription_model,
             app::commands::snapshot::write_diagnostic_log
         ])
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+        .build(tauri::generate_context!())
+        .expect("error while building tauri application")
+        .run(|_, event| {
+            if matches!(
+                event,
+                tauri::RunEvent::Exit | tauri::RunEvent::ExitRequested { .. }
+            ) {
+                let _ = worker::runtime::stop_worker_process();
+            }
+        });
 }
 
 async fn initialize_app_state(handle: tauri::AppHandle) -> Result<(), String> {

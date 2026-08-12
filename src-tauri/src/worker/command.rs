@@ -1,13 +1,15 @@
+use std::collections::VecDeque;
 use std::env;
 use std::fs;
-use std::io::Write;
+use std::io::{BufRead, BufReader, Write};
 use std::path::PathBuf;
-use std::process::{Command, Stdio};
-use std::sync::OnceLock;
+use std::process::{Child, ChildStdin, Command, Stdio};
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::{mpsc, Arc, LazyLock, Mutex, OnceLock};
+use std::thread;
+use std::time::{Duration, Instant};
 
 use crate::domain::types::WorkerEvent;
-use crate::utils::unix_timestamp;
-use crate::worker::events::parse_worker_events;
 use crate::worker::paths::{resolve_worker_directory, WorkerRuntimePaths};
 use crate::worker::process::hide_console_window;
 use crate::worker::python::{
@@ -15,6 +17,10 @@ use crate::worker::python::{
 };
 
 pub(crate) static WORKER_RUNTIME_PATHS: OnceLock<WorkerRuntimePaths> = OnceLock::new();
+static WORKER_PROCESS: LazyLock<Mutex<Option<PersistentWorker>>> =
+    LazyLock::new(|| Mutex::new(None));
+static WORKER_COMMAND_ID: AtomicU64 = AtomicU64::new(1);
+const WORKER_COMMAND_TIMEOUT: Duration = Duration::from_secs(30 * 60);
 
 pub(crate) fn run_uv_sync(paths: &WorkerRuntimePaths) -> Result<(), String> {
     let python_executable = resolve_worker_python_executable(paths)?;
@@ -92,46 +98,212 @@ pub(crate) fn run_worker_command_with_paths(
     command_name: &str,
     payload: serde_json::Value,
 ) -> Result<Vec<WorkerEvent>, String> {
-    let python_executable = resolve_worker_virtualenv_python_executable(paths)?;
+    run_worker_command_with_timeout(paths, command_name, payload, WORKER_COMMAND_TIMEOUT)
+}
+
+pub(crate) fn shutdown_worker() -> Result<(), String> {
+    let mut guard = WORKER_PROCESS.lock().map_err(|error| error.to_string())?;
+
+    match guard.take() {
+        Some(mut worker) => worker.shutdown(),
+        None => Ok(()),
+    }
+}
+
+pub(crate) fn run_worker_command_with_timeout(
+    paths: &WorkerRuntimePaths,
+    command_name: &str,
+    payload: serde_json::Value,
+    timeout: Duration,
+) -> Result<Vec<WorkerEvent>, String> {
+    let mut guard = WORKER_PROCESS.lock().map_err(|error| error.to_string())?;
+    let command_id = format!("rust-{}", WORKER_COMMAND_ID.fetch_add(1, Ordering::Relaxed));
     let command = serde_json::json!({
-        "id": format!("rust-{}", unix_timestamp()),
+        "id": &command_id,
         "name": command_name,
         "payload": payload,
     });
-    let mut command_runner = Command::new(python_executable);
-    hide_console_window(&mut command_runner);
-    command_runner
-        .arg("-m")
-        .arg("app.main")
-        .env("PYTHONPATH", &paths.worker_directory)
-        .env("PYANNOTE_METRICS_ENABLED", "0")
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped());
-    apply_worker_current_dir(&mut command_runner, paths)?;
-    apply_worker_path_env(&mut command_runner, paths)?;
-
-    let mut process = command_runner
-        .spawn()
-        .map_err(|error| format!("Unable to start Python worker: {error}"))?;
-
-    match process.stdin.as_mut() {
-        Some(stdin) => {
-            writeln!(stdin, "{command}")
-                .map_err(|error| format!("Unable to write worker command: {error}"))?;
+    if guard.as_ref().is_some_and(|worker| worker.paths != *paths) {
+        if let Some(mut worker) = guard.take() {
+            worker.shutdown()?;
         }
-        None => return Err("Worker stdin is unavailable".to_owned()),
+    }
+    let worker = match guard.as_mut() {
+        Some(worker) => worker,
+        None => guard.insert(PersistentWorker::spawn(paths.clone())?),
+    };
+
+    match worker.run_command(&command_id, &command, timeout) {
+        Ok(events) => Ok(events),
+        Err(error) => {
+            if let Some(mut worker) = guard.take() {
+                let _ = worker.shutdown();
+            }
+            Err(error)
+        }
+    }
+}
+
+#[derive(Debug)]
+struct PersistentWorker {
+    paths: WorkerRuntimePaths,
+    child: Child,
+    stdin: ChildStdin,
+    stdout: mpsc::Receiver<Result<String, String>>,
+    stderr: Arc<Mutex<VecDeque<String>>>,
+}
+
+impl PersistentWorker {
+    fn spawn(paths: WorkerRuntimePaths) -> Result<Self, String> {
+        let python_executable = resolve_worker_virtualenv_python_executable(&paths)?;
+        let mut command = Command::new(python_executable);
+        hide_console_window(&mut command);
+        command
+            .arg("-u")
+            .arg("-m")
+            .arg(env::var_os("ACTAVOCES_WORKER_MODULE").unwrap_or_else(|| "app.main".into()))
+            .env("PYTHONPATH", &paths.worker_directory)
+            .env("PYANNOTE_METRICS_ENABLED", "0")
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped());
+        apply_worker_current_dir(&mut command, &paths)?;
+        apply_worker_path_env(&mut command, &paths)?;
+
+        let mut child = command
+            .spawn()
+            .map_err(|error| format!("Unable to start Python worker: {error}"))?;
+        let stdin = child
+            .stdin
+            .take()
+            .ok_or_else(|| "Worker stdin is unavailable".to_owned())?;
+        let stdout = child
+            .stdout
+            .take()
+            .ok_or_else(|| "Worker stdout is unavailable".to_owned())?;
+        let stderr = child
+            .stderr
+            .take()
+            .ok_or_else(|| "Worker stderr is unavailable".to_owned())?;
+        let (stdout_sender, stdout_receiver) = mpsc::channel();
+        thread::spawn(move || {
+            for line in BufReader::new(stdout).lines() {
+                if stdout_sender
+                    .send(line.map_err(|error| format!("Unable to read worker output: {error}")))
+                    .is_err()
+                {
+                    return;
+                }
+            }
+        });
+        let stderr_lines = Arc::new(Mutex::new(VecDeque::with_capacity(32)));
+        let stderr_target = Arc::clone(&stderr_lines);
+        thread::spawn(move || {
+            for line in BufReader::new(stderr).lines().map_while(Result::ok) {
+                let Ok(mut lines) = stderr_target.lock() else {
+                    return;
+                };
+                if lines.len() == 32 {
+                    lines.pop_front();
+                }
+                lines.push_back(line);
+            }
+        });
+
+        Ok(Self {
+            paths,
+            child,
+            stdin,
+            stdout: stdout_receiver,
+            stderr: stderr_lines,
+        })
     }
 
-    let output = process
-        .wait_with_output()
-        .map_err(|error| format!("Unable to read worker output: {error}"))?;
+    fn run_command(
+        &mut self,
+        command_id: &str,
+        command: &serde_json::Value,
+        timeout: Duration,
+    ) -> Result<Vec<WorkerEvent>, String> {
+        if let Some(status) = self
+            .child
+            .try_wait()
+            .map_err(|error| format!("Unable to inspect Python worker: {error}"))?
+        {
+            return Err(self.failure(format!("Python worker exited with {status}")));
+        }
+        writeln!(self.stdin, "{command}")
+            .and_then(|()| self.stdin.flush())
+            .map_err(|error| self.failure(format!("Unable to write worker command: {error}")))?;
 
-    if !output.status.success() {
-        return Err(worker_command_error("Worker command failed", &output));
+        let deadline = Instant::now() + timeout;
+        let mut events = Vec::new();
+        loop {
+            let remaining = deadline.saturating_duration_since(Instant::now());
+            if remaining.is_zero() {
+                return Err(self.failure(format!(
+                    "Worker command {command_id} timed out after {} seconds",
+                    timeout.as_secs()
+                )));
+            }
+            let line = self
+                .stdout
+                .recv_timeout(remaining)
+                .map_err(|error| match error {
+                    mpsc::RecvTimeoutError::Timeout => self.failure(format!(
+                        "Worker command {command_id} timed out after {} seconds",
+                        timeout.as_secs()
+                    )),
+                    mpsc::RecvTimeoutError::Disconnected => self
+                        .failure("Python worker exited before completing the command".to_owned()),
+                })??;
+            let event: WorkerEvent = serde_json::from_str(&line).map_err(|error| {
+                self.failure(format!("Malformed worker output: {error}: {line}"))
+            })?;
+
+            if event.command_id != command_id {
+                return Err(self.failure(format!(
+                    "Worker response command ID mismatch: expected {command_id}, received {}",
+                    event.command_id
+                )));
+            }
+            if event.event == "command.finished" {
+                return Ok(events);
+            }
+            events.push(event);
+        }
     }
 
-    parse_worker_events(&String::from_utf8_lossy(&output.stdout))
+    fn shutdown(&mut self) -> Result<(), String> {
+        if self
+            .child
+            .try_wait()
+            .map_err(|error| format!("Unable to inspect Python worker: {error}"))?
+            .is_none()
+        {
+            self.child
+                .kill()
+                .map_err(|error| format!("Unable to stop Python worker: {error}"))?;
+        }
+        self.child
+            .wait()
+            .map_err(|error| format!("Unable to reap Python worker: {error}"))?;
+
+        Ok(())
+    }
+
+    fn failure(&self, context: String) -> String {
+        let stderr = self
+            .stderr
+            .lock()
+            .map(|lines| lines.iter().cloned().collect::<Vec<_>>().join("\n"))
+            .unwrap_or_default();
+
+        match stderr.is_empty() {
+            true => context,
+            false => format!("{context}: {stderr}"),
+        }
+    }
 }
 
 pub(crate) fn resolve_uv_command(paths: &WorkerRuntimePaths) -> PathBuf {

@@ -44,6 +44,64 @@ type ModelInstallResult = NeedsSetupResult | FailedResult | ModelInstallComplete
 type TranscriptionResult = NeedsSetupResult | FailedResult | TranscriptionCompleteResult
 
 
+class ModelCacheKey:
+    def __init__(
+        self,
+        model_factory: FasterWhisperModelFactory,
+        model_name: str,
+        compute_type: str,
+        model_storage_directory: Path | None,
+    ) -> None:
+        self.model_factory = model_factory
+        self.model_name = model_name
+        self.compute_type = compute_type
+        self.model_storage_directory = model_storage_directory
+
+    def __eq__(self, other: Any) -> bool:
+        return (
+            isinstance(other, ModelCacheKey)
+            and self.model_factory is other.model_factory
+            and self.model_name == other.model_name
+            and self.compute_type == other.compute_type
+            and self.model_storage_directory == other.model_storage_directory
+        )
+
+
+cached_model_key: ModelCacheKey | None = None
+cached_model: Any = None
+
+
+def get_cached_model(
+    model_class: FasterWhisperModelFactory,
+    model_name: str,
+    compute_type: str,
+    model_storage_directory: Path | None,
+) -> Any:
+    global cached_model, cached_model_key
+
+    key = ModelCacheKey(
+        model_factory=model_class,
+        model_name=model_name,
+        compute_type=compute_type,
+        model_storage_directory=model_storage_directory,
+    )
+    if key != cached_model_key:
+        cached_model = model_class(
+            model_name,
+            **model_kwargs(compute_type=compute_type, storage_path=model_storage_directory),
+        )
+        cached_model_key = key
+
+    return cached_model
+
+
+def discard_cached_model() -> None:
+    global cached_model, cached_model_key
+
+    cached_model = None
+    cached_model_key = None
+
+
 def run_faster_whisper(
     audio_path: Path,
     model_name: str,
@@ -73,6 +131,7 @@ def run_faster_whisper(
 
         return TranscriptionCompleteResult(segments=segments, words=words, language=detected_language)
     except Exception as error:
+        discard_cached_model()
         if compute_type != 'cpu' and cuda_library_error(error=error):
             try:
                 segments, words, detected_language = transcribe_with_model(
@@ -252,7 +311,12 @@ def transcribe_with_model(
     model_storage_directory: Path | None,
     transcription_profile: str,
 ) -> tuple[list[Segment], list[TranscriptionWord], str | None]:
-    model = model_class(model_name, **model_kwargs(compute_type=compute_type, storage_path=model_storage_directory))
+    model = get_cached_model(
+        model_class=model_class,
+        model_name=model_name,
+        compute_type=compute_type,
+        model_storage_directory=model_storage_directory,
+    )
     raw_segments, info = model.transcribe(
         str(audio_path),
         **transcribe_kwargs(

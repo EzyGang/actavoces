@@ -3,6 +3,9 @@ use std::fs;
 use std::path::Path;
 use std::process::Command;
 use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::{Arc, Barrier};
+use std::thread;
+use std::time::Duration;
 
 use crate::app::commands::{
     normalized_transcription_context, rename_recording_outputs, resume_pipeline_jobs,
@@ -32,8 +35,8 @@ use crate::worker::runtime::{
     apply_worker_current_dir, apply_worker_path_env, extract_model_inventory,
     find_worker_python_executable, hash_worker_source_directory, model_install_payload,
     model_install_step, parse_worker_events, resolve_worker_virtualenv_python_executable,
-    rewrite_pyvenv_home, worker_runtime_paths_from_local_data_directory, WorkerRuntimePaths,
-    WorkerRuntimeState,
+    rewrite_pyvenv_home, run_worker_command_with_timeout, stop_worker_process,
+    worker_runtime_paths_from_local_data_directory, WorkerRuntimePaths, WorkerRuntimeState,
 };
 
 static TEST_PATH_COUNTER: AtomicU64 = AtomicU64::new(0);
@@ -1519,6 +1522,133 @@ fn create_test_python_executable(directory: &Path) -> std::path::PathBuf {
     fs::write(&executable, "python").unwrap();
 
     executable
+}
+
+#[cfg(unix)]
+#[test]
+fn persistent_worker_reuses_process_and_serializes_commands() {
+    let _guard = worker_test_lock();
+    let paths = worker_fixture_paths("reuse");
+    env::set_var("ACTAVOCES_WORKER_MODULE", "test_worker_fixture");
+    env::set_var("ACTAVOCES_TEST_WORKER_MODE", "normal");
+
+    let first = run_worker_command_with_timeout(
+        &paths,
+        "health.check",
+        serde_json::json!({}),
+        Duration::from_secs(2),
+    )
+    .unwrap();
+    let second = run_worker_command_with_timeout(
+        &paths,
+        "health.check",
+        serde_json::json!({}),
+        Duration::from_secs(2),
+    )
+    .unwrap();
+
+    assert_eq!(first[0].payload["pid"], second[0].payload["pid"]);
+    stop_worker_process().unwrap();
+}
+
+#[cfg(unix)]
+#[test]
+fn persistent_worker_serializes_concurrent_commands() {
+    let _guard = worker_test_lock();
+    let paths = worker_fixture_paths("serialized");
+    env::set_var("ACTAVOCES_WORKER_MODULE", "test_worker_fixture");
+    env::set_var("ACTAVOCES_TEST_WORKER_MODE", "serialized");
+    let barrier = Arc::new(Barrier::new(3));
+    let mut handles = Vec::new();
+
+    for _ in 0..2 {
+        let thread_paths = paths.clone();
+        let thread_barrier = Arc::clone(&barrier);
+        handles.push(thread::spawn(move || {
+            thread_barrier.wait();
+            run_worker_command_with_timeout(
+                &thread_paths,
+                "health.check",
+                serde_json::json!({}),
+                Duration::from_secs(2),
+            )
+            .unwrap()
+        }));
+    }
+    barrier.wait();
+    for handle in handles {
+        let events = handle.join().unwrap();
+        assert_eq!(events[0].event, "started");
+        assert_eq!(events[1].event, "health.ok");
+    }
+    stop_worker_process().unwrap();
+}
+
+#[cfg(unix)]
+#[test]
+fn persistent_worker_recovers_from_protocol_exit_and_timeout_failures() {
+    let _guard = worker_test_lock();
+    let paths = worker_fixture_paths("recovery");
+    env::set_var("ACTAVOCES_WORKER_MODULE", "test_worker_fixture");
+
+    for (mode, expected_error) in [
+        ("malformed", "Malformed worker output"),
+        ("exit", "exited before completing"),
+        ("timeout", "timed out"),
+    ] {
+        env::set_var("ACTAVOCES_TEST_WORKER_MODE", mode);
+        let error = run_worker_command_with_timeout(
+            &paths,
+            "health.check",
+            serde_json::json!({}),
+            Duration::from_millis(500),
+        )
+        .unwrap_err();
+        assert!(error.contains(expected_error), "{error}");
+
+        env::set_var("ACTAVOCES_TEST_WORKER_MODE", "normal");
+        let events = run_worker_command_with_timeout(
+            &paths,
+            "health.check",
+            serde_json::json!({}),
+            Duration::from_secs(2),
+        )
+        .unwrap();
+        assert_eq!(events[0].event, "health.ok");
+        stop_worker_process().unwrap();
+    }
+}
+
+#[cfg(unix)]
+fn worker_fixture_paths(name: &str) -> WorkerRuntimePaths {
+    let root = test_artifact_path(name);
+    let executable = root.join(".venv").join("bin").join("python");
+    fs::create_dir_all(executable.parent().unwrap()).unwrap();
+    fs::write(&executable, "#!/bin/sh\nexec python3 \"$@\"\n").unwrap();
+    use std::os::unix::fs::PermissionsExt;
+    let mut permissions = fs::metadata(&executable).unwrap().permissions();
+    permissions.set_mode(0o755);
+    fs::set_permissions(&executable, permissions).unwrap();
+    fs::copy(
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("test_worker_fixture.py"),
+        root.join("test_worker_fixture.py"),
+    )
+    .unwrap();
+
+    WorkerRuntimePaths {
+        uv_executable: root.join("uv"),
+        worker_directory: root,
+        uv_state_directory: test_artifact_path("uv"),
+        ffmpeg_directory: None,
+    }
+}
+
+#[cfg(unix)]
+fn worker_test_lock() -> std::sync::MutexGuard<'static, ()> {
+    static LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+    LOCK.lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
 }
 
 fn create_test_virtualenv_python_executable(directory: &Path) -> std::path::PathBuf {

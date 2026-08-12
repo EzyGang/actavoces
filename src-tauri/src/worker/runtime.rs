@@ -1,6 +1,7 @@
 use crate::domain::types::*;
 use crate::worker::command::{
-    run_uv_sync, run_uv_sync_extra, run_worker_command_with_paths, WORKER_RUNTIME_PATHS,
+    run_uv_sync, run_uv_sync_extra, run_worker_command_with_paths, shutdown_worker,
+    WORKER_RUNTIME_PATHS,
 };
 use crate::worker::files::{
     prepare_uv_executable, prepare_worker_directory, prepare_worker_virtualenv,
@@ -14,6 +15,9 @@ use crate::worker::progress::{
 use crate::worker::source_hash::worker_source_hash;
 
 pub(crate) use crate::worker::command::run_worker_command;
+#[cfg(test)]
+pub(crate) use crate::worker::command::run_worker_command_with_timeout;
+pub(crate) use crate::worker::command::shutdown_worker as stop_worker_process;
 #[cfg(test)]
 pub(crate) use crate::worker::command::{apply_worker_current_dir, apply_worker_path_env};
 #[cfg(test)]
@@ -104,6 +108,7 @@ pub(crate) fn run_worker_bootstrap(
         "Installing Python runtime",
         None,
     )?;
+    shutdown_worker()?;
     run_uv_sync(&paths)?;
     repair_worker_virtualenv_python_home(&paths)?;
 
@@ -233,6 +238,7 @@ pub(crate) fn run_diarization_setup(
         "Installing speaker diarization runtime",
         None,
     )?;
+    shutdown_worker()?;
     run_uv_sync_extra(&paths, "diarization")?;
 
     emit_worker_setup_progress(
