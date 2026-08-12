@@ -22,6 +22,7 @@ pub async fn start_recording(app: tauri::AppHandle) -> Result<AppSnapshot, Strin
     let app_for_start = app.clone();
     let snapshot = tauri::async_runtime::spawn_blocking(move || -> Result<AppSnapshot, String> {
         let state = app_for_start.state::<ActavocesState>();
+        ensure_dictation_inactive(&state)?;
         let mut repository = state.repository()?;
         let mut capture_backend = state.capture_backend.lock().map_err(lock_error)?;
 
@@ -217,6 +218,16 @@ pub async fn toggle_recording_from_shortcut(app: tauri::AppHandle) -> Result<App
     toggle_recording_lifecycle_background(app).await
 }
 
+pub(crate) fn ensure_dictation_inactive(state: &ActavocesState) -> Result<(), String> {
+    let runtime = state.dictation_runtime.lock().map_err(lock_error)?;
+
+    if runtime.blocks_recording() {
+        return Err("Meeting capture cannot start while dictation is active".to_owned());
+    }
+
+    Ok(())
+}
+
 pub fn start_recording_session(
     repository: &mut AppRepository,
     capture_backend: &mut impl AudioCaptureBackend,
@@ -305,6 +316,7 @@ pub async fn toggle_recording_lifecycle_background(
     let app_for_toggle = app.clone();
     let snapshot = tauri::async_runtime::spawn_blocking(move || -> Result<AppSnapshot, String> {
         let state = app_for_toggle.state::<ActavocesState>();
+        ensure_dictation_inactive(&state)?;
         let mut repository = state.repository()?;
         let mut capture_backend = state.capture_backend.lock().map_err(lock_error)?;
 

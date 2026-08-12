@@ -3,6 +3,7 @@ use std::sync::{Mutex, MutexGuard, OnceLock};
 use serde::{Deserialize, Serialize};
 
 use crate::capture::audio::NativeAudioCaptureBackend;
+use crate::dictation::DictationRuntime;
 use crate::storage::repository::AppRepository;
 use crate::worker::runtime::WorkerRuntimeState;
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
@@ -417,6 +418,7 @@ pub enum SpeakerCountMode {
 pub struct ActavocesState {
     pub(crate) repository: OnceLock<Mutex<AppRepository>>,
     pub(crate) capture_backend: Mutex<NativeAudioCaptureBackend>,
+    pub(crate) dictation_runtime: Mutex<DictationRuntime>,
     pub(crate) worker_runtime: Mutex<WorkerRuntimeState>,
     pub(crate) pipeline_running: Mutex<bool>,
 }

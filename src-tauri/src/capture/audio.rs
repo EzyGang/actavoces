@@ -25,17 +25,15 @@ pub(crate) use audio_devices::capture_devices;
 pub(crate) use audio_devices::{
     dedupe_capture_devices, is_default_system_source_name, is_system_monitor_device_name,
 };
+pub(crate) use audio_finalization::{finalize_native_source, write_pcm_wav_file};
 #[cfg(test)]
 pub(crate) use audio_finalization::{mixed_recording_source, FinalizedSource};
-pub(crate) use audio_streams::CapturedSource;
+pub(crate) use audio_streams::{start_native_source, CapturedSource};
 
-use audio_finalization::{
-    append_stream_errors, finalize_native_source, write_mixed_recording, write_pcm_wav_file,
-};
+use audio_finalization::{append_stream_errors, write_mixed_recording};
 use audio_metadata::{
     capture_errors_message, metadata_for_source, write_capture_metadata, write_job_log,
 };
-use audio_streams::start_native_source;
 
 pub(crate) trait AudioCaptureBackend {
     fn start(&mut self, recording_id: &str, settings: &AppSettings) -> Result<(), String>;

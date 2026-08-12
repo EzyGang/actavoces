@@ -31,6 +31,8 @@ tauri-plugin-global-shortcut = "2"
 tauri-plugin-dialog = "2"
 tauri-plugin-autostart = "2"
 cpal = "0.18.1"
+arboard = { version = "3.6.1", default-features = false }
+tokio = { version = "1", features = ["time"] }
 hound = "3.5.1"
 ort = { version = "2.0.0-rc.12", default-features = false, features = ["load-dynamic", "std", "api-24"] }
 parakeet-rs = { version = "0.3.2", default-features = false, features = ["load-dynamic", "sortformer"] }

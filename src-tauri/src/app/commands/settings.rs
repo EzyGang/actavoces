@@ -5,6 +5,7 @@ use tauri_plugin_autostart::ManagerExt as AutostartManagerExt;
 use tauri_plugin_global_shortcut::{GlobalShortcutExt, ShortcutState};
 
 use crate::diarization::prepare_sortformer_diarization;
+use crate::dictation::{dispatch_shortcut, DictationShortcutEvent};
 use crate::domain::types::*;
 use crate::worker::runtime::run_diarization_setup;
 
@@ -137,15 +138,12 @@ pub fn skip_diarization_setup(
 
 pub fn refresh_global_hotkey(app: &tauri::AppHandle) -> Result<(), String> {
     let state = app.state::<ActavocesState>();
-    let hotkey = {
+    let settings = {
         let repository = state.repository()?;
 
-        repository
-            .settings()
-            .map(|settings| settings.hotkey)
-            .map_err(|error| error.to_string())?
+        repository.settings().map_err(|error| error.to_string())?
     };
-    let status = register_global_hotkey(app, &hotkey);
+    let status = register_global_hotkeys(app, &settings);
     let mut repository = state.repository()?;
     let mut desktop_status = repository
         .desktop_runtime_status()
@@ -179,18 +177,26 @@ pub fn sync_launch_at_login(app: &tauri::AppHandle, enabled: bool) -> Result<(),
         .map_err(|error| format!("Unable to disable launch at login: {error}"))
 }
 
-pub fn register_global_hotkey(app: &tauri::AppHandle, hotkey: &str) -> DesktopRuntimeStatus {
+pub fn register_global_hotkeys(
+    app: &tauri::AppHandle,
+    settings: &AppSettings,
+) -> DesktopRuntimeStatus {
     let _ = app.global_shortcut().unregister_all();
 
-    let registration = app
-        .global_shortcut()
+    let registration = register_meeting_hotkey(app, &settings.hotkey)
+        .and_then(|()| register_dictation_hotkey(app, &settings.dictation_hotkey));
+
+    desktop_hotkey_status(registration)
+}
+
+fn register_meeting_hotkey(app: &tauri::AppHandle, hotkey: &str) -> Result<(), String> {
+    app.global_shortcut()
         .on_shortcut(hotkey, |app, _shortcut, event| {
             if event.state != ShortcutState::Pressed {
                 return;
             }
 
             let app = app.clone();
-
             tauri::async_runtime::spawn(async move {
                 match toggle_recording_lifecycle_background(app.clone()).await {
                     Ok(_) => (),
@@ -199,34 +205,97 @@ pub fn register_global_hotkey(app: &tauri::AppHandle, hotkey: &str) -> DesktopRu
                     }
                 }
             });
-        });
+        })
+        .map_err(|error| format!("Unable to register meeting shortcut: {error}"))
+}
 
-    match registration {
-        Ok(()) => DesktopRuntimeStatus {
-            overlay_visible: false,
-            hotkey_registered: true,
-            hotkey_error: None,
-            worker_running: false,
-            worker_health_ok: false,
-            worker_error: None,
-            worker_setup_status: WorkerSetupStatus::Missing,
-            worker_setup_step: String::new(),
-            worker_setup_error: None,
-            cuda_available: false,
-            cuda_error: None,
-        },
-        Err(error) => DesktopRuntimeStatus {
-            overlay_visible: false,
-            hotkey_registered: false,
-            hotkey_error: Some(error.to_string()),
-            worker_running: false,
-            worker_health_ok: false,
-            worker_error: None,
-            worker_setup_status: WorkerSetupStatus::Missing,
-            worker_setup_step: String::new(),
-            worker_setup_error: None,
-            cuda_available: false,
-            cuda_error: None,
-        },
+fn register_dictation_hotkey(app: &tauri::AppHandle, hotkey: &str) -> Result<(), String> {
+    validate_dictation_hotkey(hotkey)?;
+    app.global_shortcut()
+        .on_shortcut(hotkey, |app, _shortcut, event| {
+            let event = match event.state {
+                ShortcutState::Pressed => DictationShortcutEvent::Pressed,
+                ShortcutState::Released => DictationShortcutEvent::Released,
+            };
+            dispatch_shortcut(app.clone(), event);
+        })
+        .map_err(|error| format!("Unable to register dictation shortcut: {error}"))
+}
+
+pub(crate) fn validate_dictation_hotkey(hotkey: &str) -> Result<(), String> {
+    if cfg!(target_os = "linux")
+        && (std::env::var_os("WAYLAND_DISPLAY").is_some()
+            || std::env::var("XDG_SESSION_TYPE")
+                .is_ok_and(|session| session.eq_ignore_ascii_case("wayland")))
+    {
+        return Err(
+            "Dictation shortcuts are unsupported on Wayland; use an X11 session".to_owned(),
+        );
+    }
+
+    let components = hotkey
+        .split('+')
+        .map(str::trim)
+        .filter(|component| !component.is_empty())
+        .collect::<Vec<_>>();
+    let key = components
+        .last()
+        .ok_or_else(|| "Dictation shortcut is required".to_owned())?;
+    let normalized_key = key.to_ascii_lowercase();
+    let unsupported = [
+        "alt",
+        "command",
+        "commandorcontrol",
+        "control",
+        "ctrl",
+        "fn",
+        "meta",
+        "option",
+        "shift",
+        "super",
+    ];
+    if unsupported.contains(&normalized_key.as_str())
+        || normalized_key.starts_with("media")
+        || normalized_key.starts_with("audio")
+        || normalized_key.starts_with("browser")
+    {
+        return Err("Modifier-only, Fn, media, and system keys are unsupported".to_owned());
+    }
+    if components.len() == 1 && cfg!(target_os = "macos") {
+        return Err(
+            "Single-key dictation shortcuts are unsupported on macOS because input suppression is not reliable"
+                .to_owned(),
+        );
+    }
+    if components.len() == 1
+        && !(key.len() == 1
+            && key
+                .chars()
+                .all(|character| character.is_ascii_alphanumeric()))
+    {
+        return Err("Single-key dictation shortcuts must be a letter or number".to_owned());
+    }
+
+    Ok(())
+}
+
+fn desktop_hotkey_status(registration: Result<(), String>) -> DesktopRuntimeStatus {
+    let (hotkey_registered, hotkey_error) = match registration {
+        Ok(()) => (true, None),
+        Err(error) => (false, Some(error)),
+    };
+
+    DesktopRuntimeStatus {
+        overlay_visible: false,
+        hotkey_registered,
+        hotkey_error,
+        worker_running: false,
+        worker_health_ok: false,
+        worker_error: None,
+        worker_setup_status: WorkerSetupStatus::Missing,
+        worker_setup_step: String::new(),
+        worker_setup_error: None,
+        cuda_available: false,
+        cuda_error: None,
     }
 }
