@@ -17,6 +17,9 @@ export const validateSettingsDraft = (
   if (settings.dictationHotkey.trim().length === 0) {
     errors.push('Dictation shortcut is required.');
   }
+  if (settings.hotkey.trim().toLowerCase() === settings.dictationHotkey.trim().toLowerCase()) {
+    errors.push('Meeting and dictation shortcuts must differ.');
+  }
 
   if (settings.dictationLanguage === 'auto') {
     errors.push('Dictation language must be selected explicitly.');

@@ -101,6 +101,7 @@ export const useApp = () => {
       formatTimestamp,
       setupProgress: runtime.setupProgress,
       sortformerProgress: runtime.sortformerProgress,
+      dictationStatus: runtime.dictationStatus,
       updateStatus: updates.updateStatus,
       updateAvailable: updates.updateAvailable,
       updateNoticeVisible: updates.updateNoticeVisible,
@@ -145,7 +146,8 @@ export const useApp = () => {
       installUpdate: updates.actions.installUpdate,
       retrySetup: runtime.actions.retrySetup,
       setupDiarization: runtime.actions.setupDiarization,
-      skipDiarizationSetup: runtime.actions.skipDiarizationSetup
+      skipDiarizationSetup: runtime.actions.skipDiarizationSetup,
+      cancelDictation: runtime.actions.cancelDictation
     }
   };
 };

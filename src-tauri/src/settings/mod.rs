@@ -178,6 +178,11 @@ pub(crate) fn validate_settings(
 
     validate_hotkey(&input.hotkey, "Hotkey")?;
     validate_hotkey(&input.dictation_hotkey, "Dictation hotkey")?;
+    if input.hotkey.eq_ignore_ascii_case(&input.dictation_hotkey) {
+        return Err(rusqlite::Error::InvalidParameterName(
+            "Meeting and dictation hotkeys must differ".to_owned(),
+        ));
+    }
 
     if !SUPPORTED_WHISPER_MODELS.contains(&input.whisper_model.as_str())
         || !SUPPORTED_WHISPER_MODELS.contains(&input.dictation_whisper_model.as_str())

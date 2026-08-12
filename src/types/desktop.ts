@@ -178,6 +178,22 @@ export interface SortformerSetupProgress {
   error: string | null;
 }
 
+export type DictationState =
+  | 'idle'
+  | 'capturing'
+  | 'finalizing'
+  | 'transcribing'
+  | 'copied'
+  | 'cancelled'
+  | 'failed';
+
+export interface DictationStateUpdate {
+  sessionId: string | null;
+  state: DictationState;
+  error: string | null;
+  text: string | null;
+}
+
 export interface WorkerStatus {
   running: boolean;
   healthOk: boolean;

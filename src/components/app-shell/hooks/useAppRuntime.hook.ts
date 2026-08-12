@@ -3,7 +3,9 @@ import { listen } from '@tauri-apps/api/event';
 import { useEffect } from 'preact/hooks';
 import {
   bootstrapWorkerRuntime,
+  cancelActiveDictation,
   getAppSnapshot,
+  getDictationStatus,
   setupDiarizationRuntime,
   skipDiarizationSetup,
   writeDiagnosticLog
@@ -12,6 +14,7 @@ import { appSnapshotSignal } from '../../../stores/app.store';
 import type {
   AppSettingsUpdate,
   AppSnapshot,
+  DictationStateUpdate,
   SortformerSetupProgress,
   WorkerSetupProgress
 } from '../../../types/desktop';
@@ -41,6 +44,7 @@ export const useAppRuntime = ({
   const sortformerProgress = useSignal<SortformerSetupProgress | null>(null);
   const setupRunning = useSignal(false);
   const bootstrapRequested = useSignal(false);
+  const dictationStatus = useSignal<DictationStateUpdate | null>(null);
   const workerSetupReady = useComputed(
     () => appSnapshotSignal.value.desktop.workerSetupStatus === 'ready'
   );
@@ -156,8 +160,17 @@ export const useAppRuntime = ({
     }
   };
 
+  const cancelDictation = async () => {
+    try {
+      dictationStatus.value = await cancelActiveDictation();
+    } catch (error) {
+      setError(errorMessage(error, 'Unable to cancel dictation'));
+    }
+  };
+
   useRuntimeEffects({
     bootstrapRequested,
+    dictationStatus,
     loading,
     setupProgress,
     sortformerProgress,
@@ -173,16 +186,19 @@ export const useAppRuntime = ({
     setupRunning,
     setupReady,
     needsDiarizationSetup,
+    dictationStatus,
     actions: {
       retrySetup: runBootstrap,
       setupDiarization,
-      skipDiarizationSetup: skipDiarization
+      skipDiarizationSetup: skipDiarization,
+      cancelDictation
     }
   };
 };
 
 const useRuntimeEffects = ({
   bootstrapRequested,
+  dictationStatus,
   loading,
   setupProgress,
   sortformerProgress,
@@ -192,6 +208,7 @@ const useRuntimeEffects = ({
   runBootstrap
 }: {
   bootstrapRequested: Signal<boolean>;
+  dictationStatus: Signal<DictationStateUpdate | null>;
   loading: Signal<boolean>;
   setupProgress: Signal<WorkerSetupProgress>;
   sortformerProgress: Signal<SortformerSetupProgress | null>;
@@ -205,10 +222,19 @@ const useRuntimeEffects = ({
       return;
     }
 
+    void getDictationStatus()
+      .then((status) => {
+        dictationStatus.value = status;
+      })
+      .catch(() => {});
+
     const snapshotListener = listen<AppSnapshot>('app-snapshot-updated', (event) => {
       setSnapshot(event.payload);
       setupProgress.value = setupProgressFromSnapshot(event.payload);
       loading.value = false;
+    });
+    const dictationListener = listen<DictationStateUpdate>('dictation-state-update', (event) => {
+      dictationStatus.value = event.payload;
     });
     const errorListener = listen<string>('app-error', (event) => {
       setError(event.payload);
@@ -233,6 +259,7 @@ const useRuntimeEffects = ({
 
     return () => {
       void snapshotListener.then((unlisten) => unlisten());
+      void dictationListener.then((unlisten) => unlisten());
       void errorListener.then((unlisten) => unlisten());
       void setupListener.then((unlisten) => unlisten());
       void sortformerListener.then((unlisten) => unlisten());

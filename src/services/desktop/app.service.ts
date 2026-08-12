@@ -3,6 +3,7 @@ import type {
   AppSettingsUpdate,
   AppSnapshot,
   DiagnosticLogInput,
+  DictationStateUpdate,
   WorkerStatus
 } from '../../types/desktop';
 
@@ -59,6 +60,10 @@ export const renameSpeakerLabel = (recordingId: string, speaker: string, replace
 
 export const toggleRecordingFromShortcut = () =>
   invoke<AppSnapshot>('toggle_recording_from_shortcut');
+
+export const cancelActiveDictation = () => invoke<DictationStateUpdate>('cancel_active_dictation');
+
+export const getDictationStatus = () => invoke<DictationStateUpdate>('get_dictation_status');
 
 export const resumePendingJobs = () => invoke<AppSnapshot>('resume_pending_jobs');
 

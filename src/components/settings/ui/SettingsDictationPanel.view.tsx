@@ -39,6 +39,26 @@ export const SettingsDictationPanel = ({ app }: SettingsDictationPanelProps): JS
       ))}
     </div>
     <SettingsGlossaryField field={app.settings.dictationHintsField} />
+    {app.data.dictationStatus.value && app.data.dictationStatus.value.state !== 'idle' && (
+      <div class='flex flex-col gap-2 border border-border-base bg-bg-input p-3 text-sm'>
+        <div class='flex items-center justify-between gap-3'>
+          <span class='font-mono uppercase text-text-secondary'>
+            {app.data.dictationStatus.value.state}
+          </span>
+          {app.data.dictationStatus.value.state === 'capturing' && (
+            <Button class='h-8 px-3' onClick={app.actions.cancelDictation} variant='secondary'>
+              Cancel
+            </Button>
+          )}
+        </div>
+        {app.data.dictationStatus.value.error && (
+          <span class='text-error'>{app.data.dictationStatus.value.error}</span>
+        )}
+        {app.data.dictationStatus.value.text && (
+          <span class='text-text-secondary'>{app.data.dictationStatus.value.text}</span>
+        )}
+      </div>
+    )}
     <div class='flex flex-col gap-3 border border-border-base bg-bg-input p-3 text-sm'>
       <div class='flex items-center justify-between gap-3'>
         <div class='flex flex-col gap-1'>

@@ -123,8 +123,8 @@ impl DictationRuntime {
     }
 
     #[must_use]
-    pub(crate) fn is_capturing(&self) -> bool {
-        self.update.state == DictationState::Capturing
+    pub(crate) fn blocks_shortcut_settings_update(&self) -> bool {
+        self.starting || self.update.state == DictationState::Capturing
     }
     pub(crate) fn shortcut_action(
         &mut self,
@@ -142,7 +142,10 @@ impl DictationRuntime {
                         | DictationState::Copied
                         | DictationState::Cancelled
                         | DictationState::Failed,
-                    ) => DictationAction::Start,
+                    ) => {
+                        self.starting = true;
+                        DictationAction::Start
+                    }
                     (DictationShortcutMode::Toggle, DictationState::Capturing) => {
                         DictationAction::Stop
                     }
@@ -276,10 +279,9 @@ fn start_dictation(app: &tauri::AppHandle, settings: &AppSettings) -> Result<(),
     let state = app.state::<ActavocesState>();
     let _capture_admission = state.capture_admission.lock().map_err(lock_error)?;
     let mut runtime = state.dictation_runtime.lock().map_err(lock_error)?;
-    if runtime.blocks_recording() {
+    if !runtime.starting {
         return Err("A dictation is already being processed".to_owned());
     }
-    runtime.starting = true;
     let recording_active = {
         let repository = state.repository()?;
         repository

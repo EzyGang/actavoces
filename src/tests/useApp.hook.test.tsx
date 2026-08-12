@@ -6,6 +6,7 @@ import { useApp } from '../components/app-shell/hooks/useApp.hook';
 import {
   bootstrapWorkerRuntime,
   getAppSnapshot,
+  getDictationStatus,
   openLocalPath,
   renameRecordingTitle,
   renameSpeakerLabel,
@@ -41,6 +42,8 @@ vi.mock('../services/desktop/app.service', () => ({
   clearHuggingFaceToken: vi.fn(),
   clearSummaryProviderApiKey: vi.fn(),
   deleteRecording: vi.fn(),
+  cancelActiveDictation: vi.fn(),
+  getDictationStatus: vi.fn(),
   getAppSnapshot: vi.fn(),
   installTranscriptionModel: vi.fn(),
   openLocalPath: vi.fn(),
@@ -182,6 +185,13 @@ const resetSignals = () => {
 describe('useApp hook', () => {
   beforeEach(() => {
     vi.mocked(getAppSnapshot).mockReset();
+    vi.mocked(getDictationStatus).mockReset();
+    vi.mocked(getDictationStatus).mockResolvedValue({
+      sessionId: null,
+      state: 'idle',
+      error: null,
+      text: null
+    });
     vi.mocked(openLocalPath).mockReset();
     vi.mocked(startRecording).mockReset();
     vi.mocked(stopRecording).mockReset();

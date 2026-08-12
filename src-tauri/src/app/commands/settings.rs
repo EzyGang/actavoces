@@ -35,7 +35,7 @@ pub async fn update_app_settings(
                 .dictation_runtime
                 .lock()
                 .map_err(lock_error)?
-                .is_capturing()
+                .blocks_shortcut_settings_update()
         {
             return Err(
                 "Dictation shortcut settings cannot change during an active capture".to_owned(),
