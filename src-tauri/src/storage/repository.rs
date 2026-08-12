@@ -26,6 +26,7 @@ pub(crate) struct NewRecording {
     pub(crate) id: String,
     pub(crate) title: String,
     pub(crate) started_at: String,
+    pub(crate) profile: RecordingProfile,
     pub(crate) artifact_directory: String,
 }
 
@@ -70,6 +71,7 @@ impl AppRepository {
                 ended_at TEXT,
                 duration_seconds INTEGER,
                 status TEXT NOT NULL,
+                profile TEXT NOT NULL DEFAULT 'meeting',
                 artifact_directory TEXT NOT NULL,
                 capture_errors TEXT NOT NULL DEFAULT '[]'
             );
@@ -134,6 +136,11 @@ impl AppRepository {
             "models",
             "dependency",
             "ALTER TABLE models ADD COLUMN dependency TEXT NOT NULL DEFAULT 'faster-whisper'",
+        )?;
+        self.ensure_column(
+            "recordings",
+            "profile",
+            "ALTER TABLE recordings ADD COLUMN profile TEXT NOT NULL DEFAULT 'meeting'",
         )?;
         self.remove_alignment_stage()
     }

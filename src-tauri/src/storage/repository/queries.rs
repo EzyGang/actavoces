@@ -19,8 +19,13 @@ impl AppRepository {
         let capture_devices = capture_devices();
         let mut desktop = self.desktop_runtime_status()?;
 
-        desktop.overlay_visible =
-            active_recording.is_some() && settings.overlay_display_mode != OverlayDisplayMode::None;
+        desktop.overlay_visible = match active_recording.as_ref() {
+            Some(recording) if recording.profile == RecordingProfile::Dictation => {
+                settings.dictation_overlay_display_mode != OverlayDisplayMode::None
+            }
+            Some(_) => settings.overlay_display_mode != OverlayDisplayMode::None,
+            None => false,
+        };
 
         Ok(AppSnapshot {
             active_recording,
@@ -36,7 +41,7 @@ impl AppRepository {
     pub(crate) fn recordings(&self) -> rusqlite::Result<Vec<Recording>> {
         let mut statement = self.connection.prepare(
             "
-            SELECT id, title, started_at, ended_at, duration_seconds, status, artifact_directory, capture_errors
+            SELECT id, title, started_at, ended_at, duration_seconds, status, profile, artifact_directory, capture_errors
             FROM recordings
             WHERE status != ?1
             ORDER BY started_at DESC
@@ -80,7 +85,7 @@ impl AppRepository {
         self.connection
             .query_row(
                 "
-                SELECT id, title, started_at, ended_at, duration_seconds, status, artifact_directory, capture_errors
+                SELECT id, title, started_at, ended_at, duration_seconds, status, profile, artifact_directory, capture_errors
                 FROM recordings
                 WHERE status = ?1
                 ORDER BY started_at DESC
@@ -99,7 +104,7 @@ impl AppRepository {
         self.connection
             .query_row(
                 "
-                SELECT id, title, started_at, ended_at, duration_seconds, status, artifact_directory, capture_errors
+                SELECT id, title, started_at, ended_at, duration_seconds, status, profile, artifact_directory, capture_errors
                 FROM recordings
                 WHERE id = ?1
                 ",
@@ -111,8 +116,8 @@ impl AppRepository {
 
     pub(crate) fn row_to_recording(&self, row: &rusqlite::Row<'_>) -> rusqlite::Result<Recording> {
         let id = row.get::<_, String>(0)?;
-        let artifact_directory = row.get::<_, String>(6)?;
-        let capture_errors = serde_json::from_str(&row.get::<_, String>(7)?).unwrap_or_default();
+        let artifact_directory = row.get::<_, String>(7)?;
+        let capture_errors = serde_json::from_str(&row.get::<_, String>(8)?).unwrap_or_default();
 
         Ok(Recording {
             id: id.clone(),
@@ -121,6 +126,7 @@ impl AppRepository {
             ended_at: row.get(3)?,
             duration_seconds: row.get(4)?,
             status: enum_from_value(&row.get::<_, String>(5)?)?,
+            profile: enum_from_value(&row.get::<_, String>(6)?)?,
             artifact_directory: artifact_directory.clone(),
             capture_errors,
             stages: self.stages(&id)?,

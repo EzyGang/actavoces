@@ -142,7 +142,15 @@ pub struct Recording {
     pub(crate) capture_errors: Vec<CaptureError>,
     pub(crate) stages: Vec<PipelineStage>,
     pub(crate) artifacts: Vec<Artifact>,
+    pub(crate) profile: RecordingProfile,
     pub(crate) speaker_labels: Vec<SpeakerLabel>,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum RecordingProfile {
+    Meeting,
+    Dictation,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]

@@ -10,7 +10,10 @@ use crate::worker::runtime::run_diarization_setup;
 
 use super::overlay::sync_recording_overlay;
 use super::pipeline::{emit_snapshot_update, spawn_pipeline_processing};
-use super::recordings::toggle_recording_lifecycle_background;
+use super::recordings::{
+    set_recording_profile_active_background, toggle_recording_lifecycle_background,
+    toggle_recording_lifecycle_for_profile_background,
+};
 
 #[tauri::command]
 pub async fn update_app_settings(
@@ -42,12 +45,21 @@ pub async fn update_app_settings(
 
         repository.snapshot().map_err(|error| error.to_string())?
     };
-
+    let (overlay_position, overlay_display_mode) = match snapshot.active_recording.as_ref() {
+        Some(recording) if recording.profile == RecordingProfile::Dictation => (
+            snapshot.settings.dictation_overlay_position,
+            snapshot.settings.dictation_overlay_display_mode,
+        ),
+        Some(_) | None => (
+            snapshot.settings.overlay_position,
+            snapshot.settings.overlay_display_mode,
+        ),
+    };
     sync_recording_overlay(
         &app,
         snapshot.active_recording.is_some(),
-        snapshot.settings.overlay_position,
-        snapshot.settings.overlay_display_mode,
+        overlay_position,
+        overlay_display_mode,
     )?;
     emit_snapshot_update(&app, &snapshot);
     if prepare_sortformer {
@@ -134,18 +146,19 @@ pub fn skip_diarization_setup(
         .map_err(|error| error.to_string())?;
     repository.snapshot().map_err(|error| error.to_string())
 }
-
 pub fn refresh_global_hotkey(app: &tauri::AppHandle) -> Result<(), String> {
     let state = app.state::<ActavocesState>();
-    let hotkey = {
+    let settings = {
         let repository = state.repository()?;
 
-        repository
-            .settings()
-            .map(|settings| settings.hotkey)
-            .map_err(|error| error.to_string())?
+        repository.settings().map_err(|error| error.to_string())?
     };
-    let status = register_global_hotkey(app, &hotkey);
+    let status = register_global_hotkeys(
+        app,
+        &settings.hotkey,
+        &settings.dictation_hotkey,
+        settings.dictation_shortcut_mode,
+    );
     let mut repository = state.repository()?;
     let mut desktop_status = repository
         .desktop_runtime_status()
@@ -179,7 +192,12 @@ pub fn sync_launch_at_login(app: &tauri::AppHandle, enabled: bool) -> Result<(),
         .map_err(|error| format!("Unable to disable launch at login: {error}"))
 }
 
-pub fn register_global_hotkey(app: &tauri::AppHandle, hotkey: &str) -> DesktopRuntimeStatus {
+pub fn register_global_hotkeys(
+    app: &tauri::AppHandle,
+    hotkey: &str,
+    dictation_hotkey: &str,
+    dictation_shortcut_mode: DictationShortcutMode,
+) -> DesktopRuntimeStatus {
     let _ = app.global_shortcut().unregister_all();
 
     let registration = app
@@ -200,6 +218,56 @@ pub fn register_global_hotkey(app: &tauri::AppHandle, hotkey: &str) -> DesktopRu
                 }
             });
         });
+    let registration = match registration {
+        Ok(()) if dictation_hotkey.is_empty() => Ok(()),
+        Ok(()) => {
+            app.global_shortcut()
+                .on_shortcut(dictation_hotkey, move |app, _shortcut, event| {
+                    let active = match dictation_shortcut_mode {
+                        DictationShortcutMode::Toggle => event.state == ShortcutState::Pressed,
+                        DictationShortcutMode::PushToTalk => match event.state {
+                            ShortcutState::Pressed => true,
+                            ShortcutState::Released => false,
+                        },
+                    };
+                    if dictation_shortcut_mode == DictationShortcutMode::Toggle
+                        && event.state != ShortcutState::Pressed
+                    {
+                        return;
+                    }
+
+                    let app = app.clone();
+
+                    tauri::async_runtime::spawn(async move {
+                        let result = match dictation_shortcut_mode {
+                            DictationShortcutMode::Toggle => {
+                                toggle_recording_lifecycle_for_profile_background(
+                                    app.clone(),
+                                    RecordingProfile::Dictation,
+                                )
+                                .await
+                            }
+                            DictationShortcutMode::PushToTalk => {
+                                set_recording_profile_active_background(
+                                    app.clone(),
+                                    RecordingProfile::Dictation,
+                                    active,
+                                )
+                                .await
+                            }
+                        };
+
+                        match result {
+                            Ok(_) => (),
+                            Err(error) => {
+                                let _ = app.emit("app-error", error);
+                            }
+                        }
+                    });
+                })
+        }
+        Err(error) => Err(error),
+    };
 
     match registration {
         Ok(()) => DesktopRuntimeStatus {
