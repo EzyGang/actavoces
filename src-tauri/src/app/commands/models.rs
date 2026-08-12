@@ -1,3 +1,5 @@
+use tauri::Manager;
+
 use crate::domain::types::*;
 use crate::worker::runtime::{
     extract_model_inventory, extract_runtime_capabilities, model_install_message,
@@ -5,8 +7,79 @@ use crate::worker::runtime::{
 };
 
 #[tauri::command]
-pub fn refresh_model_inventory(
-    state: tauri::State<'_, ActavocesState>,
+pub async fn refresh_model_inventory(app: tauri::AppHandle) -> Result<AppSnapshot, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let state = app.state::<ActavocesState>();
+        refresh_model_inventory_blocking(&state)
+    })
+    .await
+    .map_err(|error| format!("Model inventory task failed: {error}"))?
+}
+
+#[tauri::command]
+pub async fn install_transcription_model(
+    input: ModelInstallInput,
+    app: tauri::AppHandle,
+) -> Result<AppSnapshot, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let state = app.state::<ActavocesState>();
+        let (settings, cuda_available) = {
+            let repository = state.repository()?;
+
+            (
+                repository.settings().map_err(|error| error.to_string())?,
+                repository
+                    .desktop_runtime_status()
+                    .map_err(|error| error.to_string())?
+                    .cuda_available,
+            )
+        };
+        let compute_type = match settings.compute_type.as_str() {
+            "cuda" if !cuda_available => "cpu",
+            value => value,
+        };
+        let result = run_worker_command(
+            "models.install",
+            serde_json::json!({
+                "model": input.model,
+                "computeType": compute_type,
+                "modelStorageDirectory": settings.model_storage_directory,
+            }),
+        );
+
+        match result {
+            Ok(events)
+                if events
+                    .iter()
+                    .any(|event| event.event == "models.install.complete") =>
+            {
+                refresh_model_inventory_blocking(&state)
+            }
+            Ok(events) => {
+                let message = model_install_message(&events);
+                let mut repository = state.repository()?;
+
+                repository
+                    .set_worker_error(&message)
+                    .map_err(|error| error.to_string())?;
+                repository.snapshot().map_err(|error| error.to_string())
+            }
+            Err(error) => {
+                let mut repository = state.repository()?;
+
+                repository
+                    .set_worker_error(&error)
+                    .map_err(|error| error.to_string())?;
+                repository.snapshot().map_err(|error| error.to_string())
+            }
+        }
+    })
+    .await
+    .map_err(|error| format!("Model installation task failed: {error}"))?
+}
+
+fn refresh_model_inventory_blocking(
+    state: &tauri::State<'_, ActavocesState>,
 ) -> Result<AppSnapshot, String> {
     let settings = {
         let repository = state.repository()?;
@@ -38,63 +111,6 @@ pub fn refresh_model_inventory(
             }
             repository
                 .clear_worker_error()
-                .map_err(|error| error.to_string())?;
-            repository.snapshot().map_err(|error| error.to_string())
-        }
-        Err(error) => {
-            let mut repository = state.repository()?;
-
-            repository
-                .set_worker_error(&error)
-                .map_err(|error| error.to_string())?;
-            repository.snapshot().map_err(|error| error.to_string())
-        }
-    }
-}
-
-#[tauri::command]
-pub fn install_transcription_model(
-    input: ModelInstallInput,
-    state: tauri::State<'_, ActavocesState>,
-) -> Result<AppSnapshot, String> {
-    let (settings, cuda_available) = {
-        let repository = state.repository()?;
-
-        (
-            repository.settings().map_err(|error| error.to_string())?,
-            repository
-                .desktop_runtime_status()
-                .map_err(|error| error.to_string())?
-                .cuda_available,
-        )
-    };
-    let compute_type = match settings.compute_type.as_str() {
-        "cuda" if !cuda_available => "cpu",
-        value => value,
-    };
-    let result = run_worker_command(
-        "models.install",
-        serde_json::json!({
-            "model": input.model,
-            "computeType": compute_type,
-            "modelStorageDirectory": settings.model_storage_directory,
-        }),
-    );
-
-    match result {
-        Ok(events)
-            if events
-                .iter()
-                .any(|event| event.event == "models.install.complete") =>
-        {
-            refresh_model_inventory(state)
-        }
-        Ok(events) => {
-            let message = model_install_message(&events);
-            let mut repository = state.repository()?;
-
-            repository
-                .set_worker_error(&message)
                 .map_err(|error| error.to_string())?;
             repository.snapshot().map_err(|error| error.to_string())
         }

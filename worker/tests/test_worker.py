@@ -21,6 +21,7 @@ from app.formatting import render_diarized_transcript, render_raw_transcript
 from app.handlers import handle
 from app.json_utils import loads
 from app.models import (
+    TranscriptionModelCache,
     cuda_status,
     install_faster_whisper_model,
     model_installed,
@@ -239,6 +240,47 @@ def test_faster_whisper_adapter_returns_segments_from_model() -> None:
             'word_timestamps': True,
             'language': 'en',
         }
+    ]
+
+
+def test_transcription_model_cache_reuses_compatible_model() -> None:
+    constructions: list[tuple[str, dict[str, Any]]] = []
+
+    class FakeModel:
+        def __init__(self, model_name: str, **kwargs: Any) -> None:
+            constructions.append((model_name, kwargs))
+
+        def transcribe(self, audio_path: str, **kwargs: Any) -> tuple[list[SimpleNamespace], SimpleNamespace]:
+            return ([], SimpleNamespace(language='en'))
+
+    cache = TranscriptionModelCache()
+
+    first = cache.get(FakeModel, 'medium', 'cpu', Path('/tmp/models'))
+    second = cache.get(FakeModel, 'medium', 'cpu', Path('/tmp/models'))
+
+    assert first is second
+    assert constructions == [('medium', {'device': 'cpu', 'compute_type': 'int8', 'download_root': '/tmp/models'})]
+
+
+def test_transcription_model_cache_replaces_changed_configuration() -> None:
+    constructions: list[tuple[str, dict[str, Any]]] = []
+
+    class FakeModel:
+        def __init__(self, model_name: str, **kwargs: Any) -> None:
+            constructions.append((model_name, kwargs))
+
+        def transcribe(self, audio_path: str, **kwargs: Any) -> tuple[list[SimpleNamespace], SimpleNamespace]:
+            return ([], SimpleNamespace(language='en'))
+
+    cache = TranscriptionModelCache()
+
+    first = cache.get(FakeModel, 'small', 'cpu', Path('/tmp/models'))
+    second = cache.get(FakeModel, 'medium', 'cuda', Path('/tmp/other-models'))
+
+    assert first is not second
+    assert constructions == [
+        ('small', {'device': 'cpu', 'compute_type': 'int8', 'download_root': '/tmp/models'}),
+        ('medium', {'device': 'cuda', 'compute_type': 'int8_float16', 'download_root': '/tmp/other-models'}),
     ]
 
 

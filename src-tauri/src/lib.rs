@@ -23,7 +23,7 @@ use crate::capture::audio::NativeAudioCaptureBackend;
 use crate::domain::types::{ActavocesState, AppSettings};
 use crate::storage::repository::AppRepository;
 use crate::worker::runtime::WorkerRuntimeState;
-use tauri::{Emitter, Manager, WindowEvent};
+use tauri::{Emitter, Manager, RunEvent, WindowEvent};
 use tauri_plugin_autostart::MacosLauncher;
 
 fn should_close_to_tray(window: &tauri::Window) -> bool {
@@ -131,8 +131,13 @@ pub fn run() {
             app::commands::models::install_transcription_model,
             app::commands::snapshot::write_diagnostic_log
         ])
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+        .build(tauri::generate_context!())
+        .expect("error while building tauri application")
+        .run(|_, event| {
+            if matches!(event, RunEvent::Exit) {
+                let _ = crate::worker::runtime::stop_worker_process();
+            }
+        });
 }
 
 async fn initialize_app_state(handle: tauri::AppHandle) -> Result<(), String> {

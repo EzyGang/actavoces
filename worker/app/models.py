@@ -8,6 +8,7 @@ import ctranslate2
 from app.dtos import (
     DEFAULT_TRANSCRIPTION_PROFILE,
     FailedResult,
+    FasterWhisperModel,
     FasterWhisperModelFactory,
     FasterWhisperWord,
     ModelInstallCompleteResult,
@@ -42,6 +43,34 @@ CONSERVATIVE_VAD_PARAMETERS: dict[str, int | float] = {
 }
 type ModelInstallResult = NeedsSetupResult | FailedResult | ModelInstallCompleteResult
 type TranscriptionResult = NeedsSetupResult | FailedResult | TranscriptionCompleteResult
+
+
+class TranscriptionModelCache:
+    def __init__(self) -> None:
+        self._key: tuple[Any, ...] | None = None
+        self._model: FasterWhisperModel | None = None
+
+    def get(
+        self,
+        model_class: FasterWhisperModelFactory,
+        model_name: str,
+        compute_type: str,
+        model_storage_directory: Path | None,
+    ) -> FasterWhisperModel:
+        kwargs = model_kwargs(compute_type=compute_type, storage_path=model_storage_directory)
+        key = (model_class, model_name, tuple(sorted(kwargs.items())))
+
+        if self._key == key and self._model is not None:
+            return self._model
+
+        model = cast(FasterWhisperModel, model_class(model_name, **kwargs))
+        self._key = key
+        self._model = model
+
+        return model
+
+
+transcription_model_cache = TranscriptionModelCache()
 
 
 def run_faster_whisper(
@@ -252,7 +281,12 @@ def transcribe_with_model(
     model_storage_directory: Path | None,
     transcription_profile: str,
 ) -> tuple[list[Segment], list[TranscriptionWord], str | None]:
-    model = model_class(model_name, **model_kwargs(compute_type=compute_type, storage_path=model_storage_directory))
+    model = transcription_model_cache.get(
+        model_class=model_class,
+        model_name=model_name,
+        compute_type=compute_type,
+        model_storage_directory=model_storage_directory,
+    )
     raw_segments, info = model.transcribe(
         str(audio_path),
         **transcribe_kwargs(
