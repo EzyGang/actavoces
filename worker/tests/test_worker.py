@@ -282,11 +282,12 @@ def test_transcription_model_cache_reuses_compatible_model() -> None:
 
     cache = TranscriptionModelCache()
 
-    first = cache.get(FakeModel, 'medium', 'cpu', Path('/tmp/models'))
-    second = cache.get(FakeModel, 'medium', 'cpu', Path('/tmp/models'))
+    storage_path = Path('/tmp/models')
+    first = cache.get(FakeModel, 'medium', 'cpu', storage_path)
+    second = cache.get(FakeModel, 'medium', 'cpu', storage_path)
 
     assert first is second
-    assert constructions == [('medium', {'device': 'cpu', 'compute_type': 'int8', 'download_root': '/tmp/models'})]
+    assert constructions == [('medium', {'device': 'cpu', 'compute_type': 'int8', 'download_root': str(storage_path)})]
 
 
 def test_transcription_model_cache_replaces_changed_configuration() -> None:
@@ -301,13 +302,18 @@ def test_transcription_model_cache_replaces_changed_configuration() -> None:
 
     cache = TranscriptionModelCache()
 
-    first = cache.get(FakeModel, 'small', 'cpu', Path('/tmp/models'))
-    second = cache.get(FakeModel, 'medium', 'cuda', Path('/tmp/other-models'))
+    first_storage_path = Path('/tmp/models')
+    second_storage_path = Path('/tmp/other-models')
+    first = cache.get(FakeModel, 'small', 'cpu', first_storage_path)
+    second = cache.get(FakeModel, 'medium', 'cuda', second_storage_path)
 
     assert first is not second
     assert constructions == [
-        ('small', {'device': 'cpu', 'compute_type': 'int8', 'download_root': '/tmp/models'}),
-        ('medium', {'device': 'cuda', 'compute_type': 'int8_float16', 'download_root': '/tmp/other-models'}),
+        ('small', {'device': 'cpu', 'compute_type': 'int8', 'download_root': str(first_storage_path)}),
+        (
+            'medium',
+            {'device': 'cuda', 'compute_type': 'int8_float16', 'download_root': str(second_storage_path)},
+        ),
     ]
 
 

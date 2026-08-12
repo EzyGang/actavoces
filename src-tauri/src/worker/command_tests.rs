@@ -1,12 +1,16 @@
 use std::path::PathBuf;
 use std::process::{Command, Stdio};
+use std::sync::{LazyLock, Mutex};
 use std::time::Duration;
 
 use crate::worker::command::{WorkerClient, WorkerProcess};
 use crate::worker::paths::WorkerRuntimePaths;
 
+static WORKER_PROCESS_TEST_LOCK: LazyLock<Mutex<()>> = LazyLock::new(|| Mutex::new(()));
+
 #[test]
 fn worker_process_reuses_one_child_for_multiple_commands() {
+    let _lock = worker_process_test_lock();
     let mut process = scripted_worker(
         "import json,sys\nfor line in sys.stdin:\n c=json.loads(line); print(json.dumps({'commandId':c['id'],'event':'health.ok','payload':{'pid':__import__('os').getpid()}}), flush=True)",
     );
@@ -20,6 +24,7 @@ fn worker_process_reuses_one_child_for_multiple_commands() {
 
 #[test]
 fn worker_client_restarts_after_failure_and_path_change() {
+    let _lock = worker_process_test_lock();
     let mut client = WorkerClient::new();
     let first_paths = test_paths();
     let mut second_paths = test_paths();
@@ -49,6 +54,7 @@ fn worker_client_restarts_after_failure_and_path_change() {
 
 #[test]
 fn worker_client_restarts_after_command_failure() {
+    let _lock = worker_process_test_lock();
     let mut client = WorkerClient::new();
     let paths = test_paths();
 
@@ -76,6 +82,7 @@ fn worker_client_restarts_after_command_failure() {
 }
 #[test]
 fn worker_process_reports_malformed_output_and_can_restart() {
+    let _lock = worker_process_test_lock();
     let mut malformed = scripted_worker("print('not-json', flush=True); input()");
 
     let error = run_health(&mut malformed, "bad", Duration::from_secs(1)).unwrap_err();
@@ -91,6 +98,7 @@ fn worker_process_reports_malformed_output_and_can_restart() {
 
 #[test]
 fn worker_process_reports_exit_and_timeout() {
+    let _lock = worker_process_test_lock();
     let mut exited = scripted_worker("raise SystemExit('worker crashed')");
     let exit_error = run_health(&mut exited, "exit", Duration::from_secs(1)).unwrap_err();
     assert!(exit_error.contains("Worker exited before completing command"));
@@ -105,6 +113,7 @@ fn worker_process_reports_exit_and_timeout() {
 
 #[test]
 fn worker_process_serializes_progress_and_clean_shutdown() {
+    let _lock = worker_process_test_lock();
     let mut process = scripted_worker(
         "import json\nc=json.loads(input())\nfor event in ('transcribe.progress','transcribe.complete'):\n print(json.dumps({'commandId':c['id'],'event':event,'payload':{}}), flush=True)",
     );
@@ -118,6 +127,13 @@ fn worker_process_serializes_progress_and_clean_shutdown() {
     assert_eq!(events[0].event, "transcribe.progress");
     assert_eq!(events[1].event, "transcribe.complete");
     process.shutdown().unwrap();
+}
+
+fn worker_process_test_lock() -> std::sync::MutexGuard<'static, ()> {
+    match WORKER_PROCESS_TEST_LOCK.lock() {
+        Ok(lock) => lock,
+        Err(error) => error.into_inner(),
+    }
 }
 
 fn scripted_worker(script: &str) -> WorkerProcess {

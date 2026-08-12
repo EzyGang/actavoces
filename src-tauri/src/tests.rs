@@ -20,7 +20,8 @@ use crate::capture::audio::{
 use crate::domain::types::{
     AppSettingsUpdate, ArtifactKind, CaptureDeviceInfo, DesktopRuntimeStatus, DiarizationBackend,
     ModelInventoryItem, OverlayDisplayMode, OverlayPosition, PipelineStageId, PipelineStageStatus,
-    RecordingStatus, SpeakerCountMode, SpeakerRenameInput, WorkerEvent, WorkerSetupStatus,
+    RecordingStatus, SpeakerCountMode, SpeakerRenameInput, WorkerEvent, WorkerSetupProgress,
+    WorkerSetupStatus,
 };
 use crate::settings::{
     default_settings,
@@ -1270,6 +1271,29 @@ fn desktop_runtime_status_is_included_in_snapshot() {
     assert_eq!(snapshot.desktop.hotkey_error, None);
     assert!(snapshot.desktop.worker_running);
     assert!(snapshot.desktop.worker_health_ok);
+}
+
+#[test]
+fn setup_progress_does_not_claim_worker_process_health() {
+    let database_path = test_database_path("worker-setup-progress");
+    let mut repository = AppRepository::open(&database_path).unwrap();
+
+    repository
+        .update_worker_setup_progress(&WorkerSetupProgress {
+            status: WorkerSetupStatus::Ready,
+            step: "Worker runtime ready".to_owned(),
+            error: None,
+        })
+        .unwrap();
+
+    let snapshot = repository.snapshot().unwrap();
+
+    assert!(!snapshot.desktop.worker_running);
+    assert!(!snapshot.desktop.worker_health_ok);
+    assert_eq!(
+        snapshot.desktop.worker_setup_status,
+        WorkerSetupStatus::Ready
+    );
 }
 
 #[test]

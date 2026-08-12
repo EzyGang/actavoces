@@ -1,4 +1,5 @@
 use crate::domain::types::*;
+use crate::utils::lock_error;
 use crate::worker::command::{
     run_uv_sync, run_uv_sync_extra, run_worker_command_with_paths, WORKER_RUNTIME_PATHS,
 };
@@ -56,6 +57,35 @@ impl WorkerRuntimeState {
     }
 }
 
+fn ensure_worker_health(
+    paths: &WorkerRuntimePaths,
+    state: &tauri::State<'_, ActavocesState>,
+) -> Result<(), String> {
+    let events = run_worker_command_with_paths(paths, "health.check", serde_json::json!({}))?;
+
+    if !events.iter().any(|event| event.event == "health.ok") {
+        return Err("Worker health check did not return health.ok".to_owned());
+    }
+
+    synchronize_worker_health(state)
+}
+
+fn synchronize_worker_health(state: &tauri::State<'_, ActavocesState>) -> Result<(), String> {
+    let status = {
+        let mut runtime = state.worker_runtime.lock().map_err(lock_error)?;
+
+        runtime.running = is_worker_process_running();
+        runtime.health_ok = runtime.running;
+        runtime.last_error = None;
+        runtime.status()
+    };
+    let mut repository = state.repository()?;
+
+    repository
+        .update_worker_runtime_status(&status)
+        .map_err(|error| error.to_string())
+}
+
 pub(crate) fn bootstrap_worker(
     app: &tauri::AppHandle,
     state: &tauri::State<'_, ActavocesState>,
@@ -67,6 +97,7 @@ pub(crate) fn bootstrap_worker(
 
     match worker_bootstrap_is_ready(&paths, &source_hash) {
         true => {
+            ensure_worker_health(&paths, state)?;
             persist_worker_setup_progress(
                 state,
                 &WorkerSetupProgress {
@@ -123,6 +154,7 @@ pub(crate) fn run_worker_bootstrap(
     if !health_events.iter().any(|event| event.event == "health.ok") {
         return Err("Worker health check did not return health.ok".to_owned());
     }
+    synchronize_worker_health(state)?;
     refresh_runtime_capabilities_with_paths(state, &paths)?;
 
     let (settings, cuda_available) = {

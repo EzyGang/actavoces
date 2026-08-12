@@ -161,7 +161,9 @@ async fn initialize_app_state(handle: tauri::AppHandle) -> Result<(), String> {
         let _ = handle.emit("app-error", error);
     }
 
-    let status = register_global_hotkey(&handle, &settings.hotkey);
+    let mut status = register_global_hotkey(&handle, &settings.hotkey);
+    status.worker_running = false;
+    status.worker_health_ok = false;
     let snapshot = {
         let mut repository = state.repository()?;
 
