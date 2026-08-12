@@ -58,18 +58,29 @@ pub fn get_worker_status(state: tauri::State<'_, ActavocesState>) -> Result<Work
 
 #[tauri::command]
 pub async fn start_worker(state: tauri::State<'_, ActavocesState>) -> Result<WorkerStatus, String> {
-    let health_ok = tauri::async_runtime::spawn_blocking(|| {
+    let result = tauri::async_runtime::spawn_blocking(|| {
         run_worker_command("health.check", serde_json::json!({}))
     })
     .await
-    .map_err(|error| format!("Worker start task failed: {error}"))??
-    .iter()
-    .any(|event| event.event == "health.ok");
+    .map_err(|error| format!("Worker start task failed: {error}"))?;
     let status = {
         let mut runtime = state.worker_runtime.lock().map_err(lock_error)?;
+
         runtime.running = is_worker_process_running();
-        runtime.health_ok = health_ok;
-        runtime.last_error = None;
+        match result {
+            Ok(events) if events.iter().any(|event| event.event == "health.ok") => {
+                runtime.health_ok = true;
+                runtime.last_error = None;
+            }
+            Ok(events) => {
+                runtime.health_ok = false;
+                runtime.last_error = Some(format!("Unexpected worker events: {}", events.len()));
+            }
+            Err(error) => {
+                runtime.health_ok = false;
+                runtime.last_error = Some(error);
+            }
+        }
         runtime.status()
     };
     persist_worker_status(&state, &status)?;

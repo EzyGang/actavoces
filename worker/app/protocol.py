@@ -1,20 +1,11 @@
-from typing import Any, Literal
+from typing import Any
 
 from pydantic import Field
 
 from app.core.pydantic_base import AppBaseModel
 
 
-WorkerCommandName = Literal[
-    'health.check',
-    'runtime.capabilities',
-    'models.status',
-    'models.install',
-    'diarization.check',
-    'transcribe.run',
-    'diarize.run',
-    'summarize.run',
-]
+WorkerCommandName = str
 
 
 class WorkerCommand(AppBaseModel):

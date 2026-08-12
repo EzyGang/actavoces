@@ -1,3 +1,4 @@
+import io
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
@@ -20,6 +21,7 @@ from app.events import emit
 from app.formatting import render_diarized_transcript, render_raw_transcript
 from app.handlers import handle
 from app.json_utils import loads
+from app.main import run
 from app.models import (
     TranscriptionModelCache,
     cuda_status,
@@ -76,6 +78,31 @@ def test_emit_serializes_worker_event_aliases(capsys: Any) -> None:
     emit(WorkerEvent(command_id='1', event='health.ok', payload={'worker': 'test'}))
 
     assert capsys.readouterr().out == '{"commandId":"1","event":"health.ok","payload":{"worker":"test"}}\n'
+
+
+async def test_jsonl_runner_recovers_from_malformed_and_unknown_commands(capsys: Any, mocker: MockerFixture) -> None:
+    mocker.patch(
+        'app.main.sys.stdin',
+        io.StringIO(
+            'not json\n{"id":"unsupported","name":"unknown.command"}\n{"id":"healthy","name":"health.check"}\n'
+        ),
+    )
+
+    await run()
+
+    events = [loads(line) for line in capsys.readouterr().out.splitlines()]
+
+    assert events[0]['commandId'] == 'unknown'
+    assert events[0]['event'] == 'command.failed'
+    assert events[0]['payload']['error'].startswith('invalid literal')
+    assert events[1:] == [
+        {
+            'commandId': 'unsupported',
+            'event': 'command.unsupported',
+            'payload': {'name': 'unknown.command'},
+        },
+        {'commandId': 'healthy', 'event': 'health.ok', 'payload': {'worker': 'actavoces-worker'}},
+    ]
 
 
 async def test_transcribe_run_writes_supplied_segments(tmp_path: Path) -> None:

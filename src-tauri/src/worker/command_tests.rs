@@ -2,7 +2,7 @@ use std::path::PathBuf;
 use std::process::{Command, Stdio};
 use std::time::Duration;
 
-use crate::worker::command::WorkerProcess;
+use crate::worker::command::{WorkerClient, WorkerProcess};
 use crate::worker::paths::WorkerRuntimePaths;
 
 #[test]
@@ -18,6 +18,62 @@ fn worker_process_reuses_one_child_for_multiple_commands() {
     process.shutdown().unwrap();
 }
 
+#[test]
+fn worker_client_restarts_after_failure_and_path_change() {
+    let mut client = WorkerClient::new();
+    let first_paths = test_paths();
+    let mut second_paths = test_paths();
+    second_paths.worker_directory = PathBuf::from("other");
+
+    let first = client
+        .run_with_process(&first_paths, "health.check", serde_json::json!({}), |paths| {
+            Ok(scripted_worker_with_paths(
+                "import json\nc=json.loads(input()); print(json.dumps({'commandId':c['id'],'event':'health.ok','payload':{'worker':'first'}}), flush=True)",
+                paths.clone(),
+            ))
+        })
+        .unwrap();
+    let second = client
+        .run_with_process(&second_paths, "health.check", serde_json::json!({}), |paths| {
+            Ok(scripted_worker_with_paths(
+                "import json\nc=json.loads(input()); print(json.dumps({'commandId':c['id'],'event':'health.ok','payload':{'worker':'second'}}), flush=True)",
+                paths.clone(),
+            ))
+        })
+        .unwrap();
+
+    assert_eq!(first[0].payload["worker"], "first");
+    assert_eq!(second[0].payload["worker"], "second");
+    client.shutdown().unwrap();
+}
+
+#[test]
+fn worker_client_restarts_after_command_failure() {
+    let mut client = WorkerClient::new();
+    let paths = test_paths();
+
+    let error = client
+        .run_with_process(&paths, "health.check", serde_json::json!({}), |paths| {
+            Ok(scripted_worker_with_paths(
+                "print('not-json', flush=True); input()",
+                paths.clone(),
+            ))
+        })
+        .unwrap_err();
+    assert!(error.contains("Unable to parse worker event"));
+
+    let events = client
+        .run_with_process(&paths, "health.check", serde_json::json!({}), |paths| {
+            Ok(scripted_worker_with_paths(
+                "import json\nc=json.loads(input()); print(json.dumps({'commandId':c['id'],'event':'health.ok','payload':{}}), flush=True)",
+                paths.clone(),
+            ))
+        })
+        .unwrap();
+
+    assert_eq!(events[0].event, "health.ok");
+    client.shutdown().unwrap();
+}
 #[test]
 fn worker_process_reports_malformed_output_and_can_restart() {
     let mut malformed = scripted_worker("print('not-json', flush=True); input()");
@@ -65,6 +121,10 @@ fn worker_process_serializes_progress_and_clean_shutdown() {
 }
 
 fn scripted_worker(script: &str) -> WorkerProcess {
+    scripted_worker_with_paths(script, test_paths())
+}
+
+fn scripted_worker_with_paths(script: &str, paths: WorkerRuntimePaths) -> WorkerProcess {
     let mut command = Command::new("python3");
     command
         .arg("-u")
@@ -74,7 +134,7 @@ fn scripted_worker(script: &str) -> WorkerProcess {
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
 
-    WorkerProcess::spawn(command, test_paths()).unwrap()
+    WorkerProcess::spawn(command, paths).unwrap()
 }
 
 fn run_health(

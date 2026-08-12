@@ -23,7 +23,7 @@ static WORKER_COMMAND_SEQUENCE: AtomicU64 = AtomicU64::new(1);
 const DEFAULT_COMMAND_TIMEOUT: Duration = Duration::from_secs(30 * 60);
 const SHUTDOWN_TIMEOUT: Duration = Duration::from_secs(2);
 
-struct WorkerClient {
+pub(super) struct WorkerClient {
     process: Option<WorkerProcess>,
     timeout: Duration,
 }
@@ -137,7 +137,7 @@ fn default_worker_runtime_paths() -> Result<WorkerRuntimePaths, String> {
 }
 
 impl WorkerClient {
-    fn new() -> Self {
+    pub(super) fn new() -> Self {
         Self {
             process: None,
             timeout: command_timeout(),
@@ -150,6 +150,18 @@ impl WorkerClient {
         command_name: &str,
         payload: serde_json::Value,
     ) -> Result<Vec<WorkerEvent>, String> {
+        self.run_with_process(paths, command_name, payload, WorkerProcess::start)
+    }
+    pub(super) fn run_with_process<F>(
+        &mut self,
+        paths: &WorkerRuntimePaths,
+        command_name: &str,
+        payload: serde_json::Value,
+        start_process: F,
+    ) -> Result<Vec<WorkerEvent>, String>
+    where
+        F: FnOnce(&WorkerRuntimePaths) -> Result<WorkerProcess, String>,
+    {
         if !self.is_running()
             || self
                 .process
@@ -157,7 +169,7 @@ impl WorkerClient {
                 .is_some_and(|process| process.paths != *paths)
         {
             self.shutdown()?;
-            self.process = Some(WorkerProcess::start(paths)?);
+            self.process = Some(start_process(paths)?);
         }
         let command_id = format!(
             "rust-{}-{}",
@@ -190,7 +202,7 @@ impl WorkerClient {
         matches!(process.child.try_wait(), Ok(None))
     }
 
-    fn shutdown(&mut self) -> Result<(), String> {
+    pub(super) fn shutdown(&mut self) -> Result<(), String> {
         match self.process.take() {
             Some(mut process) => process.shutdown(),
             None => Ok(()),
