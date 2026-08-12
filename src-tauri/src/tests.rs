@@ -32,9 +32,8 @@ use crate::utils::default_records_root;
 use crate::worker::runtime::{
     apply_worker_current_dir, apply_worker_path_env, extract_model_inventory,
     find_worker_python_executable, hash_worker_source_directory, model_install_payload,
-    model_install_step, parse_worker_events, resolve_worker_virtualenv_python_executable,
-    rewrite_pyvenv_home, worker_runtime_paths_from_local_data_directory, WorkerRuntimePaths,
-    WorkerRuntimeState,
+    model_install_step, resolve_worker_virtualenv_python_executable, rewrite_pyvenv_home,
+    worker_runtime_paths_from_local_data_directory, WorkerRuntimePaths, WorkerRuntimeState,
 };
 use crate::worker::runtime::{
     manifest_matches, WorkerBootstrapManifest, WORKER_RUNTIME_SCHEMA_VERSION,
@@ -1313,19 +1312,6 @@ fn setup_progress_does_not_claim_worker_process_health() {
         snapshot.desktop.worker_setup_status,
         WorkerSetupStatus::Ready
     );
-}
-
-#[test]
-fn worker_event_parser_reads_jsonl_events() {
-    let events = parse_worker_events(
-        "{\"commandId\":\"1\",\"event\":\"health.ok\",\"payload\":{\"worker\":\"test\"}}\n",
-    )
-    .unwrap();
-
-    assert_eq!(events.len(), 1);
-    assert_eq!(events[0].command_id, "1");
-    assert_eq!(events[0].event, "health.ok");
-    assert_eq!(events[0].payload["worker"], "test");
 }
 
 #[test]

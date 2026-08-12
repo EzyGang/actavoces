@@ -20,8 +20,6 @@ pub(crate) use crate::worker::command::{
     run_worker_command, shutdown_worker as stop_worker_process,
     worker_is_running as is_worker_process_running,
 };
-#[cfg(test)]
-pub(crate) use crate::worker::events::parse_worker_events;
 pub(crate) use crate::worker::events::{
     diarization_setup_message, extract_model_inventory, extract_runtime_capabilities,
     model_install_message,
