@@ -20,4 +20,8 @@ pub(crate) use recordings::{
     rename_recording_outputs, start_recording_session, stop_recording_session,
 };
 #[cfg(test)]
+pub(crate) use settings::{
+    next_dictation_push_to_talk_target, update_dictation_push_to_talk_state,
+};
+#[cfg(test)]
 pub(crate) use speaker_labels::rewrite_speaker_label;

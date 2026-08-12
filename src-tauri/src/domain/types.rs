@@ -421,12 +421,19 @@ pub enum SpeakerCountMode {
     Range,
 }
 
+#[derive(Debug, Default)]
+pub struct DictationPushToTalkState {
+    pub(crate) active: bool,
+    pub(crate) syncing: bool,
+}
+
 #[derive(Debug)]
 pub struct ActavocesState {
     pub(crate) repository: OnceLock<Mutex<AppRepository>>,
     pub(crate) capture_backend: Mutex<NativeAudioCaptureBackend>,
     pub(crate) worker_runtime: Mutex<WorkerRuntimeState>,
     pub(crate) pipeline_running: Mutex<bool>,
+    pub(crate) dictation_push_to_talk: Mutex<DictationPushToTalkState>,
 }
 
 impl ActavocesState {

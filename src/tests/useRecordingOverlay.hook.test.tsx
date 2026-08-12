@@ -60,8 +60,27 @@ const baseSettings: AppSettings = {
   summaryPrompt: 'Summary'
 };
 
-const makeSnapshot = (settings: Partial<AppSettings> = {}, overlayVisible = true): AppSnapshot => ({
-  activeRecording: null,
+const makeSnapshot = (
+  settings: Partial<AppSettings> = {},
+  overlayVisible = true,
+  profile: 'meeting' | 'dictation' = 'meeting'
+): AppSnapshot => ({
+  activeRecording: overlayVisible
+    ? {
+        id: 'recording-1',
+        title: 'Recording',
+        startedAt: '1',
+        endedAt: null,
+        durationSeconds: null,
+        status: 'recording',
+        artifactDirectory: '/tmp/actavoces/records/recording-1',
+        profile,
+        captureErrors: [],
+        stages: [],
+        artifacts: [],
+        speakerLabels: []
+      }
+    : null,
   recordings: [],
   jobs: [],
   models: [],
@@ -161,6 +180,36 @@ describe('useRecordingOverlay hook', () => {
       payload: { visible: false, displayMode: 'full' }
     });
     expect(result.current.status.displayMode.value).toBe('none');
+  });
+
+  it('keeps the dictation display mode when a snapshot follows overlay sync', async () => {
+    vi.mocked(getAppSnapshot).mockResolvedValue(makeSnapshot({}, false));
+
+    const { result } = renderHook(() => useRecordingOverlay());
+
+    await waitFor(() => {
+      expect(eventListeners.has('app-snapshot-updated')).toBe(true);
+    });
+
+    const overlaySync = eventListeners.get('recording-overlay-sync');
+    const snapshotUpdate = eventListeners.get('app-snapshot-updated');
+
+    overlaySync?.({
+      event: 'recording-overlay-sync',
+      id: 1,
+      payload: { visible: true, displayMode: 'minimal' }
+    });
+    snapshotUpdate?.({
+      event: 'app-snapshot-updated',
+      id: 2,
+      payload: makeSnapshot(
+        { overlayDisplayMode: 'full', dictationOverlayDisplayMode: 'minimal' },
+        true,
+        'dictation'
+      )
+    });
+
+    expect(result.current.status.displayMode.value).toBe('minimal');
   });
 
   it('does not let a stale initial snapshot overwrite overlay sync state', async () => {

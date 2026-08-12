@@ -5,8 +5,9 @@ use std::process::Command;
 use std::sync::atomic::{AtomicU64, Ordering};
 
 use crate::app::commands::{
-    normalized_transcription_context, rename_recording_outputs, resume_pipeline_jobs,
-    rewrite_speaker_label, start_recording_session, stop_recording_session,
+    next_dictation_push_to_talk_target, normalized_transcription_context, rename_recording_outputs,
+    resume_pipeline_jobs, rewrite_speaker_label, start_recording_session, stop_recording_session,
+    update_dictation_push_to_talk_state,
 };
 use crate::artifacts::{
     artifact_directory, capture_artifacts_with_readiness, diarization_path,
@@ -19,9 +20,9 @@ use crate::capture::audio::{
 };
 use crate::domain::types::{
     AppSettingsUpdate, ArtifactKind, CaptureDeviceInfo, DesktopRuntimeStatus, DiarizationBackend,
-    DictationShortcutMode, ModelInventoryItem, OverlayDisplayMode, OverlayPosition,
-    PipelineStageId, PipelineStageStatus, RecordingProfile, RecordingStatus, SpeakerCountMode,
-    SpeakerRenameInput, WorkerEvent, WorkerSetupStatus,
+    DictationPushToTalkState, DictationShortcutMode, ModelInventoryItem, OverlayDisplayMode,
+    OverlayPosition, PipelineStageId, PipelineStageStatus, RecordingProfile, RecordingStatus,
+    SpeakerCountMode, SpeakerRenameInput, WorkerEvent, WorkerSetupStatus,
 };
 use crate::settings::{
     default_settings,
@@ -492,6 +493,35 @@ fn dictation_shortcut_validation_accepts_single_keys_and_rejects_system_keys() {
         update.dictation_hotkey = unsupported.to_owned();
         assert!(repository.update_settings(update).is_err());
     }
+}
+
+#[test]
+fn dictation_shortcut_validation_rejects_meeting_shortcut() {
+    let database_path = test_database_path("dictation-duplicate-shortcut");
+    let mut repository = AppRepository::open(&database_path).unwrap();
+    let output_directory = test_artifact_path("dictation-duplicate-shortcut-records")
+        .display()
+        .to_string();
+    let mut update = settings_update(output_directory);
+
+    update.dictation_hotkey = update.hotkey.clone();
+
+    assert!(repository.update_settings(update).is_err());
+}
+
+#[test]
+fn dictation_push_to_talk_applies_latest_state_after_reordered_events() {
+    let mut state = DictationPushToTalkState::default();
+
+    assert!(update_dictation_push_to_talk_state(&mut state, true));
+    assert!(!update_dictation_push_to_talk_state(&mut state, false));
+    assert_eq!(
+        next_dictation_push_to_talk_target(&mut state, true),
+        Some(false)
+    );
+    assert_eq!(next_dictation_push_to_talk_target(&mut state, false), None);
+    assert!(!state.syncing);
+    assert!(!state.active);
 }
 
 #[test]

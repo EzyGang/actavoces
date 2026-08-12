@@ -78,6 +78,7 @@ export interface Recording {
   durationSeconds: number | null;
   status: RecordingStatus;
   artifactDirectory: string;
+  profile: 'meeting' | 'dictation';
   captureErrors: CaptureError[];
   stages: PipelineStage[];
   artifacts: Artifact[];

@@ -20,6 +20,7 @@ use crate::app::commands::{
     sync_recording_overlay, sync_tray_recording_icon,
 };
 use crate::capture::audio::NativeAudioCaptureBackend;
+use crate::domain::types::DictationPushToTalkState;
 use crate::domain::types::{ActavocesState, AppSettings};
 use crate::storage::repository::AppRepository;
 use crate::worker::runtime::WorkerRuntimeState;
@@ -58,6 +59,7 @@ pub fn run() {
             capture_backend: Mutex::new(NativeAudioCaptureBackend::default()),
             worker_runtime: Mutex::new(WorkerRuntimeState::default()),
             pipeline_running: Mutex::new(false),
+            dictation_push_to_talk: Mutex::new(DictationPushToTalkState::default()),
         })
         .plugin(tauri_plugin_autostart::init(
             MacosLauncher::LaunchAgent,

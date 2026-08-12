@@ -110,6 +110,7 @@ const makeRecording = (id: string): Recording => ({
   durationSeconds: 60,
   status: 'processing',
   artifactDirectory: `/tmp/actavoces/records/${id}`,
+  profile: 'meeting',
   captureErrors: [],
   stages: [
     {
