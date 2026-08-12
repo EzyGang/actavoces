@@ -28,9 +28,10 @@ pub async fn update_app_settings(
         let _capture_admission = state.capture_admission.lock().map_err(lock_error)?;
         let mut repository = state.repository()?;
         let current_settings = repository.settings().map_err(|error| error.to_string())?;
-        let shortcut_settings_changed = input.dictation_hotkey != current_settings.dictation_hotkey
+        let hotkeys_changed = input.hotkey != current_settings.hotkey
+            || input.dictation_hotkey != current_settings.dictation_hotkey
             || input.dictation_shortcut_mode != current_settings.dictation_shortcut_mode;
-        if shortcut_settings_changed
+        if hotkeys_changed
             && state
                 .dictation_runtime
                 .lock()
@@ -38,20 +39,23 @@ pub async fn update_app_settings(
                 .blocks_shortcut_settings_update()
         {
             return Err(
-                "Dictation shortcut settings cannot change during an active capture".to_owned(),
+                "Shortcut settings cannot change during an active dictation capture".to_owned(),
             );
         }
+        validate_dictation_hotkey(&input.dictation_hotkey)?;
 
         repository
             .update_settings(input)
             .map_err(|error| error.to_string())?;
         drop(repository);
-        refresh_global_hotkey(&app_for_settings)
+        if hotkeys_changed {
+            refresh_global_hotkey(&app_for_settings)?;
+        }
+
+        Ok(())
     })
     .await
     .map_err(|error| format!("Settings update task failed: {error}"))??;
-
-    refresh_global_hotkey(&app)?;
     sync_launch_at_login(&app, launch_at_login)?;
 
     let snapshot = {

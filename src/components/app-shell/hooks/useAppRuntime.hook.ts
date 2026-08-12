@@ -222,20 +222,24 @@ const useRuntimeEffects = ({
       return;
     }
 
-    void getDictationStatus()
-      .then((status) => {
-        dictationStatus.value = status;
-      })
-      .catch(() => {});
-
     const snapshotListener = listen<AppSnapshot>('app-snapshot-updated', (event) => {
       setSnapshot(event.payload);
       setupProgress.value = setupProgressFromSnapshot(event.payload);
       loading.value = false;
     });
+    let receivedDictationUpdate = false;
     const dictationListener = listen<DictationStateUpdate>('dictation-state-update', (event) => {
+      receivedDictationUpdate = true;
       dictationStatus.value = event.payload;
     });
+    void dictationListener
+      .then(() => getDictationStatus())
+      .then((status) => {
+        if (!receivedDictationUpdate) {
+          dictationStatus.value = status;
+        }
+      })
+      .catch(() => {});
     const errorListener = listen<string>('app-error', (event) => {
       setError(event.payload);
     });
