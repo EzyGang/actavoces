@@ -8,6 +8,7 @@ pub(crate) const DEFAULT_SUMMARY_PROMPT: &str =
     "Summarize the conversation. Then provide bullet lists for decisions and action items.";
 pub(crate) const SUMMARY_PROVIDER_API_KEY_SETTING: &str = "providerApiKey";
 pub(crate) const HUGGING_FACE_TOKEN_SETTING: &str = "huggingFaceToken";
+const SUPPORTED_WHISPER_MODELS: [&str; 4] = ["small", "medium", "large-v3", "distil-large-v3"];
 
 pub(crate) fn default_settings(database_path: &Path) -> AppSettings {
     AppSettings {
@@ -50,7 +51,7 @@ pub(crate) fn default_settings(database_path: &Path) -> AppSettings {
 }
 
 pub(crate) fn default_model_inventory() -> Vec<ModelInventoryItem> {
-    ["small", "medium", "large-v3", "distil-large-v3"]
+    SUPPORTED_WHISPER_MODELS
         .iter()
         .map(|model| ModelInventoryItem {
             name: (*model).to_owned(),
@@ -150,6 +151,12 @@ pub(crate) fn validate_settings(
     if input.sample_rate == 0 {
         return Err(rusqlite::Error::InvalidParameterName(
             "Sample rate must be greater than zero".to_owned(),
+        ));
+    }
+
+    if !SUPPORTED_WHISPER_MODELS.contains(&input.whisper_model.as_str()) {
+        return Err(rusqlite::Error::InvalidParameterName(
+            "Whisper model must be one of: small, medium, large-v3, distil-large-v3".to_owned(),
         ));
     }
 

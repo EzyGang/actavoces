@@ -27,6 +27,7 @@ use crate::domain::types::{
 use crate::settings::{
     default_settings,
     recommendation::{model_recommendation, ModelRecommendationInput},
+    validate_settings,
 };
 use crate::storage::repository::{AppRepository, NewRecording};
 use crate::utils::default_records_root;
@@ -287,6 +288,21 @@ fn bootstrap_model_install_payload_uses_settings_model() {
     );
     assert_eq!(payload["model"], "distil-large-v3");
     assert_eq!(payload["computeType"], "cuda");
+}
+
+#[test]
+fn settings_reject_unsupported_whisper_model() {
+    let mut settings = settings_update(test_artifact_path("invalid-model").display().to_string());
+    settings.whisper_model = "custom-model".to_owned();
+
+    let error = validate_settings(&settings, false).unwrap_err();
+
+    assert_eq!(
+        error,
+        rusqlite::Error::InvalidParameterName(
+            "Whisper model must be one of: small, medium, large-v3, distil-large-v3".to_owned(),
+        )
+    );
 }
 
 #[test]

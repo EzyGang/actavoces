@@ -516,8 +516,16 @@ def test_cuda_status_requires_nvidia_libraries(mocker: MockerFixture) -> None:
     assert cuda_status() == (False, 'Missing NVIDIA libraries: cudnn64_9.dll')
 
 
-def test_model_installed_detects_expected_storage_names(tmp_path: Path) -> None:
-    (tmp_path / 'faster-whisper-medium').mkdir()
+def test_model_installed_requires_model_artifacts(tmp_path: Path) -> None:
+    cache_path = tmp_path / 'models--Systran--faster-whisper-medium'
+    cache_path.mkdir()
+
+    assert not model_installed('medium', tmp_path)
+
+    model_path = cache_path / 'snapshots' / 'revision'
+    model_path.mkdir(parents=True)
+    (model_path / 'model.bin').touch()
+    (model_path / 'config.json').touch()
 
     assert model_installed('medium', tmp_path)
 

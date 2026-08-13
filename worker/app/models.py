@@ -206,13 +206,23 @@ def model_installed(model_name: str, storage_path: Path | None) -> bool:
     if storage_path is None:
         return False
 
-    expected_names = [
-        model_name,
-        f'models--Systran--faster-whisper-{model_name}',
-        f'faster-whisper-{model_name}',
+    expected_paths = [
+        storage_path / model_name,
+        storage_path / f'models--Systran--faster-whisper-{model_name}',
+        storage_path / f'faster-whisper-{model_name}',
     ]
 
-    return any((storage_path / name).exists() for name in expected_names)
+    return any(has_model_artifacts(path=path) for path in expected_paths)
+
+
+def has_model_artifacts(path: Path) -> bool:
+    if not path.is_dir():
+        return False
+
+    return any(
+        candidate.is_dir() and (candidate / 'model.bin').is_file() and (candidate / 'config.json').is_file()
+        for candidate in [path, *path.glob('snapshots/*')]
+    )
 
 
 def model_kwargs(compute_type: str, storage_path: Path | None) -> dict[str, Any]:
