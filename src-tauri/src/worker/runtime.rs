@@ -1,6 +1,8 @@
 use crate::domain::types::*;
+use crate::utils::lock_error;
 use crate::worker::command::{
-    run_uv_sync, run_uv_sync_extra, run_worker_command_with_paths, WORKER_RUNTIME_PATHS,
+    run_uv_sync, run_uv_sync_extra, run_worker_command_with_paths, shutdown_worker,
+    WORKER_RUNTIME_PATHS,
 };
 use crate::worker::files::{
     prepare_uv_executable, prepare_worker_directory, prepare_worker_virtualenv,
@@ -13,17 +15,22 @@ use crate::worker::progress::{
 };
 use crate::worker::source_hash::worker_source_hash;
 
-pub(crate) use crate::worker::command::run_worker_command;
 #[cfg(test)]
 pub(crate) use crate::worker::command::{apply_worker_current_dir, apply_worker_path_env};
-#[cfg(test)]
-pub(crate) use crate::worker::events::parse_worker_events;
+pub(crate) use crate::worker::command::{
+    run_worker_command, shutdown_worker as stop_worker_process,
+    worker_is_running as is_worker_process_running,
+};
 pub(crate) use crate::worker::events::{
     diarization_setup_message, extract_model_inventory, extract_runtime_capabilities,
     model_install_message,
 };
 #[cfg(test)]
 pub(crate) use crate::worker::files::rewrite_pyvenv_home;
+#[cfg(test)]
+pub(crate) use crate::worker::manifest::{
+    manifest_matches, WorkerBootstrapManifest, WORKER_RUNTIME_SCHEMA_VERSION,
+};
 #[cfg(test)]
 pub(crate) use crate::worker::paths::worker_runtime_paths_from_local_data_directory;
 pub(crate) use crate::worker::paths::WorkerRuntimePaths;
@@ -53,17 +60,79 @@ impl WorkerRuntimeState {
     }
 }
 
+fn ensure_worker_health(
+    paths: &WorkerRuntimePaths,
+    state: &tauri::State<'_, ActavocesState>,
+) -> Result<(), String> {
+    let events = run_worker_command_with_paths(paths, "health.check", serde_json::json!({}))?;
+
+    if !events.iter().any(|event| event.event == "health.ok") {
+        return Err("Worker health check did not return health.ok".to_owned());
+    }
+
+    synchronize_worker_health(state)
+}
+
+fn synchronize_worker_health(state: &tauri::State<'_, ActavocesState>) -> Result<(), String> {
+    let status = {
+        let mut runtime = state.worker_runtime.lock().map_err(lock_error)?;
+
+        runtime.running = is_worker_process_running();
+        runtime.health_ok = runtime.running;
+        runtime.last_error = None;
+        runtime.status()
+    };
+    let mut repository = state.repository()?;
+
+    repository
+        .update_worker_runtime_status(&status)
+        .map_err(|error| error.to_string())
+}
+fn ensure_configured_model_is_installed(
+    paths: &WorkerRuntimePaths,
+    settings: &AppSettings,
+) -> Result<(), String> {
+    let events = run_worker_command_with_paths(
+        paths,
+        "models.status",
+        serde_json::json!({
+            "modelStorageDirectory": &settings.model_storage_directory,
+        }),
+    )?;
+    let models = extract_model_inventory(&events)?;
+
+    if models
+        .iter()
+        .any(|model| model.name == settings.whisper_model && model.installed)
+    {
+        return Ok(());
+    }
+
+    Err(format!("Model {} is not installed", settings.whisper_model))
+}
+
 pub(crate) fn bootstrap_worker(
     app: &tauri::AppHandle,
     state: &tauri::State<'_, ActavocesState>,
 ) -> Result<(), String> {
     let paths = worker_runtime_paths(app)?;
     WORKER_RUNTIME_PATHS.get_or_init(|| paths.clone());
+    let settings = {
+        let repository = state.repository()?;
 
+        repository.settings().map_err(|error| error.to_string())?
+    };
     let source_hash = worker_source_hash(app)?;
 
-    match worker_bootstrap_is_ready(&paths, &source_hash) {
+    match worker_bootstrap_is_ready(
+        &paths,
+        &source_hash,
+        &settings.whisper_model,
+        &settings.model_storage_directory,
+    ) {
         true => {
+            ensure_configured_model_is_installed(&paths, &settings)?;
+            ensure_worker_health(&paths, state)?;
             persist_worker_setup_progress(
                 state,
                 &WorkerSetupProgress {
@@ -120,6 +189,7 @@ pub(crate) fn run_worker_bootstrap(
     if !health_events.iter().any(|event| event.event == "health.ok") {
         return Err("Worker health check did not return health.ok".to_owned());
     }
+    synchronize_worker_health(state)?;
     refresh_runtime_capabilities_with_paths(state, &paths)?;
 
     let (settings, cuda_available) = {
@@ -179,7 +249,20 @@ pub(crate) fn run_worker_bootstrap(
             .map_err(|error| error.to_string())?;
     }
 
-    write_worker_bootstrap_manifest(&paths, &source_hash, &settings.whisper_model)?;
+    let default_model_installed = models
+        .iter()
+        .any(|model| model.name == settings.whisper_model && model.installed);
+    if !default_model_installed {
+        return Err(format!("Model {} is not installed", settings.whisper_model));
+    }
+
+    write_worker_bootstrap_manifest(
+        &paths,
+        &source_hash,
+        &settings.whisper_model,
+        &settings.model_storage_directory,
+        default_model_installed,
+    )?;
     emit_worker_setup_progress(
         app,
         state,
@@ -234,6 +317,7 @@ pub(crate) fn run_diarization_setup(
         None,
     )?;
     run_uv_sync_extra(&paths, "diarization")?;
+    shutdown_worker()?;
 
     emit_worker_setup_progress(
         app,

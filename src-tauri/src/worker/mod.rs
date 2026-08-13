@@ -1,4 +1,6 @@
 mod command;
+#[cfg(test)]
+mod command_tests;
 mod events;
 mod files;
 mod manifest;

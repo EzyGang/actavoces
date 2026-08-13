@@ -1,22 +1,5 @@
 use crate::domain::types::{ModelInventoryItem, RuntimeCapabilities, WorkerEvent};
 
-pub(crate) fn parse_worker_events(output: &str) -> Result<Vec<WorkerEvent>, String> {
-    let mut events = Vec::new();
-
-    for line in output.lines() {
-        if line.trim().is_empty() {
-            continue;
-        }
-
-        events.push(
-            serde_json::from_str(line)
-                .map_err(|error| format!("Unable to parse worker event: {error}"))?,
-        );
-    }
-
-    Ok(events)
-}
-
 pub(crate) fn extract_model_inventory(
     events: &[WorkerEvent],
 ) -> Result<Vec<ModelInventoryItem>, String> {

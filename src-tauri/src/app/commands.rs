@@ -14,6 +14,8 @@ pub use settings::{register_global_hotkey, sync_launch_at_login};
 pub use tray::{init_tray, sync_tray_recording_icon};
 
 #[cfg(test)]
+pub(crate) use models::validate_model_install_input;
+#[cfg(test)]
 pub(crate) use pipeline::{normalized_transcription_context, resume_pipeline_jobs};
 #[cfg(test)]
 pub(crate) use recordings::{
@@ -21,3 +23,5 @@ pub(crate) use recordings::{
 };
 #[cfg(test)]
 pub(crate) use speaker_labels::rewrite_speaker_label;
+#[cfg(test)]
+pub(crate) use worker::worker_status_with_process_state;

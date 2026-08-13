@@ -7,6 +7,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use crate::app::commands::{
     normalized_transcription_context, rename_recording_outputs, resume_pipeline_jobs,
     rewrite_speaker_label, start_recording_session, stop_recording_session,
+    validate_model_install_input, worker_status_with_process_state,
 };
 use crate::artifacts::{
     artifact_directory, capture_artifacts_with_readiness, diarization_path,
@@ -20,20 +21,24 @@ use crate::capture::audio::{
 use crate::domain::types::{
     AppSettingsUpdate, ArtifactKind, CaptureDeviceInfo, DesktopRuntimeStatus, DiarizationBackend,
     ModelInventoryItem, OverlayDisplayMode, OverlayPosition, PipelineStageId, PipelineStageStatus,
-    RecordingStatus, SpeakerCountMode, SpeakerRenameInput, WorkerEvent, WorkerSetupStatus,
+    RecordingStatus, SpeakerCountMode, SpeakerRenameInput, WorkerEvent, WorkerSetupProgress,
+    WorkerSetupStatus,
 };
 use crate::settings::{
     default_settings,
     recommendation::{model_recommendation, ModelRecommendationInput},
+    validate_settings,
 };
 use crate::storage::repository::{AppRepository, NewRecording};
 use crate::utils::default_records_root;
 use crate::worker::runtime::{
     apply_worker_current_dir, apply_worker_path_env, extract_model_inventory,
     find_worker_python_executable, hash_worker_source_directory, model_install_payload,
-    model_install_step, parse_worker_events, resolve_worker_virtualenv_python_executable,
-    rewrite_pyvenv_home, worker_runtime_paths_from_local_data_directory, WorkerRuntimePaths,
-    WorkerRuntimeState,
+    model_install_step, resolve_worker_virtualenv_python_executable, rewrite_pyvenv_home,
+    worker_runtime_paths_from_local_data_directory, WorkerRuntimePaths, WorkerRuntimeState,
+};
+use crate::worker::runtime::{
+    manifest_matches, WorkerBootstrapManifest, WORKER_RUNTIME_SCHEMA_VERSION,
 };
 
 static TEST_PATH_COUNTER: AtomicU64 = AtomicU64::new(0);
@@ -283,6 +288,60 @@ fn bootstrap_model_install_payload_uses_settings_model() {
     );
     assert_eq!(payload["model"], "distil-large-v3");
     assert_eq!(payload["computeType"], "cuda");
+}
+
+#[test]
+fn settings_and_model_install_reject_unsupported_whisper_model() {
+    let mut settings = settings_update(test_artifact_path("invalid-model").display().to_string());
+    settings.whisper_model = "custom-model".to_owned();
+    let install_input = crate::domain::types::ModelInstallInput {
+        model: "custom-model".to_owned(),
+    };
+
+    let settings_error = validate_settings(&settings, false).unwrap_err();
+    let install_error = validate_model_install_input(&install_input).unwrap_err();
+
+    assert_eq!(settings_error.to_string(), install_error);
+}
+#[test]
+fn worker_manifest_requires_current_configured_model() {
+    let manifest = WorkerBootstrapManifest {
+        runtime_schema_version: WORKER_RUNTIME_SCHEMA_VERSION,
+        worker_source_hash: "source".to_owned(),
+        uv_ready: true,
+        synced: true,
+        health_ok: true,
+        default_model: "small".to_owned(),
+        model_storage_directory: "/models".to_owned(),
+        default_model_installed: true,
+    };
+
+    assert!(manifest_matches(&manifest, "source", "small", "/models"));
+    assert!(!manifest_matches(
+        &manifest,
+        "source",
+        "small",
+        "/other-models"
+    ));
+    assert!(!manifest_matches(&manifest, "source", "medium", "/models"));
+}
+
+#[test]
+fn worker_status_clears_health_after_process_exit() {
+    let mut runtime = WorkerRuntimeState {
+        running: true,
+        health_ok: true,
+        last_error: None,
+    };
+
+    let status = worker_status_with_process_state(&mut runtime, false);
+
+    assert!(!status.running);
+    assert!(!status.health_ok);
+    assert_eq!(
+        status.last_error.as_deref(),
+        Some("Python worker is not running")
+    );
 }
 
 #[test]
@@ -1273,16 +1332,26 @@ fn desktop_runtime_status_is_included_in_snapshot() {
 }
 
 #[test]
-fn worker_event_parser_reads_jsonl_events() {
-    let events = parse_worker_events(
-        "{\"commandId\":\"1\",\"event\":\"health.ok\",\"payload\":{\"worker\":\"test\"}}\n",
-    )
-    .unwrap();
+fn setup_progress_does_not_claim_worker_process_health() {
+    let database_path = test_database_path("worker-setup-progress");
+    let mut repository = AppRepository::open(&database_path).unwrap();
 
-    assert_eq!(events.len(), 1);
-    assert_eq!(events[0].command_id, "1");
-    assert_eq!(events[0].event, "health.ok");
-    assert_eq!(events[0].payload["worker"], "test");
+    repository
+        .update_worker_setup_progress(&WorkerSetupProgress {
+            status: WorkerSetupStatus::Ready,
+            step: "Worker runtime ready".to_owned(),
+            error: None,
+        })
+        .unwrap();
+
+    let snapshot = repository.snapshot().unwrap();
+
+    assert!(!snapshot.desktop.worker_running);
+    assert!(!snapshot.desktop.worker_health_ok);
+    assert_eq!(
+        snapshot.desktop.worker_setup_status,
+        WorkerSetupStatus::Ready
+    );
 }
 
 #[test]

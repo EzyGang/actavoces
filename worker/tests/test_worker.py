@@ -1,3 +1,4 @@
+import io
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
@@ -20,7 +21,9 @@ from app.events import emit
 from app.formatting import render_diarized_transcript, render_raw_transcript
 from app.handlers import handle
 from app.json_utils import loads
+from app.main import run
 from app.models import (
+    TranscriptionModelCache,
     cuda_status,
     install_faster_whisper_model,
     model_installed,
@@ -75,6 +78,31 @@ def test_emit_serializes_worker_event_aliases(capsys: Any) -> None:
     emit(WorkerEvent(command_id='1', event='health.ok', payload={'worker': 'test'}))
 
     assert capsys.readouterr().out == '{"commandId":"1","event":"health.ok","payload":{"worker":"test"}}\n'
+
+
+async def test_jsonl_runner_recovers_from_malformed_and_unknown_commands(capsys: Any, mocker: MockerFixture) -> None:
+    mocker.patch(
+        'app.main.sys.stdin',
+        io.StringIO(
+            'not json\n{"id":"unsupported","name":"unknown.command"}\n{"id":"healthy","name":"health.check"}\n'
+        ),
+    )
+
+    await run()
+
+    events = [loads(line) for line in capsys.readouterr().out.splitlines()]
+
+    assert events[0]['commandId'] == 'unknown'
+    assert events[0]['event'] == 'command.failed'
+    assert events[0]['payload']['error'].startswith('invalid literal')
+    assert events[1:] == [
+        {
+            'commandId': 'unsupported',
+            'event': 'command.unsupported',
+            'payload': {'name': 'unknown.command'},
+        },
+        {'commandId': 'healthy', 'event': 'health.ok', 'payload': {'worker': 'actavoces-worker'}},
+    ]
 
 
 async def test_transcribe_run_writes_supplied_segments(tmp_path: Path) -> None:
@@ -239,6 +267,53 @@ def test_faster_whisper_adapter_returns_segments_from_model() -> None:
             'word_timestamps': True,
             'language': 'en',
         }
+    ]
+
+
+def test_transcription_model_cache_reuses_compatible_model() -> None:
+    constructions: list[tuple[str, dict[str, Any]]] = []
+
+    class FakeModel:
+        def __init__(self, model_name: str, **kwargs: Any) -> None:
+            constructions.append((model_name, kwargs))
+
+        def transcribe(self, audio_path: str, **kwargs: Any) -> tuple[list[SimpleNamespace], SimpleNamespace]:
+            return ([], SimpleNamespace(language='en'))
+
+    cache = TranscriptionModelCache()
+
+    storage_path = Path('/tmp/models')
+    first = cache.get(FakeModel, 'medium', 'cpu', storage_path)
+    second = cache.get(FakeModel, 'medium', 'cpu', storage_path)
+
+    assert first is second
+    assert constructions == [('medium', {'device': 'cpu', 'compute_type': 'int8', 'download_root': str(storage_path)})]
+
+
+def test_transcription_model_cache_replaces_changed_configuration() -> None:
+    constructions: list[tuple[str, dict[str, Any]]] = []
+
+    class FakeModel:
+        def __init__(self, model_name: str, **kwargs: Any) -> None:
+            constructions.append((model_name, kwargs))
+
+        def transcribe(self, audio_path: str, **kwargs: Any) -> tuple[list[SimpleNamespace], SimpleNamespace]:
+            return ([], SimpleNamespace(language='en'))
+
+    cache = TranscriptionModelCache()
+
+    first_storage_path = Path('/tmp/models')
+    second_storage_path = Path('/tmp/other-models')
+    first = cache.get(FakeModel, 'small', 'cpu', first_storage_path)
+    second = cache.get(FakeModel, 'medium', 'cuda', second_storage_path)
+
+    assert first is not second
+    assert constructions == [
+        ('small', {'device': 'cpu', 'compute_type': 'int8', 'download_root': str(first_storage_path)}),
+        (
+            'medium',
+            {'device': 'cuda', 'compute_type': 'int8_float16', 'download_root': str(second_storage_path)},
+        ),
     ]
 
 
@@ -441,8 +516,16 @@ def test_cuda_status_requires_nvidia_libraries(mocker: MockerFixture) -> None:
     assert cuda_status() == (False, 'Missing NVIDIA libraries: cudnn64_9.dll')
 
 
-def test_model_installed_detects_expected_storage_names(tmp_path: Path) -> None:
-    (tmp_path / 'faster-whisper-medium').mkdir()
+def test_model_installed_requires_model_artifacts(tmp_path: Path) -> None:
+    cache_path = tmp_path / 'models--Systran--faster-whisper-medium'
+    cache_path.mkdir()
+
+    assert not model_installed('medium', tmp_path)
+
+    model_path = cache_path / 'snapshots' / 'revision'
+    model_path.mkdir(parents=True)
+    (model_path / 'model.bin').touch()
+    (model_path / 'config.json').touch()
 
     assert model_installed('medium', tmp_path)
 

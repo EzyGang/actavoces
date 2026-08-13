@@ -142,9 +142,7 @@ export const useUpdates = ({ loading, setError, setupReady }: UseUpdatesInput) =
     }
 
     initialCheckRequested.value = true;
-    window.requestAnimationFrame(() => {
-      void runUpdateCheck(false);
-    });
+    void runUpdateCheck(false);
   }, [setupReady.value, loading.value]);
 
   return {

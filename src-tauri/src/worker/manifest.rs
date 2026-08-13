@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 use crate::worker::files::worker_virtualenv_is_scoped;
 use crate::worker::paths::{uv_runtime_is_available, WorkerRuntimePaths};
 
-pub(crate) const WORKER_RUNTIME_SCHEMA_VERSION: u16 = 4;
+pub(crate) const WORKER_RUNTIME_SCHEMA_VERSION: u16 = 5;
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -16,10 +16,16 @@ pub(crate) struct WorkerBootstrapManifest {
     pub(crate) synced: bool,
     pub(crate) health_ok: bool,
     pub(crate) default_model: String,
+    pub(crate) model_storage_directory: String,
     pub(crate) default_model_installed: bool,
 }
 
-pub(crate) fn worker_bootstrap_is_ready(paths: &WorkerRuntimePaths, source_hash: &str) -> bool {
+pub(crate) fn worker_bootstrap_is_ready(
+    paths: &WorkerRuntimePaths,
+    source_hash: &str,
+    configured_model: &str,
+    model_storage_directory: &str,
+) -> bool {
     if !uv_runtime_is_available(paths)
         || !paths.worker_directory.join("app").join("main.py").exists()
         || !worker_virtualenv_is_scoped(paths)
@@ -28,17 +34,30 @@ pub(crate) fn worker_bootstrap_is_ready(paths: &WorkerRuntimePaths, source_hash:
     }
 
     match read_worker_bootstrap_manifest(paths) {
-        Some(manifest) => {
-            manifest.runtime_schema_version == WORKER_RUNTIME_SCHEMA_VERSION
-                && manifest.worker_source_hash == source_hash
-                && manifest.uv_ready
-                && manifest.synced
-                && manifest.health_ok
-                && bootstrap_model_is_supported(&manifest.default_model)
-                && manifest.default_model_installed
-        }
+        Some(manifest) => manifest_matches(
+            &manifest,
+            source_hash,
+            configured_model,
+            model_storage_directory,
+        ),
         None => false,
     }
+}
+
+pub(crate) fn manifest_matches(
+    manifest: &WorkerBootstrapManifest,
+    source_hash: &str,
+    configured_model: &str,
+    model_storage_directory: &str,
+) -> bool {
+    manifest.runtime_schema_version == WORKER_RUNTIME_SCHEMA_VERSION
+        && manifest.worker_source_hash == source_hash
+        && manifest.uv_ready
+        && manifest.synced
+        && manifest.health_ok
+        && manifest.default_model == configured_model
+        && manifest.model_storage_directory == model_storage_directory
+        && manifest.default_model_installed
 }
 
 pub(crate) fn read_worker_bootstrap_manifest(
@@ -54,6 +73,8 @@ pub(crate) fn write_worker_bootstrap_manifest(
     paths: &WorkerRuntimePaths,
     source_hash: &str,
     default_model: &str,
+    model_storage_directory: &str,
+    default_model_installed: bool,
 ) -> Result<(), String> {
     let manifest = WorkerBootstrapManifest {
         runtime_schema_version: WORKER_RUNTIME_SCHEMA_VERSION,
@@ -62,7 +83,8 @@ pub(crate) fn write_worker_bootstrap_manifest(
         synced: true,
         health_ok: true,
         default_model: default_model.to_owned(),
-        default_model_installed: true,
+        model_storage_directory: model_storage_directory.to_owned(),
+        default_model_installed,
     };
     let content = serde_json::to_string_pretty(&manifest)
         .map_err(|error| format!("Unable to serialize worker manifest: {error}"))?;
@@ -72,8 +94,4 @@ pub(crate) fn write_worker_bootstrap_manifest(
         content,
     )
     .map_err(|error| format!("Unable to write worker manifest: {error}"))
-}
-
-fn bootstrap_model_is_supported(model: &str) -> bool {
-    matches!(model, "small" | "medium" | "large-v3" | "distil-large-v3")
 }

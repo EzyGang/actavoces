@@ -83,17 +83,12 @@ impl AppRepository {
         desktop_status.worker_setup_error = progress.error.clone();
 
         match progress.status {
-            WorkerSetupStatus::Ready => {
-                desktop_status.worker_running = true;
-                desktop_status.worker_health_ok = true;
-                desktop_status.worker_error = None;
-            }
             WorkerSetupStatus::Failed => {
-                desktop_status.worker_running = true;
-                desktop_status.worker_health_ok = false;
                 desktop_status.worker_error = progress.error.clone();
             }
-            WorkerSetupStatus::Missing | WorkerSetupStatus::Installing => (),
+            WorkerSetupStatus::Missing
+            | WorkerSetupStatus::Installing
+            | WorkerSetupStatus::Ready => (),
         }
 
         self.update_desktop_runtime_status(&desktop_status)
