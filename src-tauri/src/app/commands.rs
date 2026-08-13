@@ -21,3 +21,5 @@ pub(crate) use recordings::{
 };
 #[cfg(test)]
 pub(crate) use speaker_labels::rewrite_speaker_label;
+#[cfg(test)]
+pub(crate) use worker::worker_status_with_process_state;

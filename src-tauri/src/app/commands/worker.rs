@@ -45,15 +45,28 @@ pub async fn bootstrap_worker_runtime(app: tauri::AppHandle) -> Result<AppSnapsh
 
 #[tauri::command]
 pub fn get_worker_status(state: tauri::State<'_, ActavocesState>) -> Result<WorkerStatus, String> {
-    state
-        .worker_runtime
-        .lock()
-        .map(|runtime| {
-            let mut status = runtime.status();
-            status.running = is_worker_process_running();
-            status
-        })
-        .map_err(lock_error)
+    let status = {
+        let mut runtime = state.worker_runtime.lock().map_err(lock_error)?;
+
+        worker_status_with_process_state(&mut runtime, is_worker_process_running())
+    };
+    persist_worker_status(&state, &status)?;
+
+    Ok(status)
+}
+
+pub(crate) fn worker_status_with_process_state(
+    runtime: &mut crate::worker::runtime::WorkerRuntimeState,
+    process_running: bool,
+) -> WorkerStatus {
+    runtime.running = process_running;
+
+    if !process_running {
+        runtime.health_ok = false;
+        runtime.last_error = Some("Python worker is not running".to_owned());
+    }
+
+    runtime.status()
 }
 
 #[tauri::command]

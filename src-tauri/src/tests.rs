@@ -4,6 +4,7 @@ use std::path::Path;
 use std::process::Command;
 use std::sync::atomic::{AtomicU64, Ordering};
 
+use crate::app::commands::worker_status_with_process_state;
 use crate::app::commands::{
     normalized_transcription_context, rename_recording_outputs, resume_pipeline_jobs,
     rewrite_speaker_label, start_recording_session, stop_recording_session,
@@ -297,11 +298,36 @@ fn worker_manifest_requires_current_configured_model() {
         synced: true,
         health_ok: true,
         default_model: "small".to_owned(),
+        model_storage_directory: "/models".to_owned(),
         default_model_installed: true,
     };
 
-    assert!(manifest_matches(&manifest, "source", "small"));
-    assert!(!manifest_matches(&manifest, "source", "medium"));
+    assert!(manifest_matches(&manifest, "source", "small", "/models"));
+    assert!(!manifest_matches(
+        &manifest,
+        "source",
+        "small",
+        "/other-models"
+    ));
+    assert!(!manifest_matches(&manifest, "source", "medium", "/models"));
+}
+
+#[test]
+fn worker_status_clears_health_after_process_exit() {
+    let mut runtime = WorkerRuntimeState {
+        running: true,
+        health_ok: true,
+        last_error: None,
+    };
+
+    let status = worker_status_with_process_state(&mut runtime, false);
+
+    assert!(!status.running);
+    assert!(!status.health_ok);
+    assert_eq!(
+        status.last_error.as_deref(),
+        Some("Python worker is not running")
+    );
 }
 
 #[test]

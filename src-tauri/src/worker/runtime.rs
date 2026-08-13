@@ -87,6 +87,28 @@ fn synchronize_worker_health(state: &tauri::State<'_, ActavocesState>) -> Result
         .update_worker_runtime_status(&status)
         .map_err(|error| error.to_string())
 }
+fn ensure_configured_model_is_installed(
+    paths: &WorkerRuntimePaths,
+    settings: &AppSettings,
+) -> Result<(), String> {
+    let events = run_worker_command_with_paths(
+        paths,
+        "models.status",
+        serde_json::json!({
+            "modelStorageDirectory": &settings.model_storage_directory,
+        }),
+    )?;
+    let models = extract_model_inventory(&events)?;
+
+    if models
+        .iter()
+        .any(|model| model.name == settings.whisper_model && model.installed)
+    {
+        return Ok(());
+    }
+
+    Err(format!("Model {} is not installed", settings.whisper_model))
+}
 
 pub(crate) fn bootstrap_worker(
     app: &tauri::AppHandle,
@@ -101,8 +123,14 @@ pub(crate) fn bootstrap_worker(
     };
     let source_hash = worker_source_hash(app)?;
 
-    match worker_bootstrap_is_ready(&paths, &source_hash, &settings.whisper_model) {
+    match worker_bootstrap_is_ready(
+        &paths,
+        &source_hash,
+        &settings.whisper_model,
+        &settings.model_storage_directory,
+    ) {
         true => {
+            ensure_configured_model_is_installed(&paths, &settings)?;
             ensure_worker_health(&paths, state)?;
             persist_worker_setup_progress(
                 state,
@@ -231,6 +259,7 @@ pub(crate) fn run_worker_bootstrap(
         &paths,
         &source_hash,
         &settings.whisper_model,
+        &settings.model_storage_directory,
         default_model_installed,
     )?;
     emit_worker_setup_progress(

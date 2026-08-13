@@ -1,6 +1,8 @@
+use std::fs;
 use std::path::PathBuf;
 use std::process::{Command, Stdio};
 use std::sync::{LazyLock, Mutex};
+use std::thread;
 use std::time::Duration;
 
 use crate::worker::command::{WorkerClient, WorkerProcess};
@@ -80,6 +82,44 @@ fn worker_client_restarts_after_command_failure() {
     assert_eq!(events[0].event, "health.ok");
     client.shutdown().unwrap();
 }
+
+#[test]
+fn worker_client_restarts_after_broken_pipe() {
+    let _lock = worker_process_test_lock();
+    let mut client = WorkerClient::new();
+    let paths = test_paths();
+    let ready_path = std::env::temp_dir().join("actavoces-worker-stdin-closed");
+    let _ = fs::remove_file(&ready_path);
+    let script =
+        format!("import os,time\nos.close(0)\nopen({ready_path:?}, 'w').close()\ntime.sleep(5)");
+
+    let error = client
+        .run_with_process(&paths, "health.check", serde_json::json!({}), |paths| {
+            let process = scripted_worker_with_paths(&script, paths.clone());
+
+            while !ready_path.exists() {
+                thread::sleep(Duration::from_millis(1));
+            }
+
+            Ok(process)
+        })
+        .unwrap_err();
+    assert!(error.contains("Unable to write worker command"), "{error}");
+
+    let events = client
+        .run_with_process(&paths, "health.check", serde_json::json!({}), |paths| {
+            Ok(scripted_worker_with_paths(
+                "import json\nc=json.loads(input()); print(json.dumps({'commandId':c['id'],'event':'health.ok','payload':{}}), flush=True)",
+                paths.clone(),
+            ))
+        })
+        .unwrap();
+
+    assert_eq!(events[0].event, "health.ok");
+    client.shutdown().unwrap();
+    let _ = fs::remove_file(ready_path);
+}
+
 #[test]
 fn worker_process_reports_malformed_output_and_can_restart() {
     let _lock = worker_process_test_lock();
