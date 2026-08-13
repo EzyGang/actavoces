@@ -1,9 +1,9 @@
 use std::fs;
 use std::path::PathBuf;
 use std::process::{Command, Stdio};
-use std::sync::{LazyLock, Mutex};
+use std::sync::{Arc, LazyLock, Mutex};
 use std::thread;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use crate::worker::command::{WorkerClient, WorkerProcess};
 use crate::worker::paths::WorkerRuntimePaths;
@@ -42,6 +42,35 @@ fn worker_client_restarts_after_failure_and_path_change() {
         .unwrap();
     let second = client
         .run_with_process(&second_paths, "health.check", serde_json::json!({}), |paths| {
+            Ok(scripted_worker_with_paths(
+                "import json\nc=json.loads(input()); print(json.dumps({'commandId':c['id'],'event':'health.ok','payload':{'worker':'second'}}), flush=True)",
+                paths.clone(),
+            ))
+        })
+        .unwrap();
+
+    assert_eq!(first[0].payload["worker"], "first");
+    assert_eq!(second[0].payload["worker"], "second");
+    client.shutdown().unwrap();
+}
+
+#[test]
+fn worker_client_restarts_after_explicit_shutdown() {
+    let _lock = worker_process_test_lock();
+    let mut client = WorkerClient::new();
+    let paths = test_paths();
+
+    let first = client
+        .run_with_process(&paths, "health.check", serde_json::json!({}), |paths| {
+            Ok(scripted_worker_with_paths(
+                "import json\nc=json.loads(input()); print(json.dumps({'commandId':c['id'],'event':'health.ok','payload':{'worker':'first'}}), flush=True)",
+                paths.clone(),
+            ))
+        })
+        .unwrap();
+    client.shutdown().unwrap();
+    let second = client
+        .run_with_process(&paths, "health.check", serde_json::json!({}), |paths| {
             Ok(scripted_worker_with_paths(
                 "import json\nc=json.loads(input()); print(json.dumps({'commandId':c['id'],'event':'health.ok','payload':{'worker':'second'}}), flush=True)",
                 paths.clone(),
@@ -154,19 +183,41 @@ fn worker_process_reports_exit_and_timeout() {
 #[test]
 fn worker_process_serializes_progress_and_clean_shutdown() {
     let _lock = worker_process_test_lock();
-    let mut process = scripted_worker(
+    let process = scripted_worker(
         "import json\nc=json.loads(input())\nfor event in ('transcribe.progress','transcribe.complete'):\n print(json.dumps({'commandId':c['id'],'event':event,'payload':{}}), flush=True)",
     );
-    let command = serde_json::json!({"id":"serial","name":"transcribe.run","payload":{}});
-
     let events = process
-        .run("serial", "transcribe.run", &command, Duration::from_secs(1))
+        .run(
+            "transcribe.run",
+            serde_json::json!({"id":"serial","name":"transcribe.run","payload":{}}),
+            Some(Duration::from_secs(1)),
+        )
         .unwrap();
 
     assert_eq!(events.len(), 2);
     assert_eq!(events[0].event, "transcribe.progress");
     assert_eq!(events[1].event, "transcribe.complete");
     process.shutdown().unwrap();
+}
+
+#[test]
+fn worker_process_shutdown_interrupts_active_command() {
+    let _lock = worker_process_test_lock();
+    let process = Arc::new(scripted_worker("import time\ninput(); time.sleep(5)"));
+    let running_process = Arc::clone(&process);
+    let command = thread::spawn(move || {
+        running_process.run(
+            "health.check",
+            serde_json::json!({"payload":{}}),
+            Some(Duration::from_secs(10)),
+        )
+    });
+
+    thread::sleep(Duration::from_millis(20));
+    let started = Instant::now();
+    process.shutdown().unwrap();
+    assert!(started.elapsed() < Duration::from_secs(3));
+    assert!(command.join().unwrap().is_err());
 }
 
 fn worker_process_test_lock() -> std::sync::MutexGuard<'static, ()> {
@@ -198,8 +249,11 @@ fn run_health(
     id: &str,
     timeout: Duration,
 ) -> Result<Vec<crate::domain::types::WorkerEvent>, String> {
-    let command = serde_json::json!({"id":id,"name":"health.check","payload":{}});
-    process.run(id, "health.check", &command, timeout)
+    process.run(
+        "health.check",
+        serde_json::json!({"id":id,"name":"health.check","payload":{}}),
+        Some(timeout),
+    )
 }
 
 fn test_paths() -> WorkerRuntimePaths {

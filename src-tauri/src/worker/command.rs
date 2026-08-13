@@ -24,15 +24,15 @@ const DEFAULT_COMMAND_TIMEOUT: Duration = Duration::from_secs(30 * 60);
 const SHUTDOWN_TIMEOUT: Duration = Duration::from_secs(2);
 
 pub(super) struct WorkerClient {
-    process: Option<WorkerProcess>,
-    timeout: Duration,
+    process: Option<Arc<WorkerProcess>>,
 }
 
 pub(super) struct WorkerProcess {
     paths: WorkerRuntimePaths,
-    child: Child,
-    stdin: Option<ChildStdin>,
-    events: mpsc::Receiver<Result<WorkerEvent, String>>,
+    child: Mutex<Child>,
+    stdin: Mutex<Option<ChildStdin>>,
+    command_lock: Mutex<()>,
+    events: Mutex<mpsc::Receiver<Result<WorkerEvent, String>>>,
     stderr: Arc<Mutex<String>>,
 }
 
@@ -99,11 +99,24 @@ pub(crate) fn run_worker_command_with_paths(
     command_name: &str,
     payload: serde_json::Value,
 ) -> Result<Vec<WorkerEvent>, String> {
-    let mut client = WORKER_CLIENT
-        .lock()
-        .map_err(|error| format!("Unable to lock Python worker: {error}"))?;
+    let process = {
+        let mut client = WORKER_CLIENT
+            .lock()
+            .map_err(|error| format!("Unable to lock Python worker: {error}"))?;
 
-    client.run(paths, command_name, payload)
+        client.prepare(paths, WorkerProcess::start)?
+    };
+    let result = process.run(command_name, payload, None);
+
+    if result.is_err() {
+        let mut client = WORKER_CLIENT
+            .lock()
+            .map_err(|error| format!("Unable to lock Python worker: {error}"))?;
+
+        client.shutdown_process(&process)?;
+    }
+
+    result
 }
 
 pub(crate) fn shutdown_worker() -> Result<(), String> {
@@ -138,20 +151,31 @@ fn default_worker_runtime_paths() -> Result<WorkerRuntimePaths, String> {
 
 impl WorkerClient {
     pub(super) fn new() -> Self {
-        Self {
-            process: None,
-            timeout: command_timeout(),
+        Self { process: None }
+    }
+
+    fn prepare<F>(
+        &mut self,
+        paths: &WorkerRuntimePaths,
+        start_process: F,
+    ) -> Result<Arc<WorkerProcess>, String>
+    where
+        F: FnOnce(&WorkerRuntimePaths) -> Result<WorkerProcess, String>,
+    {
+        match self.process.as_ref() {
+            Some(process) if process.is_running() && process.paths == *paths => {
+                Ok(Arc::clone(process))
+            }
+            _ => {
+                self.shutdown()?;
+                let process = Arc::new(start_process(paths)?);
+                self.process = Some(Arc::clone(&process));
+                Ok(process)
+            }
         }
     }
 
-    fn run(
-        &mut self,
-        paths: &WorkerRuntimePaths,
-        command_name: &str,
-        payload: serde_json::Value,
-    ) -> Result<Vec<WorkerEvent>, String> {
-        self.run_with_process(paths, command_name, payload, WorkerProcess::start)
-    }
+    #[cfg(test)]
     pub(super) fn run_with_process<F>(
         &mut self,
         paths: &WorkerRuntimePaths,
@@ -162,51 +186,39 @@ impl WorkerClient {
     where
         F: FnOnce(&WorkerRuntimePaths) -> Result<WorkerProcess, String>,
     {
-        if !self.is_running()
-            || self
-                .process
-                .as_ref()
-                .is_some_and(|process| process.paths != *paths)
-        {
-            self.shutdown()?;
-            self.process = Some(start_process(paths)?);
-        }
-        let command_id = format!(
-            "rust-{}-{}",
-            unix_timestamp(),
-            WORKER_COMMAND_SEQUENCE.fetch_add(1, Ordering::Relaxed)
-        );
-        let command = serde_json::json!({
-            "id": &command_id,
-            "name": command_name,
-            "payload": payload,
-        });
-        let result = self
-            .process
-            .as_mut()
-            .ok_or_else(|| "Python worker is unavailable".to_owned())?
-            .run(&command_id, command_name, &command, self.timeout);
+        let process = self.prepare(paths, start_process)?;
+        let result = process.run(command_name, payload, None);
 
         if result.is_err() {
-            let _ = self.shutdown();
+            self.shutdown_process(&process)?;
         }
 
         result
     }
 
-    fn is_running(&mut self) -> bool {
-        let Some(process) = self.process.as_mut() else {
-            return false;
-        };
+    fn shutdown_process(&mut self, process: &Arc<WorkerProcess>) -> Result<(), String> {
+        if self
+            .process
+            .as_ref()
+            .is_some_and(|current| Arc::ptr_eq(current, process))
+        {
+            self.shutdown()?;
+        }
 
-        matches!(process.child.try_wait(), Ok(None))
+        Ok(())
     }
 
     pub(super) fn shutdown(&mut self) -> Result<(), String> {
         match self.process.take() {
-            Some(mut process) => process.shutdown(),
+            Some(process) => process.shutdown(),
             None => Ok(()),
         }
+    }
+
+    fn is_running(&mut self) -> bool {
+        self.process
+            .as_ref()
+            .is_some_and(|process| process.is_running())
     }
 }
 
@@ -252,27 +264,47 @@ impl WorkerProcess {
 
         Ok(Self {
             paths,
-            child,
-            stdin: Some(stdin),
-            events,
+            child: Mutex::new(child),
+            stdin: Mutex::new(Some(stdin)),
+            events: Mutex::new(events),
+            command_lock: Mutex::new(()),
             stderr,
         })
     }
 
     pub(super) fn run(
-        &mut self,
-        command_id: &str,
+        &self,
         command_name: &str,
-        command: &serde_json::Value,
-        timeout: Duration,
+        payload: serde_json::Value,
+        timeout: Option<Duration>,
     ) -> Result<Vec<WorkerEvent>, String> {
-        let stdin = self
-            .stdin
-            .as_mut()
-            .ok_or_else(|| "Worker stdin is unavailable".to_owned())?;
-        writeln!(stdin, "{command}")
-            .and_then(|()| stdin.flush())
-            .map_err(|error| format!("Unable to write worker command: {error}"))?;
+        let _command_lock = self
+            .command_lock
+            .lock()
+            .map_err(|error| format!("Unable to lock worker command: {error}"))?;
+        let command_id = format!(
+            "rust-{}-{}",
+            unix_timestamp(),
+            WORKER_COMMAND_SEQUENCE.fetch_add(1, Ordering::Relaxed)
+        );
+        let command = serde_json::json!({
+            "id": &command_id,
+            "name": command_name,
+            "payload": payload,
+        });
+        let timeout = timeout.unwrap_or_else(command_timeout);
+        {
+            let mut stdin = self
+                .stdin
+                .lock()
+                .map_err(|error| format!("Unable to lock worker stdin: {error}"))?;
+            let stdin = stdin
+                .as_mut()
+                .ok_or_else(|| "Worker stdin is unavailable".to_owned())?;
+            writeln!(stdin, "{command}")
+                .and_then(|()| stdin.flush())
+                .map_err(|error| format!("Unable to write worker command: {error}"))?;
+        }
 
         let deadline = Instant::now() + timeout;
         let mut events = Vec::new();
@@ -281,6 +313,8 @@ impl WorkerProcess {
             let remaining = deadline.saturating_duration_since(Instant::now());
             let event = self
                 .events
+                .lock()
+                .map_err(|error| format!("Unable to lock worker events: {error}"))?
                 .recv_timeout(remaining)
                 .map_err(|error| match error {
                     mpsc::RecvTimeoutError::Timeout => {
@@ -309,33 +343,46 @@ impl WorkerProcess {
         }
     }
 
-    pub(super) fn shutdown(&mut self) -> Result<(), String> {
-        drop(self.stdin.take());
+    pub(super) fn shutdown(&self) -> Result<(), String> {
+        self.stdin
+            .lock()
+            .map_err(|error| format!("Unable to lock worker stdin: {error}"))?
+            .take();
+        let mut child = self
+            .child
+            .lock()
+            .map_err(|error| format!("Unable to lock Python worker: {error}"))?;
         let deadline = Instant::now() + SHUTDOWN_TIMEOUT;
 
         while Instant::now() < deadline {
-            match self.child.try_wait() {
+            match child.try_wait() {
                 Ok(Some(_)) => return Ok(()),
                 Ok(None) => thread::sleep(Duration::from_millis(10)),
                 Err(error) => return Err(format!("Unable to stop Python worker: {error}")),
             }
         }
 
-        self.child
+        child
             .kill()
             .map_err(|error| format!("Unable to terminate Python worker: {error}"))?;
-        self.child
+        child
             .wait()
             .map(|_| ())
             .map_err(|error| format!("Unable to reap Python worker: {error}"))
     }
 
-    fn exit_error(&mut self, context: &str) -> String {
+    fn is_running(&self) -> bool {
+        self.child
+            .lock()
+            .is_ok_and(|mut child| matches!(child.try_wait(), Ok(None)))
+    }
+
+    fn exit_error(&self, context: &str) -> String {
         let status = self
             .child
-            .try_wait()
+            .lock()
             .ok()
-            .flatten()
+            .and_then(|mut child| child.try_wait().ok().flatten())
             .map(|status| format!(" ({status})"))
             .unwrap_or_default();
         let stderr = self

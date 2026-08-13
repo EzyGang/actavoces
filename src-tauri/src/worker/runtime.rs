@@ -1,7 +1,8 @@
 use crate::domain::types::*;
 use crate::utils::lock_error;
 use crate::worker::command::{
-    run_uv_sync, run_uv_sync_extra, run_worker_command_with_paths, WORKER_RUNTIME_PATHS,
+    run_uv_sync, run_uv_sync_extra, run_worker_command_with_paths, shutdown_worker,
+    WORKER_RUNTIME_PATHS,
 };
 use crate::worker::files::{
     prepare_uv_executable, prepare_worker_directory, prepare_worker_virtualenv,
@@ -316,6 +317,7 @@ pub(crate) fn run_diarization_setup(
         None,
     )?;
     run_uv_sync_extra(&paths, "diarization")?;
+    shutdown_worker()?;
 
     emit_worker_setup_progress(
         app,
