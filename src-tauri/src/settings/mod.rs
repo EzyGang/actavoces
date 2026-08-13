@@ -62,6 +62,16 @@ pub(crate) fn default_model_inventory() -> Vec<ModelInventoryItem> {
         .collect()
 }
 
+pub(crate) fn validate_whisper_model(model: &str) -> rusqlite::Result<()> {
+    if SUPPORTED_WHISPER_MODELS.contains(&model) {
+        return Ok(());
+    }
+
+    Err(rusqlite::Error::InvalidParameterName(
+        "Whisper model must be one of: small, medium, large-v3, distil-large-v3".to_owned(),
+    ))
+}
+
 pub(crate) fn settings_pairs(
     input: &AppSettingsUpdate,
     summary_provider_configured: bool,
@@ -154,11 +164,7 @@ pub(crate) fn validate_settings(
         ));
     }
 
-    if !SUPPORTED_WHISPER_MODELS.contains(&input.whisper_model.as_str()) {
-        return Err(rusqlite::Error::InvalidParameterName(
-            "Whisper model must be one of: small, medium, large-v3, distil-large-v3".to_owned(),
-        ));
-    }
+    validate_whisper_model(&input.whisper_model)?;
 
     if input.compute_type == "cuda" && !cuda_available {
         return Err(rusqlite::Error::InvalidParameterName(

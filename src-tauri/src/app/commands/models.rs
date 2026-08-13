@@ -1,6 +1,7 @@
 use tauri::Manager;
 
 use crate::domain::types::*;
+use crate::settings::validate_whisper_model;
 use crate::worker::runtime::{
     extract_model_inventory, extract_runtime_capabilities, model_install_message,
     run_worker_command,
@@ -15,12 +16,16 @@ pub async fn refresh_model_inventory(app: tauri::AppHandle) -> Result<AppSnapsho
     .await
     .map_err(|error| format!("Model inventory task failed: {error}"))?
 }
+pub(crate) fn validate_model_install_input(input: &ModelInstallInput) -> Result<(), String> {
+    validate_whisper_model(&input.model).map_err(|error| error.to_string())
+}
 
 #[tauri::command]
 pub async fn install_transcription_model(
     input: ModelInstallInput,
     app: tauri::AppHandle,
 ) -> Result<AppSnapshot, String> {
+    validate_model_install_input(&input)?;
     tauri::async_runtime::spawn_blocking(move || {
         let state = app.state::<ActavocesState>();
         let (settings, cuda_available) = {

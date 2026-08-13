@@ -4,10 +4,10 @@ use std::path::Path;
 use std::process::Command;
 use std::sync::atomic::{AtomicU64, Ordering};
 
-use crate::app::commands::worker_status_with_process_state;
 use crate::app::commands::{
     normalized_transcription_context, rename_recording_outputs, resume_pipeline_jobs,
     rewrite_speaker_label, start_recording_session, stop_recording_session,
+    validate_model_install_input, worker_status_with_process_state,
 };
 use crate::artifacts::{
     artifact_directory, capture_artifacts_with_readiness, diarization_path,
@@ -291,20 +291,18 @@ fn bootstrap_model_install_payload_uses_settings_model() {
 }
 
 #[test]
-fn settings_reject_unsupported_whisper_model() {
+fn settings_and_model_install_reject_unsupported_whisper_model() {
     let mut settings = settings_update(test_artifact_path("invalid-model").display().to_string());
     settings.whisper_model = "custom-model".to_owned();
+    let install_input = crate::domain::types::ModelInstallInput {
+        model: "custom-model".to_owned(),
+    };
 
-    let error = validate_settings(&settings, false).unwrap_err();
+    let settings_error = validate_settings(&settings, false).unwrap_err();
+    let install_error = validate_model_install_input(&install_input).unwrap_err();
 
-    assert_eq!(
-        error,
-        rusqlite::Error::InvalidParameterName(
-            "Whisper model must be one of: small, medium, large-v3, distil-large-v3".to_owned(),
-        )
-    );
+    assert_eq!(settings_error.to_string(), install_error);
 }
-
 #[test]
 fn worker_manifest_requires_current_configured_model() {
     let manifest = WorkerBootstrapManifest {
